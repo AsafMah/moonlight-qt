@@ -44,7 +44,7 @@ jobs:
 
       - name: Download dependencies (Windows)
         if: runner.os == 'Windows'
-        run: powershell ./setup-deps.ps1
+        run: powershell ./setup-deps.ps1 -PyroWave Require
 
       - name: Install create-dmg (macOS)
         if: runner.os == 'macOS'
@@ -94,6 +94,9 @@ jobs:
 
       - name: Build Package
         shell: pwsh
+        env:
+          # generate-dmg.sh runs setup-deps.py, which builds the PyroWave runtime.
+          PYROWAVE_BUILD: require
         run: |
           if ($Env:RUNNER_OS -eq "Windows") {
             cmd /c scripts\generate-bundle.bat Release

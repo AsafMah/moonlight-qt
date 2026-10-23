@@ -148,7 +148,8 @@ jobs:
 
     - name: Download dependencies
       shell: pwsh
-      run: ./setup-deps.ps1
+      # Also builds the PyroWave runtime for x64 and arm64.
+      run: ./setup-deps.ps1 -PyroWave Require
 
     - name: Install Qt
       uses: jdpurcell/install-qt-action@v5
@@ -386,6 +387,9 @@ jobs:
         aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@073e34d7c2ab4ae6961ed7cca690b3abd5ba5a7e'
 
     - name: Test macOS overlay event wakeups
+      env:
+        # The DMG step runs setup-deps.py again and builds the runtime there.
+        PYROWAVE_BUILD: skip
       run: |
         python3 setup-deps.py
         pushd tests/overlay_button_native_wake
@@ -395,6 +399,8 @@ jobs:
         popd
 
     - name: Build and generate DMG
+      env:
+        PYROWAVE_BUILD: require
       run: |
         scripts/generate-dmg.sh Release
 
@@ -740,6 +746,7 @@ jobs:
     - name: Build AppImage
       env:
         APPIMAGE_EXTRACT_AND_RUN: 1
+        PYROWAVE_BUILD: require
       run: |
         # Qt5 环境变量已废弃，使用 Qt6 环境
         # export QT_SELECT=5

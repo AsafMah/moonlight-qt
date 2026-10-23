@@ -73,6 +73,18 @@ pushd $BUILD_FOLDER
 make install || fail "Make install failed!"
 popd
 
+# Moonlight loads the PyroWave runtime with dlopen(), so linuxdeploy cannot
+# discover it from the binary. Build it separately and name it explicitly.
+# PYROWAVE_BUILD=require (CI) fails here; the default continues without it.
+echo Building PyroWave runtime
+PYROWAVE_STAGING=$BUILD_ROOT/pyrowave-$APPIMAGE_ARCH
+rm -rf "$PYROWAVE_STAGING"
+bash "$SOURCE_ROOT/scripts/build-pyrowave.sh" "$PYROWAVE_STAGING" || fail "PyroWave runtime build failed!"
+PYROWAVE_LIBRARY_ARGS=()
+if [ -s "$PYROWAVE_STAGING/libpyrowave-shared.so.101" ]; then
+  PYROWAVE_LIBRARY_ARGS=("--library=$PYROWAVE_STAGING/libpyrowave-shared.so.101")
+fi
+
 echo Updating metadata
 perl -pi -e 's/__GITHUB_REF_NAME__/$ENV{GITHUB_REF_NAME}/' $DEPLOY_FOLDER/usr/share/metainfo/com.moonlight_stream.Moonlight.appdata.xml
 perl -pi -e 's/__GITHUB_SHA__/$ENV{GITHUB_SHA}/' $DEPLOY_FOLDER/usr/share/metainfo/com.moonlight_stream.Moonlight.appdata.xml
@@ -209,6 +221,7 @@ LDAI_OUTPUT="$APPIMAGE_PATH" \
 VERSION="$VERSION" \
 "$LINUXDEPLOY" --appdir "$DEPLOY_FOLDER" \
   --library=/usr/local/lib/libSDL3.so.0 \
+  "${PYROWAVE_LIBRARY_ARGS[@]}" \
   --exclude-library=libva.so* \
   --exclude-library=libva-drm.so* \
   --exclude-library=libva-wayland.so* \
@@ -268,6 +281,11 @@ readelf -d "$EXTRACTED_APPDIR/usr/bin/moonlight" | grep -q 'libva-wayland\.so' |
   fail "The libva Wayland adapter-only fallback unexpectedly contains the libva core!"
 [ ! -e "$EXTRACTED_APPDIR/opt/libva-wayland-fallback/libva-x11.so.2" ] || \
   fail "The libva Wayland adapter-only fallback unexpectedly contains the X11 adapter!"
+
+if [ "${PYROWAVE_BUILD:-auto}" = "require" ]; then
+  [ -s "$EXTRACTED_APPDIR/usr/lib/libpyrowave-shared.so.101" ] || \
+    fail "AppImage is missing the PyroWave runtime!"
+fi
 
 if find "$EXTRACTED_APPDIR/usr" -name 'libwayland-client.so*' -print -quit | grep -q .; then
   fail "AppImage bundled libwayland-client and may conflict with the host's Mesa/EGL stack!"

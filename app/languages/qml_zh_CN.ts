@@ -3806,4 +3806,319 @@
     <message><source>This background image is unavailable. Please try another image.</source><translation>这张背景图片无法使用，请换一张重试。</translation></message>
     <message><source>Unable to load the background image. Please try another image.</source><translation>无法加载背景图片，请换一张重试。</translation></message>
 </context>
+<context>
+    <name>PyrowaveCodecPanel</name>
+    <message>
+        <source>Host support unknown</source>
+        <translation>主机支持情况未知</translation>
+    </message>
+    <message>
+        <source>%1 offers PyroWave</source>
+        <translation>%1 支持 PyroWave</translation>
+    </message>
+    <message>
+        <source>Not offered by %1</source>
+        <translation>%1 未提供 PyroWave</translation>
+    </message>
+    <message>
+        <source>%1: host support unknown</source>
+        <translation>%1：主机支持情况未知</translation>
+    </message>
+    <message>
+        <source>On its last connection (%1), %2 didn&apos;t offer PyroWave. The host needs Foundation Sunshine with PyroWave enabled; until then, streams use H.264.</source>
+        <translation>上次连接（%1）时，%2 未提供 PyroWave。主机需要使用启用了 PyroWave 的 Foundation Sunshine；在此之前，串流将使用 H.264。</translation>
+    </message>
+    <message>
+        <source>%1 offered PyroWave on its last connection (%2).</source>
+        <translation>%1 在上次连接（%2）时提供了 PyroWave。</translation>
+    </message>
+    <message>
+        <source>Host support is checked when a stream starts. If the host doesn&apos;t offer PyroWave, the stream uses H.264 and says so.</source>
+        <translation>开始串流时会检查主机是否支持。如果主机未提供 PyroWave，串流将改用 H.264 并给出提示。</translation>
+    </message>
+    <message>
+        <source>Checking GPU...</source>
+        <translation>正在检查 GPU...</translation>
+    </message>
+    <message>
+        <source>GPU check passed</source>
+        <translation>GPU 检查通过</translation>
+    </message>
+    <message>
+        <source>This PC can&apos;t decode PyroWave</source>
+        <translation>此电脑无法解码 PyroWave</translation>
+    </message>
+    <message>
+        <source>GPU check unavailable</source>
+        <translation>无法检查 GPU</translation>
+    </message>
+    <message>
+        <source>GPU not checked yet</source>
+        <translation>尚未检查 GPU</translation>
+    </message>
+    <message>
+        <source>Decoder not in this build yet</source>
+        <translation>此版本尚未包含解码器</translation>
+    </message>
+    <message>
+        <source>PyroWave is an experimental, lightly compressed codec for wired LAN. It needs much more bandwidth than other codecs (200 Mbps or more); over Wi-Fi or the internet, expect dropped frames.</source>
+        <translation>PyroWave 是面向有线局域网的实验性低压缩编解码器，所需带宽远高于其他编解码器（200 Mbps 或更高）；通过 Wi-Fi 或互联网串流时可能会丢帧。</translation>
+    </message>
+    <message>
+        <source>This build can&apos;t decode PyroWave yet, so starting a stream shows an error instead of connecting. Choose another codec to stream.</source>
+        <translation>此版本暂时无法解码 PyroWave，开始串流时会显示错误而不会连接。请选择其他编解码器进行串流。</translation>
+    </message>
+    <message>
+        <source>Your bitrate is %1 Mbps. PyroWave needs far more than other codecs; %2 Mbps is a good start on wired LAN.</source>
+        <translation>当前码率为 %1 Mbps。PyroWave 所需码率远高于其他编解码器；在有线局域网中可从 %2 Mbps 开始。</translation>
+    </message>
+    <message>
+        <source>Use %1 Mbps</source>
+        <translation>使用 %1 Mbps</translation>
+    </message>
+    <message>
+        <source>Fixed while PyroWave is selected</source>
+        <translation>选择 PyroWave 时固定</translation>
+    </message>
+    <message>
+        <source>YUV 4:4:4: off</source>
+        <translation>YUV 4:4:4：关闭</translation>
+    </message>
+    <message>
+        <source>The PyroWave stream contract covers 4:2:0 only, and its H.264 fallback streams 4:2:0 too. Your saved setting is kept.</source>
+        <translation>PyroWave 串流协议仅支持 4:2:0，回退的 H.264 串流同样使用 4:2:0。已保存的设置会保留。</translation>
+    </message>
+    <message>
+        <source>Video AI-Enhancement: not used</source>
+        <translation>视频 AI 增强：不使用</translation>
+    </message>
+    <message>
+        <source>It runs inside the D3D11 renderer, which PyroWave doesn&apos;t use. Your saved setting is kept and still applies to other codecs, including an H.264 fallback.</source>
+        <translation>该功能在 D3D11 渲染器中运行，而 PyroWave 不使用该渲染器。已保存的设置会保留，并继续用于其他编解码器（包括回退的 H.264）。</translation>
+    </message>
+    <message>
+        <source>Hardware or software decoding: not used</source>
+        <translation>硬件或软件解码：不使用</translation>
+    </message>
+    <message>
+        <source>PyroWave always decodes on the GPU with Vulkan. Your saved setting is kept and still applies to other codecs, including an H.264 fallback.</source>
+        <translation>PyroWave 始终通过 Vulkan 在 GPU 上解码。已保存的设置会保留，并继续用于其他编解码器（包括回退的 H.264）。</translation>
+    </message>
+    <message>
+        <source>Run capability check</source>
+        <translation>运行能力检测</translation>
+    </message>
+    <message>
+        <source>Reads Vulkan version, subgroup operations and size control for each GPU. It doesn&apos;t start a stream or change settings.</source>
+        <translation>读取每个 GPU 的 Vulkan 版本、子组操作和子组大小控制。不会开始串流，也不会更改设置。</translation>
+    </message>
+    <message>
+        <source>PyroWave capability check</source>
+        <translation>PyroWave 能力检测</translation>
+    </message>
+    <message>
+        <source>PyroWave (experimental)</source>
+        <translation>PyroWave（实验性）</translation>
+    </message>
+</context>
+<context>
+    <name>PyrowaveRuntime</name>
+    <message>
+        <source>PyroWave runtime %1 is installed.</source>
+        <translation>已安装 PyroWave 运行库 %1。</translation>
+    </message>
+    <message>
+        <source>This build doesn&apos;t include the PyroWave runtime.</source>
+        <translation>此版本未包含 PyroWave 运行库。</translation>
+    </message>
+    <message>
+        <source>The installed PyroWave runtime isn&apos;t a supported build.</source>
+        <translation>已安装的 PyroWave 运行库不是受支持的版本。</translation>
+    </message>
+    <message>
+        <source>The installed PyroWave runtime is version %1, but this build needs %2.</source>
+        <translation>已安装的 PyroWave 运行库版本为 %1，但此版本需要 %2。</translation>
+    </message>
+    <message>
+        <source>The installed PyroWave runtime is incomplete (%1).</source>
+        <translation>已安装的 PyroWave 运行库不完整（%1）。</translation>
+    </message>
+</context>
+<context>
+    <name>PyrowaveVideoDecoder</name>
+    <message>
+        <source>PyroWave needs an even resolution up to %1x%1 (selected: %2x%3).</source>
+        <translation>PyroWave 要求分辨率的宽高均为偶数且不超过 %1x%1（当前选择：%2x%3）。</translation>
+    </message>
+    <message>
+        <source>The PyroWave decoder isn&apos;t implemented in this build yet.</source>
+        <translation>此版本尚未实现 PyroWave 解码器。</translation>
+    </message>
+    <message>
+        <source>PyroWave is selected as the video codec, but it can&apos;t be used on this PC: %1
+
+Choose another video codec in Settings to stream.</source>
+        <translation>视频编解码器已选择 PyroWave，但此电脑无法使用：%1
+
+请在设置中选择其他视频编解码器后再串流。</translation>
+    </message>
+    <message>
+        <source>PyroWave wasn&apos;t available from this host, so this stream uses %1. Your codec setting hasn&apos;t changed.</source>
+        <translation>此主机未提供 PyroWave，本次串流使用 %1。你的编解码器设置未更改。</translation>
+    </message>
+</context>
+<context>
+    <name>PyrowaveCapabilities</name>
+    <message>
+        <source>yes</source>
+        <translation>是</translation>
+    </message>
+    <message>
+        <source>no</source>
+        <translation>否</translation>
+    </message>
+    <message>
+        <source>integrated</source>
+        <translation>集成显卡</translation>
+    </message>
+    <message>
+        <source>discrete</source>
+        <translation>独立显卡</translation>
+    </message>
+    <message>
+        <source>virtual</source>
+        <translation>虚拟 GPU</translation>
+    </message>
+    <message>
+        <source>CPU</source>
+        <translation>CPU</translation>
+    </message>
+    <message>
+        <source>other</source>
+        <translation>其他</translation>
+    </message>
+    <message>
+        <source>Vulkan 1.3 (this GPU reports %1)</source>
+        <translation>Vulkan 1.3（此 GPU 报告 %1）</translation>
+    </message>
+    <message>
+        <source>subgroup operations: %1</source>
+        <translation>子组操作：%1</translation>
+    </message>
+    <message>
+        <source>subgroup operations in compute shaders</source>
+        <translation>计算着色器中的子组操作</translation>
+    </message>
+    <message>
+        <source>subgroup size control</source>
+        <translation>子组大小控制</translation>
+    </message>
+    <message>
+        <source>full compute subgroups</source>
+        <translation>完整计算子组</translation>
+    </message>
+    <message>
+        <source>a usable subgroup size range (reports %1 to %2)</source>
+        <translation>可用的子组大小范围（报告为 %1 到 %2）</translation>
+    </message>
+    <message>
+        <source>8-bit storage buffers</source>
+        <translation>8 位存储缓冲区</translation>
+    </message>
+    <message>
+        <source>a queue with both graphics and compute</source>
+        <translation>同时支持图形和计算的队列</translation>
+    </message>
+    <message>
+        <source>This build can&apos;t check Vulkan capabilities.</source>
+        <translation>此版本无法检测 Vulkan 能力。</translation>
+    </message>
+    <message>
+        <source>No Vulkan loader was found on this PC.</source>
+        <translation>此电脑上未找到 Vulkan 加载器。</translation>
+    </message>
+    <message>
+        <source>The Vulkan loader is too old to check (%1).</source>
+        <translation>Vulkan 加载器版本过旧，无法检测（%1）。</translation>
+    </message>
+    <message>
+        <source>Vulkan couldn&apos;t start (VkResult %1).</source>
+        <translation>Vulkan 无法启动（VkResult %1）。</translation>
+    </message>
+    <message>
+        <source>The Vulkan driver didn&apos;t answer the capability query.</source>
+        <translation>Vulkan 驱动未响应能力查询。</translation>
+    </message>
+    <message>
+        <source>No Vulkan GPU was found.</source>
+        <translation>未找到支持 Vulkan 的 GPU。</translation>
+    </message>
+    <message>
+        <source>%1 meets the basic requirements.</source>
+        <translation>%1 满足基本要求。</translation>
+    </message>
+    <message>
+        <source>%1 is missing %2.</source>
+        <translation>%1 缺少：%2。</translation>
+    </message>
+    <message>
+        <source>Runtime: %1</source>
+        <translation>运行库：%1</translation>
+    </message>
+    <message>
+        <source>Vulkan loader: not available</source>
+        <translation>Vulkan 加载器：不可用</translation>
+    </message>
+    <message>
+        <source>Vulkan loader: %1 (%2)</source>
+        <translation>Vulkan 加载器：%1（%2）</translation>
+    </message>
+    <message>
+        <source>GPU %1: %2 (%3)</source>
+        <translation>GPU %1：%2（%3）</translation>
+    </message>
+    <message>
+        <source>Vulkan version: %1</source>
+        <translation>Vulkan 版本：%1</translation>
+    </message>
+    <message>
+        <source>Subgroup size: %1</source>
+        <translation>子组大小：%1</translation>
+    </message>
+    <message>
+        <source>Subgroup operations: %1 (compute shaders: %2)</source>
+        <translation>子组操作：%1（计算着色器：%2）</translation>
+    </message>
+    <message>
+        <source>Subgroup size control: %1 (sizes %2 to %3, full compute subgroups: %4)</source>
+        <translation>子组大小控制：%1（大小 %2 到 %3，完整计算子组：%4）</translation>
+    </message>
+    <message>
+        <source>8-bit storage buffers: %1, 16-bit integers: %2</source>
+        <translation>8 位存储缓冲区：%1，16 位整数：%2</translation>
+    </message>
+    <message>
+        <source>Graphics and compute queue: %1</source>
+        <translation>图形和计算队列：%1</translation>
+    </message>
+    <message>
+        <source>Result: basic requirements met</source>
+        <translation>结果：满足基本要求</translation>
+    </message>
+    <message>
+        <source>Result: missing %1</source>
+        <translation>结果：缺少 %1</translation>
+    </message>
+    <message>
+        <source>This check only reads device properties. Starting a stream still checks the window, image formats, resolution and HDR on the GPU that will be used.</source>
+        <translation>此检测仅读取设备属性。开始串流时仍会在实际使用的 GPU 上检查窗口、图像格式、分辨率和 HDR。</translation>
+    </message>
+</context>
+<context>
+    <name>PyrowaveStatus</name>
+    <message>
+        <source>Checking Vulkan capabilities...</source>
+        <translation>正在检测 Vulkan 能力...</translation>
+    </message>
+</context>
 </TS>

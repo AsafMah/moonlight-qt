@@ -71,14 +71,10 @@ QString subgroupOperationNames(uint32_t operations)
         uint32_t bit;
         const char* name;
     } k_Names[] = {
-        { k_SubgroupBasic, "basic" },
-        { k_SubgroupVote, "vote" },
-        { k_SubgroupArithmetic, "arithmetic" },
-        { k_SubgroupBallot, "ballot" },
-        { k_SubgroupShuffle, "shuffle" },
-        { k_SubgroupShuffleRelative, "shuffle_relative" },
-        { k_SubgroupClustered, "clustered" },
-        { k_SubgroupQuad, "quad" },
+        { k_SubgroupBasic, "basic" },           { k_SubgroupVote, "vote" },
+        { k_SubgroupArithmetic, "arithmetic" }, { k_SubgroupBallot, "ballot" },
+        { k_SubgroupShuffle, "shuffle" },       { k_SubgroupShuffleRelative, "shuffle_relative" },
+        { k_SubgroupClustered, "clustered" },   { k_SubgroupQuad, "quad" },
     };
 
     // Vulkan's own names, left untranslated on purpose.
@@ -331,8 +327,7 @@ struct InstanceFunctions
     PFN_vkGetPhysicalDeviceQueueFamilyProperties getQueueFamilyProperties = nullptr;
     PFN_vkEnumerateDeviceExtensionProperties enumerateDeviceExtensionProperties = nullptr;
 
-    template <typename Fn>
-    void load(Fn& target, const char* name)
+    template <typename Fn> void load(Fn& target, const char* name)
     {
         target = reinterpret_cast<Fn>(getInstanceProcAddr(instance, name));
     }
@@ -356,8 +351,8 @@ std::vector<VkExtensionProperties> deviceExtensions(const InstanceFunctions& vk,
     }
 
     extensions.resize(count);
-    VkResult result = vk.enumerateDeviceExtensionProperties(device, nullptr, &count,
-                                                            extensions.data());
+    VkResult result =
+        vk.enumerateDeviceExtensionProperties(device, nullptr, &count, extensions.data());
     if (result != VK_SUCCESS) {
         extensions.clear();
     }

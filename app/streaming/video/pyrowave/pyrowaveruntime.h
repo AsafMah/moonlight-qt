@@ -80,8 +80,10 @@ public:
 
     // Returns null unless isAvailable(). Callers cast to the matching
     // pyrowave.h function type.
-    template <typename Fn>
-    Fn entryPoint(EntryPoint which) const { return reinterpret_cast<Fn>(rawEntryPoint(which)); }
+    template <typename Fn> Fn entryPoint(EntryPoint which) const
+    {
+        return reinterpret_cast<Fn>(rawEntryPoint(which));
+    }
 
     QFunctionPointer rawEntryPoint(EntryPoint which) const;
 

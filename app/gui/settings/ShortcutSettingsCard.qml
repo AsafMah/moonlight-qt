@@ -34,7 +34,8 @@ SettingsCard {
 
     ChoiceRow {
         title: qsTr("Default modifier keys")
-        description: qsTr("Changes every shortcut that still uses its default key combination.")
+        description: qsTr("Changes every shortcut that still uses its default key combination.") + " " +
+                     qsTr("NOTE: Ctrl+Alt is also how AltGr is reported on some keyboard layouts, so Ctrl+Alt shortcuts can trigger while typing.")
         selectedValue: ShortcutModel.defaultPrefix
         onValueActivated: function(value) { ShortcutModel.defaultPrefix = value }
 

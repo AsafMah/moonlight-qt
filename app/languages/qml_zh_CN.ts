@@ -3256,6 +3256,10 @@
         <translation>同时修改所有仍在使用默认组合键的快捷键。</translation>
     </message>
     <message>
+        <source>NOTE: Ctrl+Alt is also how AltGr is reported on some keyboard layouts, so Ctrl+Alt shortcuts can trigger while typing.</source>
+        <translation>注意：部分键盘布局会把 AltGr 报告为 Ctrl+Alt，因此 Ctrl+Alt 快捷键可能在打字时被误触发。</translation>
+    </message>
+    <message>
         <source>Use Ctrl, Alt or the Windows/Command key with this key. Only F13-F24 and media keys work on their own.</source>
         <translation>此键需要配合 Ctrl、Alt 或 Windows/Command 键使用。只有 F13-F24 和媒体键可以单独使用。</translation>
     </message>

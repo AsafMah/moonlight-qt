@@ -2819,6 +2819,10 @@
         <translation>同時修改所有仍在使用預設組合鍵的快速鍵。</translation>
     </message>
     <message>
+        <source>NOTE: Ctrl+Alt is also how AltGr is reported on some keyboard layouts, so Ctrl+Alt shortcuts can trigger while typing.</source>
+        <translation>注意：部分鍵盤配置會將 AltGr 回報為 Ctrl+Alt，因此 Ctrl+Alt 快速鍵可能在打字時被誤觸發。</translation>
+    </message>
+    <message>
         <source>Use Ctrl, Alt or the Windows/Command key with this key. Only F13-F24 and media keys work on their own.</source>
         <translation>此鍵需要搭配 Ctrl、Alt 或 Windows/Command 鍵使用。只有 F13-F24 與媒體鍵可以單獨使用。</translation>
     </message>

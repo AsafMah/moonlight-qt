@@ -139,6 +139,9 @@ constexpr const char TogglePointerRegionLock[] = "toggle-pointer-region-lock";
 constexpr const char ToggleKeyboardGrab[] = "toggle-keyboard-grab";
 // Moonlight V+ only
 constexpr const char ToggleOverlayMenu[] = "toggle-overlay-menu";
+// Host actions; no default binding
+constexpr const char SendCtrlAltDel[] = "send-ctrl-alt-del";
+constexpr const char OpenHostCommands[] = "open-host-commands";
 }
 
 struct ShortcutAction

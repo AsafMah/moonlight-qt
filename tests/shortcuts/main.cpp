@@ -202,6 +202,13 @@ bool testProfile(QTextStream& err)
     ok &= require(profile.bindings(QStringLiteral("no-such-action")) ==
                       QVector<ShortcutBinding>(ShortcutRegistry::MaxBindings),
                   QStringLiteral("unknown action has bindings"), err);
+    // Host actions exist but stay off until bound
+    for (const char* id : { ShortcutActions::SendCtrlAltDel, ShortcutActions::OpenHostCommands }) {
+        ok &= require(profile.registry().find(QLatin1String(id)) != nullptr &&
+                          profile.bindings(QLatin1String(id)) ==
+                              QVector<ShortcutBinding>(ShortcutRegistry::MaxBindings),
+                      QStringLiteral("%1 is missing or has a default").arg(QLatin1String(id)), err);
+    }
 
     const QString mouse = QLatin1String(ShortcutActions::ToggleMouseMode);
     const QString stats = QLatin1String(ShortcutActions::ToggleStatsOverlay);

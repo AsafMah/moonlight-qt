@@ -24,7 +24,8 @@ class QSettings;
 
 namespace ShortcutKeys {
 // A subset of SDL2 scancode values used by the default bindings and validation
-enum : int {
+enum : int
+{
     Unknown = 0,
     A = 4,
     Z = 29,
@@ -63,8 +64,8 @@ QString toToken(int scancode);
 int fromToken(const QString& token);
 
 bool isModifierKey(int scancode);
-bool isLatinKey(int scancode); // A-Z and 0-9, matched by character first
-bool isFunctionKey(int scancode); // F1-F24
+bool isLatinKey(int scancode);            // A-Z and 0-9, matched by character first
+bool isFunctionKey(int scancode);         // F1-F24
 bool isExtendedFunctionKey(int scancode); // F13-F24
 bool isMediaKey(int scancode);
 
@@ -78,7 +79,8 @@ int fromQtKeyEvent(int qtKey, quint32 nativeScanCode);
 
 struct ShortcutBinding
 {
-    enum Modifier : quint8 {
+    enum Modifier : quint8
+    {
         ModNone = 0x0,
         ModCtrl = 0x1,
         ModAlt = 0x2,
@@ -180,7 +182,8 @@ private:
 class ShortcutProfile
 {
 public:
-    enum DefaultPrefix {
+    enum DefaultPrefix
+    {
         PrefixCtrlAltShift,
         PrefixCtrlAlt,
     };

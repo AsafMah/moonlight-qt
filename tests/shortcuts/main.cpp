@@ -29,17 +29,15 @@ bool testTokens(QTextStream& err)
 
     for (int scancode = 1; scancode < ShortcutKeys::MaxScancode; scancode++) {
         const QString token = ShortcutKeys::toToken(scancode);
-        ok &= require(!token.isEmpty() && !token.contains(QLatin1Char('+')) &&
-                          !token.contains(QLatin1Char(',')) && !token.contains(QLatin1Char(' ')),
-                      QStringLiteral("token for scancode %1 is not storable: '%2'")
-                          .arg(scancode)
-                          .arg(token),
-                      err);
-        ok &= require(ShortcutKeys::fromToken(token) == scancode,
-                      QStringLiteral("token '%1' did not round-trip to scancode %2")
-                          .arg(token)
-                          .arg(scancode),
-                      err);
+        ok &= require(
+            !token.isEmpty() && !token.contains(QLatin1Char('+')) &&
+                !token.contains(QLatin1Char(',')) && !token.contains(QLatin1Char(' ')),
+            QStringLiteral("token for scancode %1 is not storable: '%2'").arg(scancode).arg(token),
+            err);
+        ok &= require(
+            ShortcutKeys::fromToken(token) == scancode,
+            QStringLiteral("token '%1' did not round-trip to scancode %2").arg(token).arg(scancode),
+            err);
     }
 
     ok &= require(ShortcutKeys::toToken(ShortcutKeys::letter('S')) == QLatin1String("S"),
@@ -78,7 +76,7 @@ bool testParseAndFormat(QTextStream& err)
                       ShortcutBinding(ShortcutBinding::ModNone, ShortcutKeys::F13),
                   QStringLiteral("bare key did not parse"), err);
 
-    const char* const malformed[] = { "",         "ctrl+",          "ctrl+Bogus", "hyper+S",
+    const char* const malformed[] = { "",        "ctrl+",          "ctrl+Bogus", "hyper+S",
                                       "ctrl++S", "ctrl+alt+sc224", "+S" };
     for (const char* string : malformed) {
         ok &= require(ShortcutBinding::fromString(QLatin1String(string)).isNull(),
@@ -92,9 +90,9 @@ bool testParseAndFormat(QTextStream& err)
     ok &= require(ShortcutBinding(k_CtrlAlt, 88).toDisplayString() ==
                       QLatin1String("Ctrl+Alt+Num Enter"),
                   QStringLiteral("keypad display string changed"), err);
-    ok &= require(ShortcutBinding(k_CtrlAlt, 89).toDisplayString() ==
-                      QLatin1String("Ctrl+Alt+Num 1"),
-                  QStringLiteral("generated keypad display string changed"), err);
+    ok &=
+        require(ShortcutBinding(k_CtrlAlt, 89).toDisplayString() == QLatin1String("Ctrl+Alt+Num 1"),
+                QStringLiteral("generated keypad display string changed"), err);
 
     return ok;
 }
@@ -105,8 +103,8 @@ bool testValidity(QTextStream& err)
 
     ok &= require(key(ShortcutBinding::ModCtrl, 'S').isValid(),
                   QStringLiteral("Ctrl+S was rejected"), err);
-    ok &= require(key(ShortcutBinding::ModGui, 'S').isValid(),
-                  QStringLiteral("Gui+S was rejected"), err);
+    ok &= require(key(ShortcutBinding::ModGui, 'S').isValid(), QStringLiteral("Gui+S was rejected"),
+                  err);
     ok &= require(!key(ShortcutBinding::ModShift, 'S').isValid(),
                   QStringLiteral("Shift+S was accepted"), err);
     ok &= require(!key(ShortcutBinding::ModNone, 'S').isValid(),
@@ -308,9 +306,10 @@ bool testPersistence(QTextStream& err)
         ok &= require(settings.value(QStringLiteral("shortcuts/defaultPrefix")).toString() ==
                           QLatin1String("ctrl+alt"),
                       QStringLiteral("prefix was not stored as a string"), err);
-        ok &= require(settings.value(QStringLiteral("shortcuts/bindings/other-build-action"))
-                              .toString() == QLatin1String("ctrl+alt+O"),
-                      QStringLiteral("foreign shortcut key was removed"), err);
+        ok &= require(
+            settings.value(QStringLiteral("shortcuts/bindings/other-build-action")).toString() ==
+                QLatin1String("ctrl+alt+O"),
+            QStringLiteral("foreign shortcut key was removed"), err);
         ok &= require(!settings.contains(QStringLiteral("shortcuts/bindings/") + quit),
                       QStringLiteral("default binding was written out"), err);
 
@@ -338,11 +337,11 @@ bool testPersistence(QTextStream& err)
         settings.setValue(QStringLiteral("shortcuts/bindings/") + quit,
                           QStringLiteral("ctrl+alt+Bogus,ctrl+alt+F2"));
         loaded.load(settings);
-        ok &= require(loaded.bindings(quit) ==
-                          QVector<ShortcutBinding>(
-                              { ShortcutBinding(),
-                                ShortcutBinding(k_CtrlAlt, ShortcutKeys::F1 + 1) }),
-                      QStringLiteral("malformed slot handling failed"), err);
+        ok &= require(
+            loaded.bindings(quit) ==
+                QVector<ShortcutBinding>(
+                    { ShortcutBinding(), ShortcutBinding(k_CtrlAlt, ShortcutKeys::F1 + 1) }),
+            QStringLiteral("malformed slot handling failed"), err);
     }
 
     return ok;
@@ -385,13 +384,13 @@ bool testMatcher(QTextStream& err)
     ok &= require(!matcher.processKeyEvent(s, s, noMods, false, false, dispatcher),
                   QStringLiteral("second key-up was swallowed"), err);
 
-    ok &= require(!matcher.processKeyEvent(s, s,
-                                           ShortcutBinding::ModCtrl | ShortcutBinding::ModShift,
-                                           true, false, dispatcher) &&
-                      !matcher.processKeyEvent(s, s, k_CtrlAltShift | ShortcutBinding::ModGui, true,
-                                               false, dispatcher) &&
-                      statsCount == 1,
-                  QStringLiteral("modifier subset or superset matched"), err);
+    ok &=
+        require(!matcher.processKeyEvent(s, s, ShortcutBinding::ModCtrl | ShortcutBinding::ModShift,
+                                         true, false, dispatcher) &&
+                    !matcher.processKeyEvent(s, s, k_CtrlAltShift | ShortcutBinding::ModGui, true,
+                                             false, dispatcher) &&
+                    statsCount == 1,
+                QStringLiteral("modifier subset or superset matched"), err);
     ok &= require(!matcher.processKeyEvent(s, s, noMods, false, false, dispatcher),
                   QStringLiteral("unmatched key-up was swallowed"), err);
 
@@ -464,19 +463,19 @@ bool testMatcher(QTextStream& err)
     const int m = ShortcutKeys::letter('M');
     ok &= require(!matcher.processKeyEvent(m, m, k_CtrlAltShift, true, false, dispatcher),
                   QStringLiteral("disabled binding still fired"), err);
-    ok &= require(matcher.processKeyEvent(ShortcutKeys::F13, none, noMods, true, false,
-                                          dispatcher) &&
-                      mouseCount == 2,
-                  QStringLiteral("bare F13 did not fire"), err);
+    ok &=
+        require(matcher.processKeyEvent(ShortcutKeys::F13, none, noMods, true, false, dispatcher) &&
+                    mouseCount == 2,
+                QStringLiteral("bare F13 did not fire"), err);
 
     // The handler may reset or reconfigure the matcher while it runs
     dispatcher.setHandler(mouse, [&] { matcher.reset(); });
     ok &= require(matcher.processKeyEvent(ShortcutKeys::F13, none, noMods, true, false, dispatcher),
                   QStringLiteral("reentrant reset broke matching"), err);
 
-    ok &= require(!dispatcher.trigger(QStringLiteral("no-such-action")) &&
-                      dispatcher.trigger(mouse),
-                  QStringLiteral("dispatcher trigger result is wrong"), err);
+    ok &=
+        require(!dispatcher.trigger(QStringLiteral("no-such-action")) && dispatcher.trigger(mouse),
+                QStringLiteral("dispatcher trigger result is wrong"), err);
 
     return ok;
 }

@@ -120,10 +120,9 @@ bool PyrowaveRuntime::tryCandidate(const QString& candidate)
 {
     QLibrary* library = new QLibrary(candidate);
     if (!library->load()) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "PyroWave runtime not loaded from %s: %s",
-                    qUtf8Printable(candidate),
-                    qUtf8Printable(library->errorString()));
+        const QString error = library->errorString();
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave runtime not loaded from %s: %s",
+                    qUtf8Printable(candidate), qUtf8Printable(error));
         delete library;
         return false;
     }
@@ -152,8 +151,8 @@ void PyrowaveRuntime::load()
         return;
     }
 
-    auto getApiVersion = reinterpret_cast<GetApiVersionFn>(
-            m_Library->resolve(k_EntryPoints[0].symbol));
+    QFunctionPointer versionFunction = m_Library->resolve(k_EntryPoints[0].symbol);
+    auto getApiVersion = reinterpret_cast<GetApiVersionFn>(versionFunction);
     if (getApiVersion == nullptr) {
         m_Status = Status::VersionEntryPointMissing;
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", qUtf8Printable(diagnosticMessage()));
@@ -195,10 +194,10 @@ QString PyrowaveRuntime::apiVersionString() const
 
 static QString requiredApiVersionString()
 {
-    return QStringLiteral("%1.%2.%3")
-            .arg(PyrowaveRuntime::k_RequiredApiMajor)
-            .arg(PyrowaveRuntime::k_RequiredApiMinor)
-            .arg(PyrowaveRuntime::k_RequiredApiPatch);
+    const uint32_t major = PyrowaveRuntime::k_RequiredApiMajor;
+    const uint32_t minor = PyrowaveRuntime::k_RequiredApiMinor;
+    const uint32_t patch = PyrowaveRuntime::k_RequiredApiPatch;
+    return QStringLiteral("%1.%2.%3").arg(major).arg(minor).arg(patch);
 }
 
 QString PyrowaveRuntime::diagnosticMessage() const
@@ -206,19 +205,19 @@ QString PyrowaveRuntime::diagnosticMessage() const
     switch (m_Status) {
     case Status::Available:
         return QStringLiteral("PyroWave runtime %1 loaded from %2")
-                .arg(apiVersionString(), m_LibraryPath);
+            .arg(apiVersionString(), m_LibraryPath);
     case Status::LibraryMissing:
         return QStringLiteral("PyroWave runtime (%1) not found; PyroWave is unavailable")
-                .arg(QString::fromLatin1(k_LibraryName));
+            .arg(QString::fromLatin1(k_LibraryName));
     case Status::VersionEntryPointMissing:
         return QStringLiteral("PyroWave runtime at %1 has no pyrowave_get_api_version(); rejected")
-                .arg(m_LibraryPath);
+            .arg(m_LibraryPath);
     case Status::VersionMismatch:
         return QStringLiteral("PyroWave runtime at %1 reports API %2, but %3 is required; rejected")
-                .arg(m_LibraryPath, apiVersionString(), requiredApiVersionString());
+            .arg(m_LibraryPath, apiVersionString(), requiredApiVersionString());
     case Status::EntryPointMissing:
         return QStringLiteral("PyroWave runtime at %1 is missing %2(); rejected")
-                .arg(m_LibraryPath, m_MissingEntryPoint);
+            .arg(m_LibraryPath, m_MissingEntryPoint);
     }
 
     return QString();
@@ -228,23 +227,16 @@ QString PyrowaveRuntime::userMessage() const
 {
     switch (m_Status) {
     case Status::Available:
-        return QCoreApplication::translate("PyrowaveRuntime", "PyroWave runtime %1 is installed.")
-                .arg(apiVersionString());
+        return tr("PyroWave runtime %1 is installed.").arg(apiVersionString());
     case Status::LibraryMissing:
-        return QCoreApplication::translate("PyrowaveRuntime",
-                                           "This build doesn't include the PyroWave runtime.");
+        return tr("This build doesn't include the PyroWave runtime.");
     case Status::VersionEntryPointMissing:
-        return QCoreApplication::translate("PyrowaveRuntime",
-                                           "The installed PyroWave runtime isn't a supported build.");
+        return tr("The installed PyroWave runtime isn't a supported build.");
     case Status::VersionMismatch:
-        return QCoreApplication::translate(
-                       "PyrowaveRuntime",
-                       "The installed PyroWave runtime is version %1, but this build needs %2.")
-                .arg(apiVersionString(), requiredApiVersionString());
+        return tr("The installed PyroWave runtime is version %1, but this build needs %2.")
+            .arg(apiVersionString(), requiredApiVersionString());
     case Status::EntryPointMissing:
-        return QCoreApplication::translate("PyrowaveRuntime",
-                                           "The installed PyroWave runtime is incomplete (%1).")
-                .arg(m_MissingEntryPoint);
+        return tr("The installed PyroWave runtime is incomplete (%1).").arg(m_MissingEntryPoint);
     }
 
     return QString();

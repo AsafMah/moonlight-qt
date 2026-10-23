@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QCoreApplication>
 #include <QString>
 
 #include <cstddef>
@@ -18,6 +19,8 @@ class QLibrary;
 // with the decoder (PW-2), which needs the Vulkan headers anyway.
 class PyrowaveRuntime
 {
+    Q_DECLARE_TR_FUNCTIONS(PyrowaveRuntime)
+
 public:
     static constexpr uint32_t k_RequiredApiMajor = 101;
     static constexpr uint32_t k_RequiredApiMinor = 0;
@@ -78,10 +81,7 @@ public:
     // Returns null unless isAvailable(). Callers cast to the matching
     // pyrowave.h function type.
     template <typename Fn>
-    Fn entryPoint(EntryPoint which) const
-    {
-        return reinterpret_cast<Fn>(rawEntryPoint(which));
-    }
+    Fn entryPoint(EntryPoint which) const { return reinterpret_cast<Fn>(rawEntryPoint(which)); }
 
     QFunctionPointer rawEntryPoint(EntryPoint which) const;
 

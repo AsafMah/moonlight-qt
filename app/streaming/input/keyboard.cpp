@@ -173,6 +173,49 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
     }
 }
 
+// Shortcut bindings store SDL2 scancodes without depending on SDL
+static_assert(SDL_SCANCODE_A == ShortcutKeys::A && SDL_SCANCODE_Z == ShortcutKeys::Z,
+              "Shortcut scancodes must match SDL");
+static_assert(SDL_SCANCODE_1 == ShortcutKeys::Num1 && SDL_SCANCODE_0 == ShortcutKeys::Num0,
+              "Shortcut scancodes must match SDL");
+static_assert(SDL_SCANCODE_F1 == ShortcutKeys::F1 && SDL_SCANCODE_F12 == ShortcutKeys::F12,
+              "Shortcut scancodes must match SDL");
+static_assert(SDL_SCANCODE_F13 == ShortcutKeys::F13 && SDL_SCANCODE_F24 == ShortcutKeys::F24,
+              "Shortcut scancodes must match SDL");
+static_assert(SDL_SCANCODE_LCTRL == ShortcutKeys::LeftCtrl &&
+                  SDL_SCANCODE_RGUI == ShortcutKeys::RightGui,
+              "Shortcut scancodes must match SDL");
+static_assert(SDL_SCANCODE_MUTE == ShortcutKeys::Mute &&
+                  SDL_SCANCODE_VOLUMEDOWN == ShortcutKeys::VolumeDown,
+              "Shortcut scancodes must match SDL");
+static_assert(SDL_SCANCODE_AUDIONEXT == ShortcutKeys::AudioNext &&
+                  SDL_SCANCODE_AUDIOMUTE == ShortcutKeys::AudioMute,
+              "Shortcut scancodes must match SDL");
+static_assert(SDL_NUM_SCANCODES <= ShortcutKeys::MaxScancode, "Shortcut scancodes must match SDL");
+
+static quint8 shortcutModifiers(Uint16 mod)
+{
+    quint8 modifiers = ShortcutBinding::ModNone;
+    if (mod & KMOD_CTRL) {
+        modifiers |= ShortcutBinding::ModCtrl;
+    }
+    if (mod & KMOD_ALT) {
+        modifiers |= ShortcutBinding::ModAlt;
+    }
+    if (mod & KMOD_SHIFT) {
+        modifiers |= ShortcutBinding::ModShift;
+    }
+    if (mod & KMOD_GUI) {
+        modifiers |= ShortcutBinding::ModGui;
+    }
+    return modifiers;
+}
+
+void SdlInputHandler::reloadShortcuts()
+{
+    m_ShortcutMatcher.setProfile(ShortcutProfile::loadFromSettings());
+}
+
 void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
 {
     short keyCode;
@@ -185,35 +228,14 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
         return;
     }
 
-    // Check for our special key combos
-    if ((event->state == SDL_PRESSED) &&
-            (event->keysym.mod & KMOD_CTRL) &&
-            (event->keysym.mod & KMOD_ALT) &&
-            (event->keysym.mod & KMOD_SHIFT)) {
-        // First we test the SDLK combos for matches,
-        // that way we ensure that latin keyboard users
-        // can match to the key they see on their keyboards.
-        // If nothing matches that, we'll then go on to
-        // checking scancodes so non-latin keyboard users
-        // can have working hotkeys (though possibly in
-        // odd positions). We must do all SDLK tests before
-        // any scancode tests to avoid issues in cases
-        // where the SDLK for one shortcut collides with
-        // the scancode of another.
-
-        for (int i = 0; i < KeyComboMax; i++) {
-            if (m_SpecialKeyCombos[i].enabled && event->keysym.sym == m_SpecialKeyCombos[i].keyCode) {
-                performSpecialKeyCombo(m_SpecialKeyCombos[i].keyCombo);
-                return;
-            }
-        }
-
-        for (int i = 0; i < KeyComboMax; i++) {
-            if (m_SpecialKeyCombos[i].enabled && event->keysym.scancode == m_SpecialKeyCombos[i].scanCode) {
-                performSpecialKeyCombo(m_SpecialKeyCombos[i].keyCombo);
-                return;
-            }
-        }
+    // Check for keyboard shortcuts. Matching is by scancode with the exact
+    // set of modifiers, and both the key-down and key-up of a shortcut key
+    // are kept from the host.
+    if (m_ShortcutMatcher.processKeyEvent(event->keysym.scancode,
+                                          shortcutModifiers(event->keysym.mod),
+                                          event->state == SDL_PRESSED, event->repeat != 0,
+                                          m_ShortcutDispatcher)) {
+        return;
     }
 
     // Set modifier flags

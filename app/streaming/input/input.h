@@ -5,6 +5,8 @@
 
 #include "SDL_compat.h"
 
+#include "shortcuts.h"
+
 struct GamepadState {
     SDL_GameController* controller;
     SDL_JoystickID jsId;
@@ -91,6 +93,13 @@ public:
     void setWindow(SDL_Window* window);
 
     void handleKeyEvent(SDL_KeyboardEvent* event);
+
+    // Actions triggered by keyboard shortcuts, by ID. Other UI (e.g. an
+    // in-stream menu) may trigger them or register extra handlers here.
+    ShortcutDispatcher& getShortcutDispatcher() { return m_ShortcutDispatcher; }
+
+    // Re-reads the keyboard shortcut bindings from settings
+    void reloadShortcuts();
 
     void handleMouseButtonEvent(SDL_MouseButtonEvent* event);
 
@@ -227,12 +236,8 @@ private:
     StreamingPreferences::CaptureSysKeysMode m_CaptureSystemKeysMode;
     int m_MouseCursorCapturedVisibilityState;
 
-    struct {
-        KeyCombo keyCombo;
-        SDL_Keycode keyCode;
-        SDL_Scancode scanCode;
-        bool enabled;
-    } m_SpecialKeyCombos[KeyComboMax];
+    ShortcutMatcher m_ShortcutMatcher;
+    ShortcutDispatcher m_ShortcutDispatcher;
 
     SDL_TouchFingerEvent m_LastTouchDownEvent;
     SDL_TouchFingerEvent m_LastTouchUpEvent;

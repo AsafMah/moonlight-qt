@@ -15,7 +15,8 @@ class ShortcutModel : public QAbstractListModel
     Q_PROPERTY(int conflictCount READ conflictCount NOTIFY bindingsChanged)
 
 public:
-    enum Roles {
+    enum Roles
+    {
         ActionIdRole = Qt::UserRole + 1,
         NameRole,
         GroupRole,
@@ -27,13 +28,15 @@ public:
         CustomizedRole,
     };
 
-    enum DefaultPrefix {
+    enum DefaultPrefix
+    {
         PrefixCtrlAltShift = ShortcutProfile::PrefixCtrlAltShift,
         PrefixCtrlAlt = ShortcutProfile::PrefixCtrlAlt,
     };
     Q_ENUM(DefaultPrefix)
 
-    enum CaptureResult {
+    enum CaptureResult
+    {
         // A modifier on its own; keep waiting for the key
         CaptureIgnored,
         CaptureAccepted,

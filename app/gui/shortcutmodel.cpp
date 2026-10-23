@@ -1,8 +1,7 @@
 #include "shortcutmodel.h"
 
 ShortcutModel::ShortcutModel(QObject* parent)
-    : QAbstractListModel(parent),
-      m_Profile(ShortcutProfile::loadFromSettings())
+    : QAbstractListModel(parent), m_Profile(ShortcutProfile::loadFromSettings())
 {
 }
 
@@ -54,8 +53,7 @@ QVariant ShortcutModel::data(const QModelIndex& index, int role) const
         return action->translatedName();
     case GroupRole:
         return action->translatedGroup();
-    case FirstInGroupRole:
-    {
+    case FirstInGroupRole: {
         const ShortcutAction* previous = actionAt(index.row() - 1);
         return previous == nullptr || qstrcmp(previous->group, action->group) != 0;
     }
@@ -110,8 +108,7 @@ int ShortcutModel::conflictCount() const
     return m_Profile.conflicts().size();
 }
 
-int ShortcutModel::captureKey(int row, int slot, int qtKey, int qtModifiers,
-                              quint32 nativeScanCode)
+int ShortcutModel::captureKey(int row, int slot, int qtKey, int qtModifiers, quint32 nativeScanCode)
 {
     const ShortcutAction* action = actionAt(row);
     if (action == nullptr) {
@@ -141,8 +138,7 @@ int ShortcutModel::captureKey(int row, int slot, int qtKey, int qtModifiers,
     if (modifiers == ShortcutBinding::ModNone) {
         if (qtKey == Qt::Key_Escape) {
             return CaptureCancelled;
-        }
-        else if (qtKey == Qt::Key_Backspace || qtKey == Qt::Key_Delete) {
+        } else if (qtKey == Qt::Key_Backspace || qtKey == Qt::Key_Delete) {
             clearBinding(row, slot);
             return CaptureCleared;
         }

@@ -189,6 +189,7 @@ SOURCES += \
     streaming/input/gamepad.cpp \
     streaming/input/input.cpp \
     streaming/input/keyboard.cpp \
+    streaming/input/shortcuts.cpp \
     streaming/input/mouse.cpp \
     streaming/input/reltouch.cpp \
     streaming/session.cpp \
@@ -232,6 +233,7 @@ HEADERS += \
     streaming/audio/renderers/renderer.h \
     streaming/audio/renderers/sdl.h \
     gui/computermodel.h \
+    streaming/input/shortcuts.h \
     gui/appmodel.h \
     streaming/video/decoder.h \
     streaming/bandwidth.h \

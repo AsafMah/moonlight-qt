@@ -388,7 +388,7 @@ jobs:
 
     - name: Test macOS overlay event wakeups
       env:
-        # The DMG step runs setup-deps.py again and builds the runtime there.
+        # setup-deps.py skips the PyroWave runtime on macOS for now.
         PYROWAVE_BUILD: skip
       run: |
         python3 setup-deps.py
@@ -400,7 +400,9 @@ jobs:
 
     - name: Build and generate DMG
       env:
-        PYROWAVE_BUILD: require
+        # setup-deps.py skips the PyroWave runtime on macOS for now: Granite
+        # doesn't build there. The app hides PyroWave without it.
+        PYROWAVE_BUILD: skip
       run: |
         scripts/generate-dmg.sh Release
 

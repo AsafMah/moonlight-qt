@@ -95,8 +95,9 @@ jobs:
       - name: Build Package
         shell: pwsh
         env:
-          # generate-dmg.sh runs setup-deps.py, which builds the PyroWave runtime.
-          PYROWAVE_BUILD: require
+          # generate-dmg.sh runs setup-deps.py, which skips the PyroWave runtime
+          # on macOS for now (Granite doesn't build there), so don't require it.
+          PYROWAVE_BUILD: ${{ runner.os == 'macOS' && 'skip' || 'require' }}
         run: |
           if ($Env:RUNNER_OS -eq "Windows") {
             cmd /c scripts\generate-bundle.bat Release

@@ -2937,40 +2937,12 @@ void Session::dispatchQtMenuAction(OverlayMenuPanel::MenuAction action)
         return;
     }
 
-    // Map OverlayMenuPanel::MenuAction to SdlInputHandler::KeyCombo
-    SdlInputHandler::KeyCombo combo;
+    // Quick actions run through the same dispatcher as keyboard shortcuts
+    const QString shortcutAction = OverlayMenuPanel::shortcutActionId(action);
     switch (action) {
-    case OverlayMenuPanel::MenuAction::Quit:
-        combo = SdlInputHandler::KeyComboQuit;
-        break;
-    case OverlayMenuPanel::MenuAction::QuitAndExit:
-        combo = SdlInputHandler::KeyComboQuitAndExit;
-        break;
     case OverlayMenuPanel::MenuAction::ToggleFullScreen:
-        combo = SdlInputHandler::KeyComboToggleFullScreen;
         // Defer capture restore until after fullscreen toggle completes
         m_DeferCaptureRestore = true;
-        break;
-    case OverlayMenuPanel::MenuAction::ToggleStatsOverlay:
-        combo = SdlInputHandler::KeyComboToggleStatsOverlay;
-        break;
-    case OverlayMenuPanel::MenuAction::ToggleMouseMode:
-        combo = SdlInputHandler::KeyComboToggleMouseMode;
-        break;
-    case OverlayMenuPanel::MenuAction::ToggleCursorHide:
-        combo = SdlInputHandler::KeyComboToggleCursorHide;
-        break;
-    case OverlayMenuPanel::MenuAction::ToggleMinimize:
-        combo = SdlInputHandler::KeyComboToggleMinimize;
-        break;
-    case OverlayMenuPanel::MenuAction::UngrabInput:
-        combo = SdlInputHandler::KeyComboUngrabInput;
-        break;
-    case OverlayMenuPanel::MenuAction::PasteText:
-        combo = SdlInputHandler::KeyComboPasteText;
-        break;
-    case OverlayMenuPanel::MenuAction::TogglePointerRegionLock:
-        combo = SdlInputHandler::KeyComboTogglePointerRegionLock;
         break;
 
     case OverlayMenuPanel::MenuAction::ShowHostFiles:
@@ -3056,12 +3028,15 @@ void Session::dispatchQtMenuAction(OverlayMenuPanel::MenuAction action)
 #endif
 
     default:
-        return;
+        if (shortcutAction.isEmpty()) {
+            return;
+        }
+        break;
     }
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                 "Qt overlay menu action: %d", (int)action);
-    m_InputHandler->performSpecialKeyCombo(combo);
+    m_InputHandler->getShortcutDispatcher().trigger(shortcutAction);
 
     // Restore mouse capture after window-state-changing actions complete
     if (m_DeferCaptureRestore) {
@@ -4438,6 +4413,8 @@ void Session::start()
     // NB: m_InputHandler must be initialized before starting the connection.
     m_InputHandler = new SdlInputHandler(*m_Preferences, m_StreamConfig.width,
                                          m_StreamConfig.height, enablePhysicalDualSenseHaptics);
+    m_InputHandler->getShortcutDispatcher().setHandler(
+        QLatin1String(ShortcutActions::ToggleOverlayMenu), [this] { toggleQtOverlayMenu(); });
     updateDualSenseHapticsControllerTarget();
 
     // Kick off the async connection thread then return to the caller to pump the event loop
@@ -5527,32 +5504,8 @@ void Session::exec()
                 }
                 break;
             }
-            // Ctrl+Alt+Shift+O toggles the Qt overlay menu.
-            const bool overlayMenuKey =
-                event.key.keysym.sym == SDLK_o || event.key.keysym.scancode == SDL_SCANCODE_O;
-            const bool overlayMenuShortcut = overlayMenuKey && (event.key.keysym.mod & KMOD_CTRL) &&
-                                             (event.key.keysym.mod & KMOD_ALT) &&
-                                             (event.key.keysym.mod & KMOD_SHIFT);
-            if (m_WaylandStreamWindow != nullptr && overlayMenuKey) {
-                if (event.type == SDL_KEYDOWN && overlayMenuShortcut) {
-                    if (!m_WaylandOverlayShortcutPressed && event.key.repeat == 0) {
-                        toggleQtOverlayMenu();
-                    }
-                    m_WaylandOverlayShortcutPressed = true;
-                    break;
-                }
-                if (m_WaylandOverlayShortcutPressed) {
-                    if (event.type == SDL_KEYUP) {
-                        m_WaylandOverlayShortcutPressed = false;
-                    }
-                    break;
-                }
-            } else if (event.key.state == SDL_PRESSED && overlayMenuShortcut) {
-                // Preserve the established repeat and key-up behavior on every
-                // SDL-owned window path.
-                toggleQtOverlayMenu();
-                break;
-            }
+            // The overlay menu shortcut is matched (and its key-up swallowed)
+            // by the input handler's shortcut matcher.
             m_InputHandler->handleKeyEvent(&event.key);
             break;
         }

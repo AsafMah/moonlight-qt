@@ -129,6 +129,8 @@ constexpr const char Minimize[] = "minimize";
 constexpr const char PasteText[] = "paste-text";
 constexpr const char TogglePointerRegionLock[] = "toggle-pointer-region-lock";
 constexpr const char ToggleKeyboardGrab[] = "toggle-keyboard-grab";
+// Moonlight V+ only
+constexpr const char ToggleOverlayMenu[] = "toggle-overlay-menu";
 }
 
 struct ShortcutAction

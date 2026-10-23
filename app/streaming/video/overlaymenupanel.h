@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "streaming/input/gamepadglyphs.h"
+#include "streaming/input/shortcuts.h"
 #include "overlaywindowpolicy.h"
 
 /**
@@ -136,6 +137,10 @@ public:
 
     // Human-readable bitrate label shared with toast/log formatting.
     static QString formatBitrateKbps(int kbps);
+
+    // Shortcut action (see ShortcutActions) behind a quick action, or empty.
+    // The session triggers these through the input handler's dispatcher.
+    static QString shortcutActionId(MenuAction action);
 
     // Position the panel at the right edge of the given Qt logical parent rect.
     void showAtRightEdge(int parentX, int parentY, int parentW, int parentH,
@@ -259,6 +264,7 @@ private:
     };
 
     void buildMenuLevels();
+    QString shortcutDetail(MenuAction action) const; // live key binding text
     void navigateToLevel(int level);
     void repositionWindow();
     void showInternal();     // shared show logic after geometry is set
@@ -287,6 +293,7 @@ private:
     GamepadUiStyle m_GamepadUiStyle;
     bool m_SwapFaceButtons;
     QString m_QuitComboGlyphs;
+    ShortcutProfile m_ShortcutProfile;
     FileMappingState m_FileMappingState;
     QString m_FileMappingDetail;
     bool m_RemoteUsbAvailable;

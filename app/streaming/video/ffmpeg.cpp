@@ -3,6 +3,7 @@
 #include "av1obu.h"
 #include "utils.h"
 #include "streaming/session.h"
+#include "streaming/stats/videostatsbridge.h"
 
 #include <cmath>
 
@@ -767,6 +768,35 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
     return true;
 }
 
+void FFmpegVideoDecoder::publishStatsWindow(VIDEO_STATS& recent, VIDEO_STATS& completed,
+                                            double bitrateMbps)
+{
+    StatsWindow window = VideoStatsBridge::toStatsWindow(recent);
+
+    window.targetFps = m_StreamFps;
+    window.codec =
+        VideoStatsBridge::videoFormatName(m_VideoFormat, LiGetCurrentHostDisplayHdrMode());
+    window.bitrateMbps = bitrateMbps;
+    if (m_VideoDecoderCtx != nullptr && m_VideoDecoderCtx->codec != nullptr) {
+        window.width = m_VideoDecoderCtx->width;
+        window.height = m_VideoDecoderCtx->height;
+        window.decoder = QString::fromUtf8(m_VideoDecoderCtx->codec->name);
+        window.hardwareDecode = isHardwareAccelerated();
+    }
+    if (m_HwDecodeCfg != nullptr) {
+        const char* hwType = av_hwdevice_get_type_name(m_HwDecodeCfg->device_type);
+        window.decoder += QStringLiteral(" (%1)").arg(QString::fromUtf8(hwType));
+    }
+    if (m_FrontendRenderer != nullptr) {
+        window.renderer = QString::fromUtf8(m_FrontendRenderer->getRendererName());
+    }
+    VideoStatsBridge::readRtpCounters(window);
+
+    Session::get()->getStatsModel().publishWindow(window,
+                                                  VideoStatsBridge::toStatsWindow(completed),
+                                                  LiGetMicroseconds());
+}
+
 void FFmpegVideoDecoder::addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst)
 {
     dst.receivedFrames += src.receivedFrames;
@@ -1006,7 +1036,7 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS &stats, char *output, i
 void FFmpegVideoDecoder::logVideoStats(VIDEO_STATS& stats, const char* title)
 {
     if (stats.renderedFps > 0 || stats.renderedFrames != 0) {
-        char videoStatsStr[512];
+        char videoStatsStr[1024];
         stringifyVideoStats(stats, videoStatsStr, sizeof(videoStatsStr));
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -2165,12 +2195,19 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 
     // Flip stats windows roughly every second
     if (LiGetMicroseconds() > m_ActiveWndVideoStats.measurementStartUs + 1000000) {
+        VIDEO_STATS lastTwoWndStats = {};
+        addVideoStats(m_LastWndVideoStats, lastTwoWndStats);
+        addVideoStats(m_ActiveWndVideoStats, lastTwoWndStats);
+
+        // Publish to the stats model first, since the overlay text reads it back.
+        // The bitrate is the wire-level rate of the video RTP stream (with FEC);
+        // stringifyVideoStats() below reuses this reading.
+        const double bitrateMbps =
+            m_BandwidthMeter.update(LiGetRTPVideoBytesReceived(), LiGetMicroseconds());
+        publishStatsWindow(lastTwoWndStats, m_ActiveWndVideoStats, bitrateMbps);
+
         // Update overlay stats if it's enabled
         if (Session::get()->getOverlayManager().isOverlayEnabled(Overlay::OverlayDebug)) {
-            VIDEO_STATS lastTwoWndStats = {};
-            addVideoStats(m_LastWndVideoStats, lastTwoWndStats);
-            addVideoStats(m_ActiveWndVideoStats, lastTwoWndStats);
-
             stringifyVideoStats(lastTwoWndStats,
                                 Session::get()->getOverlayManager().getOverlayText(Overlay::OverlayDebug),
                                 Session::get()->getOverlayManager().getOverlayMaxTextLength());
@@ -2200,6 +2237,8 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 
     m_ActiveWndVideoStats.receivedFrames++;
     m_ActiveWndVideoStats.totalFrames++;
+
+    Session::get()->getStatsModel().recordFrameArrival(du->receiveTimeUs, du->rtpTimestamp);
 
     int requiredBufferSize = du->fullLength;
     if (du->frameType == FRAME_TYPE_IDR) {

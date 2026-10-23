@@ -17,6 +17,7 @@
 #include "video/decoder.h"
 #include "audio/renderers/renderer.h"
 #include "video/overlaymanager.h"
+#include "stats/streamstatsmodel.h"
 #include "video/overlaymenupanel.h"
 #include "video/overlaymenubutton.h"
 #include "backend/usbforwardingtunnel.h"
@@ -151,6 +152,11 @@ public:
     Overlay::OverlayManager& getOverlayManager()
     {
         return m_OverlayManager;
+    }
+
+    StreamStatsModel& getStatsModel()
+    {
+        return m_StatsModel;
     }
 
     void flushWindowEvents();
@@ -423,6 +429,7 @@ private:
     Uint32 m_DropAudioEndTime;
 
     Overlay::OverlayManager m_OverlayManager;
+    StreamStatsModel m_StatsModel;
     bool m_WasCapturedBeforeMenu;  // 菜单打开前鼠标是否处于捕获状态
     bool m_DeferCaptureRestore;    // 延迟恢复鼠标捕获（全屏切换等）
     bool m_PendingMicToggle;       // 延迟麦克风切换（避免堆损坏）

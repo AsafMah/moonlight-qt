@@ -35,6 +35,9 @@
  *   Level 2 (Bitrate):  piecewise-linear scrubber row + 1/2/5/10/20/30/50/100 Mbps presets
  *   Level 3 (Position): Top, Right, Left, Floating button, Disabled
  *   Developer builds may append a function-test panel entry.
+ *   Then:             USB Devices (when enabled), Send Keys (special keys and
+ *                      key macros), Host Commands (Foundation Sunshine only).
+ *                      These levels have no fixed index; see m_SendKeysLevel.
  *
  * Sub-level navigation uses a title bar with back button (◂ Title).
  * Square industrial theme matching Theme.qml, with hard shadows and brand accents.
@@ -43,7 +46,8 @@ class OverlayMenuPanel : public OverlayRasterWindow
 {
     Q_OBJECT
 public:
-    enum class MenuAction {
+    enum class MenuAction
+    {
         // Quick actions (keyboard shortcuts)
         Quit,
         QuitAndExit,
@@ -70,6 +74,13 @@ public:
         SetMenuPlacementLeft,
         SetMenuPlacementButton,
         SetMenuPlacementDisabled,
+        // Host actions. The Open* values tag the SubMenu rows of their levels;
+        // the others carry their target in MenuItem::payload and are delivered
+        // through the payload action callback.
+        OpenSendKeys,
+        OpenHostCommands,
+        SendHostKeys,   // payload: HostKeys payload ("special:<id>" or "keys:<combo>")
+        RunHostCommand, // payload: Foundation Sunshine super command id
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         OpenStylusReplayPanel,
 #endif
@@ -103,6 +114,21 @@ public:
         bool supported = true;
     };
 
+    // A row in the "Send Keys" level
+    struct SendKeyItem
+    {
+        QString label;
+        QString detail;  // key combination text
+        QString payload; // passed back with MenuAction::SendHostKeys
+    };
+
+    // A Foundation Sunshine super command of the running app
+    struct HostCommandItem
+    {
+        QString id;
+        QString name;
+    };
+
     enum class MenuItemType {
         Action,     // dispatch action + close menu
         SubMenu,    // navigate to sub-level
@@ -118,6 +144,9 @@ public:
     // Fired when a bitrate adjustment settles (debounced while scrubbing,
     // immediate for preset taps). The value is in kbps.
     using BitrateChangeCallback = std::function<void(int)>;
+    // Fired for actions that carry a payload (SendHostKeys, RunHostCommand).
+    // The menu closes first, like for any other action.
+    using PayloadActionCallback = std::function<void(MenuAction, const QString&)>;
 
     explicit OverlayMenuPanel(QWindow* parent = nullptr,
                               OverlayWindowMode windowMode = OverlayWindowMode::Detached);
@@ -133,6 +162,10 @@ public:
     }
     void setBitrateChangeCallback(BitrateChangeCallback cb) {
         m_BitrateChangeCallback = std::move(cb);
+    }
+    void setPayloadActionCallback(PayloadActionCallback cb)
+    {
+        m_PayloadActionCallback = std::move(cb);
     }
 
     // Human-readable bitrate label shared with toast/log formatting.
@@ -179,6 +212,14 @@ public:
                               std::vector<RemoteUsbDevice> devices,
                               const QString& activeDeviceId,
                               const QString& detail);
+    // "Send Keys" level: built-in special keys, then the user's key macros
+    void updateSendKeys(std::vector<SendKeyItem> specialKeys, std::vector<SendKeyItem> macros);
+    // "Host Commands" level, shown only when the host supports super commands
+    // (Foundation Sunshine). An empty list shows a setup hint instead.
+    void updateHostCommands(bool supported, std::vector<HostCommandItem> commands);
+    // Opens the Host Commands level of the visible menu. Returns false when
+    // the menu is hidden or the host has no super command support.
+    bool showHostCommandsLevel();
     // 手柄在位状态、UI 风格、swapFaceButtons 与退出组合键 glyph 文案：菜单
     // 打开前由 Session 推送，任一变化即重建菜单级（手柄专属条目与按键提示
     // 跟着变）
@@ -302,12 +343,20 @@ private:
     std::vector<RemoteUsbDevice> m_RemoteUsbDevices;
     QString m_RemoteUsbActiveDeviceId;
     QString m_RemoteUsbDetail;
+    std::vector<SendKeyItem> m_SpecialKeyItems;
+    std::vector<SendKeyItem> m_KeyMacroItems;
+    bool m_HostCommandsSupported = false;
+    std::vector<HostCommandItem> m_HostCommands;
+    // Indices of the host action levels in m_MenuLevels, -1 when absent
+    int m_SendKeysLevel = -1;
+    int m_HostCommandsLevel = -1;
 
     ActionCallback m_ActionCallback;
     CloseCallback  m_CloseCallback;
     RemoteUsbDeviceCallback m_RemoteUsbDeviceCallback;
     RemoteUsbReleaseCallback m_RemoteUsbReleaseCallback;
     BitrateChangeCallback m_BitrateChangeCallback;
+    PayloadActionCallback m_PayloadActionCallback;
 
     // Bitrate slider state. m_BitrateKbps is the on-screen value;
     // m_CommittedBitrateKbps is the last value sent to the callback.

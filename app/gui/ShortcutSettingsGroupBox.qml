@@ -86,9 +86,10 @@ GroupBox {
                 }
 
                 ToolTip.delay: 1000
-                ToolTip.timeout: 5000
+                ToolTip.timeout: 10000
                 ToolTip.visible: hovered
-                ToolTip.text: qsTr("Changes every shortcut that still uses its default key combination.")
+                ToolTip.text: qsTr("Changes every shortcut that still uses its default key combination.") + "\n\n" +
+                              qsTr("NOTE: Ctrl+Alt is also how AltGr is reported on some keyboard layouts, so Ctrl+Alt shortcuts can trigger while typing.")
             }
         }
 

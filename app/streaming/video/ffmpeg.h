@@ -56,6 +56,8 @@ private:
 
     void addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst);
 
+    void publishStatsWindow(VIDEO_STATS& recent, VIDEO_STATS& completed, double bitrateMbps);
+
     bool createFrontendRenderer(PDECODER_PARAMETERS params, bool useAlternateFrontend);
 
     static

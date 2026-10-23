@@ -197,6 +197,9 @@ SOURCES += \
     gui/computermodel.cpp \
     gui/appmodel.cpp \
     streaming/bandwidth.cpp \
+    streaming/stats/statsmath.cpp \
+    streaming/stats/streamstatsmodel.cpp \
+    streaming/stats/videostatsbridge.cpp \
     streaming/streamutils.cpp \
     backend/autoupdatechecker.cpp \
     path.cpp \
@@ -235,6 +238,10 @@ HEADERS += \
     gui/appmodel.h \
     streaming/video/decoder.h \
     streaming/bandwidth.h \
+    streaming/stats/statsmath.h \
+    streaming/stats/statssnapshot.h \
+    streaming/stats/streamstatsmodel.h \
+    streaming/stats/videostatsbridge.h \
     streaming/streamutils.h \
     backend/autoupdatechecker.h \
     path.h \

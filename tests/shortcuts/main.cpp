@@ -92,7 +92,8 @@ bool testParseAndFormat(QTextStream& err)
     ok &= require(ShortcutBinding(k_CtrlAlt, 88).toDisplayString() ==
                       QLatin1String("Ctrl+Alt+Num Enter"),
                   QStringLiteral("keypad display string changed"), err);
-    ok &= require(ShortcutBinding(k_CtrlAlt, 89).toDisplayString() == QLatin1String("Ctrl+Alt+Num 1"),
+    ok &= require(ShortcutBinding(k_CtrlAlt, 89).toDisplayString() ==
+                      QLatin1String("Ctrl+Alt+Num 1"),
                   QStringLiteral("generated keypad display string changed"), err);
 
     return ok;
@@ -139,18 +140,24 @@ bool testQtConversion(QTextStream& err)
                       ShortcutKeys::AudioPlay,
                   QStringLiteral("Qt media key fallback failed"), err);
 
-    // The native code wins over the layout-dependent Qt::Key: on AZERTY, the
-    // key labeled Q sits where QWERTY has A.
+    // Latin letters follow the character, as the matcher does: the AZERTY key
+    // labeled Q (physically QWERTY A) captures as Q. Other keys, including
+    // non-latin letters (here Cyrillic ef, 0x444), use the native position.
+    const int cyrillicEf = 0x0444;
 #if defined(Q_OS_WIN32)
-    ok &= require(ShortcutKeys::fromQtKeyEvent(Qt::Key_Q, 0x1E) == ShortcutKeys::letter('A'),
-                  QStringLiteral("Windows scan code was not preferred"), err);
+    ok &= require(ShortcutKeys::fromQtKeyEvent(Qt::Key_Q, 0x1E) == ShortcutKeys::letter('Q'),
+                  QStringLiteral("latin character was not preferred"), err);
+    ok &= require(ShortcutKeys::fromQtKeyEvent(cyrillicEf, 0x1E) == ShortcutKeys::letter('A'),
+                  QStringLiteral("Windows scan code was not used"), err);
     ok &= require(ShortcutKeys::fromQtKeyEvent(Qt::Key_Up, 0x148) == 82,
                   QStringLiteral("Windows extended scan code failed"), err);
     ok &= require(ShortcutKeys::fromQtKeyEvent(Qt::Key_F13, 0x64) == ShortcutKeys::F13,
                   QStringLiteral("Windows F13 scan code failed"), err);
 #elif defined(Q_OS_UNIX) && !defined(Q_OS_DARWIN)
-    ok &= require(ShortcutKeys::fromQtKeyEvent(Qt::Key_Q, 30 + 8) == ShortcutKeys::letter('A'),
-                  QStringLiteral("evdev key code was not preferred"), err);
+    ok &= require(ShortcutKeys::fromQtKeyEvent(Qt::Key_Q, 30 + 8) == ShortcutKeys::letter('Q'),
+                  QStringLiteral("latin character was not preferred"), err);
+    ok &= require(ShortcutKeys::fromQtKeyEvent(cyrillicEf, 30 + 8) == ShortcutKeys::letter('A'),
+                  QStringLiteral("evdev key code was not used"), err);
     ok &= require(ShortcutKeys::fromQtKeyEvent(Qt::Key_Up, 103 + 8) == 82,
                   QStringLiteral("evdev arrow key failed"), err);
     ok &= require(ShortcutKeys::fromQtKeyEvent(Qt::Key_F13, 183 + 8) == ShortcutKeys::F13,
@@ -158,8 +165,12 @@ bool testQtConversion(QTextStream& err)
 #elif defined(Q_OS_DARWIN)
     ok &= require(ShortcutKeys::fromQtKeyEvent(Qt::Key_Q, 0x00) == ShortcutKeys::letter('Q'),
                   QStringLiteral("missing macOS key code did not fall back"), err);
-    ok &= require(ShortcutKeys::fromQtKeyEvent(Qt::Key_A, 0x0C) == ShortcutKeys::letter('Q'),
-                  QStringLiteral("macOS key code was not preferred"), err);
+    ok &= require(ShortcutKeys::fromQtKeyEvent(Qt::Key_A, 0x0C) == ShortcutKeys::letter('A'),
+                  QStringLiteral("latin character was not preferred"), err);
+    ok &= require(ShortcutKeys::fromQtKeyEvent(cyrillicEf, 0x0C) == ShortcutKeys::letter('Q'),
+                  QStringLiteral("macOS key code was not used"), err);
+#else
+    Q_UNUSED(cyrillicEf);
 #endif
 
 #ifndef Q_OS_DARWIN
@@ -329,7 +340,8 @@ bool testPersistence(QTextStream& err)
         loaded.load(settings);
         ok &= require(loaded.bindings(quit) ==
                           QVector<ShortcutBinding>(
-                              { ShortcutBinding(), ShortcutBinding(k_CtrlAlt, ShortcutKeys::F1 + 1) }),
+                              { ShortcutBinding(),
+                                ShortcutBinding(k_CtrlAlt, ShortcutKeys::F1 + 1) }),
                       QStringLiteral("malformed slot handling failed"), err);
     }
 
@@ -342,11 +354,16 @@ bool testMatcher(QTextStream& err)
 
     const QString stats = QLatin1String(ShortcutActions::ToggleStatsOverlay);
     const QString mouse = QLatin1String(ShortcutActions::ToggleMouseMode);
+    const QString quit = QLatin1String(ShortcutActions::Quit);
     const int s = ShortcutKeys::letter('S');
     const int q = ShortcutKeys::letter('Q');
+    const int a = ShortcutKeys::letter('A');
+    const int none = ShortcutKeys::Unknown;
+    const quint8 noMods = ShortcutBinding::ModNone;
 
     int statsCount = 0;
     int mouseCount = 0;
+    int quitCount = 0;
     ShortcutDispatcher dispatcher;
     dispatcher.setHandler(stats, [&] { statsCount++; });
     dispatcher.setHandler(mouse, [&] { mouseCount++; });
@@ -355,47 +372,86 @@ bool testMatcher(QTextStream& err)
     ShortcutMatcher matcher;
     matcher.setProfile(profile);
 
-    ok &= require(matcher.processKeyEvent(s, k_CtrlAltShift, true, false, dispatcher) &&
+    // On QWERTY the character and the position agree
+    ok &= require(matcher.processKeyEvent(s, s, k_CtrlAltShift, true, false, dispatcher) &&
                       statsCount == 1,
                   QStringLiteral("shortcut did not fire"), err);
-    ok &= require(matcher.processKeyEvent(s, k_CtrlAltShift, true, true, dispatcher) &&
+    ok &= require(matcher.processKeyEvent(s, s, k_CtrlAltShift, true, true, dispatcher) &&
                       statsCount == 1,
                   QStringLiteral("repeat was not swallowed or fired again"), err);
     // Modifiers released first: the key-up must still be swallowed
-    ok &= require(matcher.processKeyEvent(s, ShortcutBinding::ModNone, false, false, dispatcher),
+    ok &= require(matcher.processKeyEvent(s, s, noMods, false, false, dispatcher),
                   QStringLiteral("key-up was not swallowed"), err);
-    ok &= require(!matcher.processKeyEvent(s, ShortcutBinding::ModNone, false, false, dispatcher),
+    ok &= require(!matcher.processKeyEvent(s, s, noMods, false, false, dispatcher),
                   QStringLiteral("second key-up was swallowed"), err);
 
-    ok &= require(!matcher.processKeyEvent(s, ShortcutBinding::ModCtrl | ShortcutBinding::ModShift,
+    ok &= require(!matcher.processKeyEvent(s, s,
+                                           ShortcutBinding::ModCtrl | ShortcutBinding::ModShift,
                                            true, false, dispatcher) &&
-                      !matcher.processKeyEvent(s, k_CtrlAltShift | ShortcutBinding::ModGui, true,
+                      !matcher.processKeyEvent(s, s, k_CtrlAltShift | ShortcutBinding::ModGui, true,
                                                false, dispatcher) &&
                       statsCount == 1,
                   QStringLiteral("modifier subset or superset matched"), err);
-    ok &= require(!matcher.processKeyEvent(s, ShortcutBinding::ModNone, false, false, dispatcher),
+    ok &= require(!matcher.processKeyEvent(s, s, noMods, false, false, dispatcher),
                   QStringLiteral("unmatched key-up was swallowed"), err);
 
-    ok &= require(!matcher.processKeyEvent(q, k_CtrlAltShift, true, false, dispatcher),
+    ok &= require(!matcher.processKeyEvent(q, q, k_CtrlAltShift, true, false, dispatcher),
                   QStringLiteral("action without a handler was swallowed"), err);
-    ok &= require(matcher.actionFor(key(k_CtrlAltShift, 'Q')) ==
-                      QLatin1String(ShortcutActions::Quit) &&
+    ok &= require(matcher.actionFor(key(k_CtrlAltShift, 'Q')) == quit &&
                       matcher.actionFor(key(k_CtrlAltShift, 'Q'), &dispatcher).isEmpty(),
                   QStringLiteral("actionFor handler filtering failed"), err);
 
     // A lost key-up (focus change) must not swallow the next plain press
-    matcher.processKeyEvent(s, k_CtrlAltShift, true, false, dispatcher);
-    ok &= require(!matcher.processKeyEvent(s, ShortcutBinding::ModNone, true, false, dispatcher) &&
-                      !matcher.processKeyEvent(s, ShortcutBinding::ModNone, false, false,
-                                               dispatcher),
+    matcher.processKeyEvent(s, s, k_CtrlAltShift, true, false, dispatcher);
+    ok &= require(!matcher.processKeyEvent(s, s, noMods, true, false, dispatcher) &&
+                      !matcher.processKeyEvent(s, s, noMods, false, false, dispatcher),
                   QStringLiteral("stale swallowed key leaked into normal typing"), err);
     statsCount = 0;
+
+    // AZERTY: the physical A key types "q" and must trigger Quit; its key-up
+    // (same scancode) must be swallowed.
+    dispatcher.setHandler(quit, [&] { quitCount++; });
+    ok &= require(matcher.processKeyEvent(a, q, k_CtrlAltShift, true, false, dispatcher) &&
+                      quitCount == 1,
+                  QStringLiteral("AZERTY q did not trigger quit"), err);
+    ok &= require(matcher.processKeyEvent(a, q, noMods, false, false, dispatcher),
+                  QStringLiteral("AZERTY q key-up was not swallowed"), err);
+    // The physical Q key types "a", which has no binding, so like the original
+    // combo code it falls back to the Q position
+    ok &= require(matcher.processKeyEvent(q, a, k_CtrlAltShift, true, false, dispatcher) &&
+                      quitCount == 2,
+                  QStringLiteral("unmatched character did not fall back to the scancode"), err);
+    ok &= require(matcher.processKeyEvent(q, a, noMods, false, false, dispatcher),
+                  QStringLiteral("scancode fallback key-up was not swallowed"), err);
+
+    // Non-latin layout: no latin character, so the physical position matches
+    ok &= require(matcher.processKeyEvent(q, none, k_CtrlAltShift, true, false, dispatcher) &&
+                      quitCount == 3,
+                  QStringLiteral("non-latin layout did not fall back to the scancode"), err);
+    matcher.reset();
+
+    // Collision: Mouse mode is bound to the A position as well. On AZERTY the
+    // physical A key types "q", and the character pass must win, so it is
+    // Quit (not Mouse mode via the scancode). The physical Q key types "a",
+    // which is Mouse mode by character, even though Q is Quit's position.
+    profile.setBinding(mouse, 1, key(k_CtrlAltShift, 'A'));
+    matcher.setProfile(profile);
+    ok &= require(matcher.processKeyEvent(a, q, k_CtrlAltShift, true, false, dispatcher) &&
+                      quitCount == 4 && mouseCount == 0,
+                  QStringLiteral("scancode binding shadowed a character binding"), err);
+    ok &= require(matcher.processKeyEvent(q, a, k_CtrlAltShift, true, false, dispatcher) &&
+                      quitCount == 4 && mouseCount == 1,
+                  QStringLiteral("character binding lost to a scancode binding"), err);
+    matcher.reset();
+    profile.resetAll();
+    dispatcher.removeHandler(quit);
+    mouseCount = 0;
 
     // Conflicts: the first action that has a handler wins
     profile.setBinding(mouse, 1, key(k_CtrlAltShift, 'S'));
     dispatcher.removeHandler(stats);
     matcher.setProfile(profile);
-    ok &= require(matcher.processKeyEvent(s, k_CtrlAltShift, true, false, dispatcher) &&
+    ok &= require(matcher.processKeyEvent(s, s, k_CtrlAltShift, true, false, dispatcher) &&
                       mouseCount == 1 && statsCount == 0,
                   QStringLiteral("conflict did not fall through to the handled action"), err);
     matcher.reset();
@@ -403,20 +459,19 @@ bool testMatcher(QTextStream& err)
     // Disabled and bare bindings
     profile.resetAll();
     profile.setBinding(mouse, 0, ShortcutBinding());
-    profile.setBinding(mouse, 1, ShortcutBinding(ShortcutBinding::ModNone, ShortcutKeys::F13));
+    profile.setBinding(mouse, 1, ShortcutBinding(noMods, ShortcutKeys::F13));
     matcher.setProfile(profile);
-    ok &= require(!matcher.processKeyEvent(ShortcutKeys::letter('M'), k_CtrlAltShift, true, false,
-                                           dispatcher),
+    const int m = ShortcutKeys::letter('M');
+    ok &= require(!matcher.processKeyEvent(m, m, k_CtrlAltShift, true, false, dispatcher),
                   QStringLiteral("disabled binding still fired"), err);
-    ok &= require(matcher.processKeyEvent(ShortcutKeys::F13, ShortcutBinding::ModNone, true, false,
+    ok &= require(matcher.processKeyEvent(ShortcutKeys::F13, none, noMods, true, false,
                                           dispatcher) &&
                       mouseCount == 2,
                   QStringLiteral("bare F13 did not fire"), err);
 
     // The handler may reset or reconfigure the matcher while it runs
     dispatcher.setHandler(mouse, [&] { matcher.reset(); });
-    ok &= require(matcher.processKeyEvent(ShortcutKeys::F13, ShortcutBinding::ModNone, true, false,
-                                          dispatcher),
+    ok &= require(matcher.processKeyEvent(ShortcutKeys::F13, none, noMods, true, false, dispatcher),
                   QStringLiteral("reentrant reset broke matching"), err);
 
     ok &= require(!dispatcher.trigger(QStringLiteral("no-such-action")) &&

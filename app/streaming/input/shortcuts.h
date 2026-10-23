@@ -3,10 +3,14 @@
 // Customizable keyboard shortcuts.
 //
 // This file deliberately depends only on QtCore (no SDL, no QtGui) so it can be
-// unit tested on its own. Key positions are SDL2 scancode values, which are USB
-// HID usage IDs for the regular keyboard block. They are layout independent:
-// a binding names a physical key position, not the character printed on it.
-// keyboard.cpp static_asserts that the values below match SDL's.
+// unit tested on its own. Keys are stored as SDL2 scancode values, which are USB
+// HID usage IDs for the regular keyboard block. keyboard.cpp static_asserts that
+// the values below match SDL's.
+//
+// Letter and digit keys follow the character on the key, like the original
+// Ctrl+Alt+Shift combos: a binding on Q fires for the key that types "q" in the
+// current layout (on AZERTY, the physical A key). Only when no binding matches
+// that way, e.g. on non-latin layouts, is the physical key position used.
 
 #include <QHash>
 #include <QSet>
@@ -59,14 +63,16 @@ QString toToken(int scancode);
 int fromToken(const QString& token);
 
 bool isModifierKey(int scancode);
+bool isLatinKey(int scancode); // A-Z and 0-9, matched by character first
 bool isFunctionKey(int scancode); // F1-F24
 bool isExtendedFunctionKey(int scancode); // F13-F24
 bool isMediaKey(int scancode);
 
-// Converts a Qt key event (from QML or QKeyEvent) into a scancode. The native
-// scan code is used where its meaning is known (Windows, X11/Wayland, macOS),
-// so captured bindings are layout independent like SDL's. Otherwise, the
-// Qt::Key is mapped to its US layout position.
+// Converts a Qt key event (from QML or QKeyEvent) into a scancode, the same
+// way the matcher sees SDL key events: a latin letter or digit maps to the US
+// position of that character. Other keys use the native scan code where its
+// meaning is known (Windows, X11/Wayland, macOS), and fall back to mapping the
+// Qt::Key to its US layout position.
 int fromQtKeyEvent(int qtKey, quint32 nativeScanCode);
 }
 
@@ -266,10 +272,20 @@ public:
     QString actionFor(const ShortcutBinding& binding,
                       const ShortcutDispatcher* dispatcher = nullptr) const;
 
-    // Feeds one key event. Returns true when the event belongs to a shortcut
-    // and must not be forwarded: the key-down that triggered it, its repeats,
-    // and the matching key-up. Triggers the action on the initial key-down.
-    bool processKeyEvent(int scancode, quint8 modifiers, bool pressed, bool repeat,
+    // Feeds one key event. latinKey is the US layout scancode of the character
+    // the key types in the current layout (its keysym) when that is a latin
+    // letter or digit, or Unknown otherwise.
+    //
+    // Matching runs in two passes, as the original combo code did: first every
+    // binding is compared with latinKey, then, only if none matched, with the
+    // physical scancode. Doing all character matches first keeps a binding
+    // that matches by character from being shadowed by another binding whose
+    // physical key happens to be the one pressed.
+    //
+    // Returns true when the event belongs to a shortcut and must not be
+    // forwarded: the key-down that triggered it, its repeats, and the matching
+    // key-up. Triggers the action on the initial key-down.
+    bool processKeyEvent(int scancode, int latinKey, quint8 modifiers, bool pressed, bool repeat,
                          const ShortcutDispatcher& dispatcher);
 
     // Forgets keys being swallowed (e.g. after losing keyboard focus)

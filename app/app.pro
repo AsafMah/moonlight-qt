@@ -366,6 +366,13 @@ HEADERS += \
     pipwbackground.h \
     uifont.h
 
+# PyroWave (experimental). The runtime is loaded at run time, never linked, so
+# these files build on every platform.
+SOURCES += \
+    streaming/video/pyrowave/pyrowaveruntime.cpp
+HEADERS += \
+    streaming/video/pyrowave/pyrowaveruntime.h
+
 # Conditional files for non-Steam Link builds
 !config_SL: SOURCES += streaming/micstream.cpp
 !config_SL: HEADERS += streaming/micstream.h

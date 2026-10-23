@@ -20,10 +20,10 @@ struct StatsWindow
     // Stream description at the time of the window
     int width = 0;
     int height = 0;
-    int targetFps = 0;        // negotiated stream frame rate
-    QString codec;            // e.g. "HEVC 10-bit HDR"
-    QString decoder;          // e.g. "hevc (d3d11va)"
-    QString renderer;         // IFFmpegRenderer::getRendererName()
+    int targetFps = 0; // negotiated stream frame rate
+    QString codec;     // e.g. "HEVC 10-bit HDR"
+    QString decoder;   // e.g. "hevc (d3d11va)"
+    QString renderer;  // IFFmpegRenderer::getRendererName()
     bool hardwareDecode = false;
 
     // Frame counters
@@ -71,11 +71,11 @@ struct StatsWindow
 // estimate. Every value is an average in milliseconds.
 struct LatencyBreakdown
 {
-    double hostMs = 0;      // capture + encode on the host (reported over RTP)
-    double networkMs = 0;   // half the round trip time
-    double decodeMs = 0;    // decode queue + decode
-    double queueMs = 0;     // Pacer queue
-    double renderMs = 0;    // render, including V-sync wait where the renderer blocks
+    double hostMs = 0;    // capture + encode on the host (reported over RTP)
+    double networkMs = 0; // half the round trip time
+    double decodeMs = 0;  // decode queue + decode
+    double queueMs = 0;   // Pacer queue
+    double renderMs = 0;  // render, including V-sync wait where the renderer blocks
 
     bool hasHost = false;    // the host reported processing latency
     bool hasNetwork = false; // an RTT estimate exists
@@ -86,12 +86,12 @@ struct LatencyBreakdown
 // Frame pacing as seen at present time
 struct FrameTimeSummary
 {
-    size_t samples = 0;         // number of frame times the values come from
+    size_t samples = 0; // number of frame times the values come from
     double averageMs = 0;
     double maxMs = 0;
-    double p99Ms = 0;           // 99th percentile frame time
-    double p999Ms = 0;          // 99.9th percentile frame time
-    double fps = 0;             // 1000 / averageMs
+    double p99Ms = 0;                 // 99th percentile frame time
+    double p999Ms = 0;                // 99.9th percentile frame time
+    double fps = 0;                   // 1000 / averageMs
     double onePercentLowFps = 0;      // 1000 / p99Ms
     double pointOnePercentLowFps = 0; // 1000 / p999Ms
 };
@@ -134,9 +134,9 @@ struct StatsSnapshot
     bool hasRtt = false;
     uint32_t rttMs = 0;
     uint32_t rttVarianceMs = 0;
-    double jitterMs = 0;            // RFC 3550 interarrival jitter of video frames
-    double networkLossPercent = 0;  // frames lost by the network
-    double pacerDropPercent = 0;    // decoded frames dropped by the Pacer
+    double jitterMs = 0;           // RFC 3550 interarrival jitter of video frames
+    double networkLossPercent = 0; // frames lost by the network
+    double pacerDropPercent = 0;   // decoded frames dropped by the Pacer
     double bitrateMbps = std::nan("");
     uint32_t videoPackets = 0;
     uint32_t fecPackets = 0;
@@ -144,7 +144,7 @@ struct StatsSnapshot
     int64_t fecUnrecoverablePackets = -1;
 
     // Per-stage averages over the last two windows
-    double reassemblyMs = 0;     // first to last packet of a frame
+    double reassemblyMs = 0; // first to last packet of a frame
     double hostMinMs = 0;
     double hostMaxMs = 0;
     LatencyBreakdown latency;

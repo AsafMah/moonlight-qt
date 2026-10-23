@@ -75,5 +75,5 @@ private:
     uint64_t m_SessionFramesNetworkDropped = 0;
     uint64_t m_SessionFramesPacerDropped = 0;
 
-    std::atomic<uint64_t> m_Sequence { 0 };
+    std::atomic<uint64_t> m_Sequence{ 0 };
 };

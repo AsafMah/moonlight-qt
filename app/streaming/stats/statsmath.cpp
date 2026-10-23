@@ -86,9 +86,7 @@ LatencyBreakdown estimateLatency(const StatsWindow& window)
     return latency;
 }
 
-PresentTimeRing::PresentTimeRing(size_t capacity) : m_Buffer(std::max(capacity, size_t(2)), 0)
-{
-}
+PresentTimeRing::PresentTimeRing(size_t capacity) : m_Buffer(std::max(capacity, size_t(2)), 0) {}
 
 void PresentTimeRing::add(uint64_t presentUs)
 {
@@ -140,9 +138,7 @@ std::vector<double> PresentTimeRing::frameTimesMs(uint64_t sinceUs, uint64_t max
     return frameTimes;
 }
 
-FrameTimeHistogram::FrameTimeHistogram() : m_Buckets(BucketCount, 0)
-{
-}
+FrameTimeHistogram::FrameTimeHistogram() : m_Buckets(BucketCount, 0) {}
 
 void FrameTimeHistogram::add(double frameTimeMs)
 {
@@ -154,8 +150,7 @@ void FrameTimeHistogram::add(double frameTimeMs)
     const double position = std::ceil(frameTimeMs / BucketMs) - 1;
     if (position >= BucketCount) {
         m_Overflow++;
-    }
-    else {
+    } else {
         m_Buckets[static_cast<size_t>(std::max(position, 0.0))]++;
     }
 
@@ -227,8 +222,7 @@ void JitterEstimator::addFrame(uint64_t arrivalUs, uint32_t rtpTimestamp)
             // A stall or a host-side reset; start over from this frame rather
             // than letting one outlier dominate the estimate for seconds
             m_JitterUs = 0;
-        }
-        else {
+        } else {
             const double deviation = std::fabs(static_cast<double>(transitDeltaUs));
             m_JitterUs += (deviation - m_JitterUs) / 16.0;
         }

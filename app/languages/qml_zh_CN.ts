@@ -3231,6 +3231,123 @@
     </message>
 </context>
 <context>
+    <name>ShortcutModel</name>
+    <message>
+        <source>Also used by: %1</source>
+        <translation>与以下操作冲突：%1</translation>
+    </message>
+</context>
+<context>
+    <name>ShortcutSettingsCard</name>
+    <message>
+        <source>Keyboard shortcuts</source>
+        <translation>键盘快捷键</translation>
+    </message>
+    <message>
+        <source>Click a shortcut, then press the new key combination. Esc cancels and Backspace removes the shortcut. Shortcuts follow key positions, so they keep working when you switch keyboard layouts.</source>
+        <translation>点击快捷键后按下新的组合键。Esc 取消，Backspace 删除该快捷键。快捷键按物理键位匹配，切换键盘布局后依然有效。</translation>
+    </message>
+    <message>
+        <source>Default modifier keys</source>
+        <translation>默认修饰键</translation>
+    </message>
+    <message>
+        <source>Changes every shortcut that still uses its default key combination.</source>
+        <translation>同时修改所有仍在使用默认组合键的快捷键。</translation>
+    </message>
+    <message>
+        <source>Use Ctrl, Alt or the Windows/Command key with this key. Only F13-F24 and media keys work on their own.</source>
+        <translation>此键需要配合 Ctrl、Alt 或 Windows/Command 键使用。只有 F13-F24 和媒体键可以单独使用。</translation>
+    </message>
+    <message>
+        <source>Press keys...</source>
+        <translation>请按下按键...</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>无</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation>重置</translation>
+    </message>
+    <message>
+        <source>Reset all shortcuts</source>
+        <translation>重置所有快捷键</translation>
+    </message>
+    <message>
+        <source>Restores every default shortcut and the Ctrl+Alt+Shift modifier keys.</source>
+        <translation>恢复所有默认快捷键和 Ctrl+Alt+Shift 修饰键。</translation>
+    </message>
+    <message>
+        <source>Reset all</source>
+        <translation>全部重置</translation>
+    </message>
+</context>
+<context>
+    <name>Shortcuts</name>
+    <message>
+        <source>Disconnect from host</source>
+        <translation>断开与主机的连接</translation>
+    </message>
+    <message>
+        <source>Session</source>
+        <translation>会话</translation>
+    </message>
+    <message>
+        <source>Disconnect and quit Moonlight</source>
+        <translation>断开连接并退出 Moonlight</translation>
+    </message>
+    <message>
+        <source>Toggle full-screen</source>
+        <translation>切换全屏</translation>
+    </message>
+    <message>
+        <source>Window</source>
+        <translation>窗口</translation>
+    </message>
+    <message>
+        <source>Minimize window</source>
+        <translation>最小化窗口</translation>
+    </message>
+    <message>
+        <source>Toggle performance stats</source>
+        <translation>切换性能统计</translation>
+    </message>
+    <message>
+        <source>Show or hide the overlay menu</source>
+        <translation>显示或隐藏悬浮菜单</translation>
+    </message>
+    <message>
+        <source>Toggle mouse and keyboard capture</source>
+        <translation>切换鼠标和键盘捕获</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>输入</translation>
+    </message>
+    <message>
+        <source>Toggle remote desktop mouse mode</source>
+        <translation>切换远程桌面鼠标模式</translation>
+    </message>
+    <message>
+        <source>Show or hide the local cursor</source>
+        <translation>显示或隐藏本地光标</translation>
+    </message>
+    <message>
+        <source>Toggle pointer region lock</source>
+        <translation>切换指针区域锁定</translation>
+    </message>
+    <message>
+        <source>Toggle system keyboard shortcut capture</source>
+        <translation>切换系统快捷键捕获</translation>
+    </message>
+    <message>
+        <source>Type clipboard text on the host</source>
+        <translation>在主机上输入剪贴板文本</translation>
+    </message>
+</context>
+<context>
     <name>StreamSegue</name>
     <message>
         <source>Resuming %1...</source>

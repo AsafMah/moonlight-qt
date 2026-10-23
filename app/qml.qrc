@@ -62,5 +62,6 @@
         <file>gui/settings/TechPhrase.qml</file>
         <file>gui/settings/EcosystemCapabilityGroup.qml</file>
         <file>gui/settings/CommunityLicenseNotice.qml</file>
+        <file>gui/settings/ShortcutSettingsCard.qml</file>
     </qresource>
 </RCC>

@@ -154,10 +154,7 @@ public:
         return m_OverlayManager;
     }
 
-    StreamStatsModel& getStatsModel()
-    {
-        return m_StatsModel;
-    }
+    StreamStatsModel& getStatsModel() { return m_StatsModel; }
 
     void flushWindowEvents();
 

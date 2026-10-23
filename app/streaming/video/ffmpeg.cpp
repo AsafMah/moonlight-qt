@@ -792,9 +792,8 @@ void FFmpegVideoDecoder::publishStatsWindow(VIDEO_STATS& recent, VIDEO_STATS& co
     }
     VideoStatsBridge::readRtpCounters(window);
 
-    Session::get()->getStatsModel().publishWindow(window,
-                                                  VideoStatsBridge::toStatsWindow(completed),
-                                                  LiGetMicroseconds());
+    Session::get()->getStatsModel().publishWindow(
+        window, VideoStatsBridge::toStatsWindow(completed), LiGetMicroseconds());
 }
 
 void FFmpegVideoDecoder::addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst)

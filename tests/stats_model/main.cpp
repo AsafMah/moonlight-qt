@@ -52,21 +52,21 @@ bool testPercentile(QTextStream& err)
     std::vector<double> copy = values;
     ok &= require(StatsMath::percentile(copy, 0.99) == 99, QStringLiteral("p99 of 1..100"), err);
     copy = values;
-    ok &= require(StatsMath::percentile(copy, 0.999) == 100, QStringLiteral("p99.9 of 1..100"),
-                  err);
+    ok &=
+        require(StatsMath::percentile(copy, 0.999) == 100, QStringLiteral("p99.9 of 1..100"), err);
     copy = values;
     ok &= require(StatsMath::percentile(copy, 0.5) == 50, QStringLiteral("median of 1..100"), err);
     copy = values;
-    ok &= require(StatsMath::percentile(copy, 0) == 1, QStringLiteral("p0 is not the minimum"), err);
+    ok &=
+        require(StatsMath::percentile(copy, 0) == 1, QStringLiteral("p0 is not the minimum"), err);
     copy = values;
     ok &= require(StatsMath::percentile(copy, 1.5) == 100,
                   QStringLiteral("p > 1 is not clamped to the maximum"), err);
 
     std::vector<double> empty;
-    ok &= require(StatsMath::percentile(empty, 0.99) == 0, QStringLiteral("empty percentile"),
-                  err);
+    ok &= require(StatsMath::percentile(empty, 0.99) == 0, QStringLiteral("empty percentile"), err);
 
-    std::vector<double> single { 7.5 };
+    std::vector<double> single{ 7.5 };
     ok &= require(StatsMath::percentile(single, 0.99) == 7.5,
                   QStringLiteral("single sample percentile"), err);
 
@@ -175,8 +175,8 @@ bool testFrameTimeHistogram(QTextStream& err)
 
     histogram.add(-1);
     histogram.add(std::nan(""));
-    ok &= require(histogram.count() == 1002, QStringLiteral("invalid frame times were counted"),
-                  err);
+    ok &=
+        require(histogram.count() == 1002, QStringLiteral("invalid frame times were counted"), err);
 
     histogram.clear();
     ok &= require(histogram.count() == 0 && histogram.percentileMs(0.99) == 0,
@@ -325,8 +325,7 @@ bool testModel(QTextStream& err)
     ok &= require(near(snapshot.frameTimes.onePercentLowFps, 1000.0 / 8.333, 1e-6),
                   describe("model 1% low", snapshot.frameTimes.onePercentLowFps, 120), err);
     ok &= require(near(snapshot.frameTimes.pointOnePercentLowFps, 20, 1e-9),
-                  describe("model 0.1% low", snapshot.frameTimes.pointOnePercentLowFps, 20),
-                  err);
+                  describe("model 0.1% low", snapshot.frameTimes.pointOnePercentLowFps, 20), err);
     ok &= require(snapshot.sessionFrameTimes.samples == 999,
                   QStringLiteral("session histogram missed frames"), err);
     ok &= require(snapshot.frameTimeHistoryMs.size() == StreamStatsModel::FrameTimeHistoryLength &&

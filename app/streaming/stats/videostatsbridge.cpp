@@ -97,8 +97,7 @@ int formatMetrics(const StatsSnapshot& snapshot, const VIDEO_STATS& stats, bool 
     if (frameTimes.samples > 0) {
         snprintf(lowsString, sizeof(lowsString), "%.1f/%.1f FPS", frameTimes.onePercentLowFps,
                  frameTimes.pointOnePercentLowFps);
-    }
-    else {
+    } else {
         snprintf(lowsString, sizeof(lowsString), "N/A");
     }
 
@@ -117,14 +116,8 @@ int formatMetrics(const StatsSnapshot& snapshot, const VIDEO_STATS& stats, bool 
                     "Frame rate 1%%/0.1%% lows: %s\n"
                     "Network jitter: %.2f ms\n"
                     "Estimated latency: %.1f ms (%s%sdecode %.1f + queue %.1f + render %.1f)\n",
-                    lowsString,
-                    snapshot.jitterMs,
-                    latency.totalMs(),
-                    hostString,
-                    networkString,
-                    latency.decodeMs,
-                    latency.queueMs,
-                    latency.renderMs);
+                    lowsString, snapshot.jitterMs, latency.totalMs(), hostString, networkString,
+                    latency.decodeMs, latency.queueMs, latency.renderMs);
 }
 
 } // namespace VideoStatsBridge

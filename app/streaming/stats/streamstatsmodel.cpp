@@ -2,9 +2,7 @@
 
 #include <algorithm>
 
-StreamStatsModel::StreamStatsModel() : m_Presents(PresentRingCapacity)
-{
-}
+StreamStatsModel::StreamStatsModel() : m_Presents(PresentRingCapacity) {}
 
 void StreamStatsModel::recordFrameArrival(uint64_t receiveTimeUs, uint32_t rtpTimestamp)
 {

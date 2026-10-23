@@ -178,24 +178,31 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
 }
 
 // Shortcut bindings store SDL2 scancodes without depending on SDL
-static_assert(SDL_SCANCODE_A == ShortcutKeys::A && SDL_SCANCODE_Z == ShortcutKeys::Z,
+static constexpr bool isShortcutScancode(SDL_Scancode sdlScancode, int shortcutScancode)
+{
+    return static_cast<int>(sdlScancode) == shortcutScancode;
+}
+static_assert(isShortcutScancode(SDL_SCANCODE_A, ShortcutKeys::A) &&
+                  isShortcutScancode(SDL_SCANCODE_Z, ShortcutKeys::Z) &&
+                  isShortcutScancode(SDL_SCANCODE_1, ShortcutKeys::Num1) &&
+                  isShortcutScancode(SDL_SCANCODE_0, ShortcutKeys::Num0) &&
+                  isShortcutScancode(SDL_SCANCODE_F1, ShortcutKeys::F1) &&
+                  isShortcutScancode(SDL_SCANCODE_F12, ShortcutKeys::F12) &&
+                  isShortcutScancode(SDL_SCANCODE_F13, ShortcutKeys::F13) &&
+                  isShortcutScancode(SDL_SCANCODE_F24, ShortcutKeys::F24) &&
+                  isShortcutScancode(SDL_SCANCODE_MUTE, ShortcutKeys::Mute) &&
+                  isShortcutScancode(SDL_SCANCODE_VOLUMEUP, ShortcutKeys::VolumeUp) &&
+                  isShortcutScancode(SDL_SCANCODE_VOLUMEDOWN, ShortcutKeys::VolumeDown) &&
+                  isShortcutScancode(SDL_SCANCODE_LCTRL, ShortcutKeys::LeftCtrl) &&
+                  isShortcutScancode(SDL_SCANCODE_RGUI, ShortcutKeys::RightGui) &&
+                  isShortcutScancode(SDL_SCANCODE_AUDIONEXT, ShortcutKeys::AudioNext) &&
+                  isShortcutScancode(SDL_SCANCODE_AUDIOPREV, ShortcutKeys::AudioPrev) &&
+                  isShortcutScancode(SDL_SCANCODE_AUDIOSTOP, ShortcutKeys::AudioStop) &&
+                  isShortcutScancode(SDL_SCANCODE_AUDIOPLAY, ShortcutKeys::AudioPlay) &&
+                  isShortcutScancode(SDL_SCANCODE_AUDIOMUTE, ShortcutKeys::AudioMute),
               "Shortcut scancodes must match SDL");
-static_assert(SDL_SCANCODE_1 == ShortcutKeys::Num1 && SDL_SCANCODE_0 == ShortcutKeys::Num0,
-              "Shortcut scancodes must match SDL");
-static_assert(SDL_SCANCODE_F1 == ShortcutKeys::F1 && SDL_SCANCODE_F12 == ShortcutKeys::F12,
-              "Shortcut scancodes must match SDL");
-static_assert(SDL_SCANCODE_F13 == ShortcutKeys::F13 && SDL_SCANCODE_F24 == ShortcutKeys::F24,
-              "Shortcut scancodes must match SDL");
-static_assert(SDL_SCANCODE_LCTRL == ShortcutKeys::LeftCtrl &&
-                  SDL_SCANCODE_RGUI == ShortcutKeys::RightGui,
-              "Shortcut scancodes must match SDL");
-static_assert(SDL_SCANCODE_MUTE == ShortcutKeys::Mute &&
-                  SDL_SCANCODE_VOLUMEDOWN == ShortcutKeys::VolumeDown,
-              "Shortcut scancodes must match SDL");
-static_assert(SDL_SCANCODE_AUDIONEXT == ShortcutKeys::AudioNext &&
-                  SDL_SCANCODE_AUDIOMUTE == ShortcutKeys::AudioMute,
-              "Shortcut scancodes must match SDL");
-static_assert(SDL_NUM_SCANCODES <= ShortcutKeys::MaxScancode, "Shortcut scancodes must match SDL");
+static_assert(static_cast<int>(SDL_NUM_SCANCODES) <= ShortcutKeys::MaxScancode,
+              "Shortcut scancodes must fit");
 
 static quint8 shortcutModifiers(Uint16 mod)
 {

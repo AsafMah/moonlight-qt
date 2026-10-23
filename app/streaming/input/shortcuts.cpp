@@ -493,6 +493,11 @@ bool ShortcutKeys::isModifierKey(int scancode)
     return scancode >= LeftCtrl && scancode <= RightGui;
 }
 
+bool ShortcutKeys::isLatinKey(int scancode)
+{
+    return (scancode >= A && scancode <= Z) || (scancode >= Num1 && scancode <= Num0);
+}
+
 bool ShortcutKeys::isFunctionKey(int scancode)
 {
     return (scancode >= F1 && scancode <= F12) || isExtendedFunctionKey(scancode);
@@ -522,6 +527,11 @@ bool ShortcutKeys::isMediaKey(int scancode)
 
 int ShortcutKeys::fromQtKeyEvent(int qtKey, quint32 nativeScanCode)
 {
+    // Latin letters and digits are matched by character (see shortcuts.h)
+    if ((qtKey >= Qt::Key_A && qtKey <= Qt::Key_Z) || (qtKey >= Qt::Key_0 && qtKey <= Qt::Key_9)) {
+        return fromQtKey(qtKey);
+    }
+
     if (nativeScanCode != 0) {
         const int scancode = fromNativeScanCode(nativeScanCode);
         if (scancode != Unknown) {
@@ -618,7 +628,8 @@ QString ShortcutBinding::toDisplayString() const
     }
     else if (key.isEmpty()) {
         const NamedKey* named = findNamedKey(scancode);
-        key = named != nullptr ? QString::fromUtf8(named->display) : ShortcutKeys::toToken(scancode);
+        key = named != nullptr ? QString::fromUtf8(named->display)
+                               : ShortcutKeys::toToken(scancode);
     }
     parts.append(key);
 
@@ -963,8 +974,8 @@ QString ShortcutMatcher::actionFor(const ShortcutBinding& binding,
     return QString();
 }
 
-bool ShortcutMatcher::processKeyEvent(int scancode, quint8 modifiers, bool pressed, bool repeat,
-                                      const ShortcutDispatcher& dispatcher)
+bool ShortcutMatcher::processKeyEvent(int scancode, int latinKey, quint8 modifiers, bool pressed,
+                                      bool repeat, const ShortcutDispatcher& dispatcher)
 {
     if (!pressed) {
         // Swallow the key-up that belongs to a swallowed key-down
@@ -979,8 +990,15 @@ bool ShortcutMatcher::processKeyEvent(int scancode, quint8 modifiers, bool press
     // focus moved to another window), so start over.
     m_SwallowedKeys.remove(scancode);
 
-    const QString actionId =
-        actionFor(ShortcutBinding(modifiers & ShortcutBinding::ModAll, scancode), &dispatcher);
+    // Character pass over all bindings, then the physical key pass
+    const quint8 exactModifiers = modifiers & ShortcutBinding::ModAll;
+    QString actionId;
+    if (ShortcutKeys::isLatinKey(latinKey)) {
+        actionId = actionFor(ShortcutBinding(exactModifiers, latinKey), &dispatcher);
+    }
+    if (actionId.isEmpty()) {
+        actionId = actionFor(ShortcutBinding(exactModifiers, scancode), &dispatcher);
+    }
     if (actionId.isEmpty()) {
         return false;
     }

@@ -64,3 +64,10 @@ set_target_properties(pyrowave-shared PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "$<1:${PYROWAVE_RUNTIME_OUTPUT_DIR}>"
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${PYROWAVE_RUNTIME_OUTPUT_DIR}/lib>"
     PDB_OUTPUT_DIRECTORY "$<1:${PYROWAVE_RUNTIME_OUTPUT_DIR}>")
+
+# The Visual Studio generators leave targets of an EXCLUDE_FROM_ALL directory
+# out of the top-level solution, so "cmake --build --target pyrowave-shared"
+# can't find the project. A top-level target that depends on the runtime puts
+# it back in the solution for every generator. It isn't part of ALL either.
+add_custom_target(pyrowave-runtime)
+add_dependencies(pyrowave-runtime pyrowave-shared)

@@ -34,7 +34,10 @@ public:
         VCC_FORCE_H264,
         VCC_FORCE_HEVC,
         VCC_FORCE_HEVC_HDR_DEPRECATED, // Kept for backwards compatibility
-        VCC_FORCE_AV1
+        VCC_FORCE_AV1,
+        // Experimental and explicit opt-in only: VCC_AUTO never selects it.
+        // Append new values after this one so saved settings keep loading.
+        VCC_FORCE_PYROWAVE
     };
     Q_ENUM(VideoCodecConfig)
 

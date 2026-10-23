@@ -414,6 +414,12 @@ private:
     int m_ActiveVideoHeight;
     int m_ActiveVideoFrameRate;
 
+    // PyroWave is selected and its preflight passed, so it is advertised
+    // (see PyrowaveVideoDecoder) with H.264 as the fallback. YUV 4:4:4 is
+    // then locked off, and HDR is left to PyroWave's own negotiation.
+    bool m_PyrowaveRequested = false;
+    bool m_PyrowaveFallbackNoticeShown = false;
+
     OpusMSDecoder* m_OpusDecoder;
     IAudioRenderer* m_AudioRenderer;
     DualSenseHapticsRenderer* m_DualSenseHapticsRenderer;

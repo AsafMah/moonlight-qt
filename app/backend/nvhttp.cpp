@@ -23,6 +23,7 @@
 #define LAUNCH_TIMEOUT_MS 120000
 #define RESUME_TIMEOUT_MS 30000
 #define QUIT_TIMEOUT_MS 30000
+#define SUPERCMD_TIMEOUT_MS 10000
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 #define XML_NAME_EQUALS(x, y) ((x) == (y))
@@ -337,6 +338,24 @@ NvHTTP::quitApp()
     }
 }
 
+bool NvHTTP::sendSuperCmd(const QString& cmdId)
+{
+    // Foundation Sunshine detaches the command and answers right away with
+    // <supercmd>1</supercmd>, also for an unknown id (it only logs those).
+    QString response = openConnectionToString(
+        m_BaseUrlHttps, "supercmd", "cmdId=" + QString::fromLatin1(QUrl::toPercentEncoding(cmdId)),
+        SUPERCMD_TIMEOUT_MS);
+
+    // Throws if the request failed
+    verifyResponseStatus(response);
+
+    const QString result = getXmlString(response, "supercmd");
+    if (result.isNull()) {
+        throw GfeHttpResponseException(-1, "Missing supercmd in host response");
+    }
+    return result.trimmed() != QLatin1String("0");
+}
+
 QVector<NvDisplayMode>
 NvHTTP::getDisplayModeList(QString serverInfo)
 {
@@ -410,6 +429,13 @@ NvHTTP::getAppList()
                 }
                 else if (XML_NAME_EQUALS(name, "IsAppCollectorGame")) {
                     apps.last().isAppCollectorGame = xmlReader.readElementText() == "1";
+                } else if (XML_NAME_EQUALS(name, "SuperCmds")) {
+                    // Foundation Sunshine only (see backend/supercmds.h)
+                    NvApp& app = apps.last();
+                    app.superCmdsSupported = true;
+                    if (!SuperCmds::parse(xmlReader.readElementText(), app.superCmds)) {
+                        qWarning() << "Ignoring malformed SuperCmds for app" << app.id;
+                    }
                 }
             }
         }

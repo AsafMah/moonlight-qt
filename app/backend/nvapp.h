@@ -1,5 +1,7 @@
 #pragma once
 
+#include "supercmds.h"
+
 #include <QSettings>
 
 class NvApp
@@ -10,12 +12,10 @@ public:
 
     bool operator==(const NvApp& other) const
     {
-        return id == other.id &&
-                name == other.name &&
-                hdrSupported == other.hdrSupported &&
-                isAppCollectorGame == other.isAppCollectorGame &&
-                hidden == other.hidden &&
-                directLaunch == other.directLaunch;
+        return id == other.id && name == other.name && hdrSupported == other.hdrSupported &&
+               isAppCollectorGame == other.isAppCollectorGame && hidden == other.hidden &&
+               directLaunch == other.directLaunch &&
+               superCmdsSupported == other.superCmdsSupported && superCmds == other.superCmds;
     }
 
     bool operator!=(const NvApp& other) const
@@ -39,6 +39,11 @@ public:
     bool isAppCollectorGame = false;
     bool hidden = false;
     bool directLaunch = false;
+
+    // Foundation Sunshine super commands (see supercmds.h). Supported means
+    // the host sent a <SuperCmds> element for this app, even an empty one.
+    bool superCmdsSupported = false;
+    QVector<SuperCmd> superCmds;
 };
 
 Q_DECLARE_METATYPE(NvApp)

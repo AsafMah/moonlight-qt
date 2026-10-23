@@ -228,6 +228,7 @@ macx {
 SOURCES += \
     backend/nvaddress.cpp \
     backend/nvapp.cpp \
+    backend/supercmds.cpp \
     cli/pair.cpp \
     main.cpp \
     backend/computerseeker.cpp \
@@ -299,6 +300,7 @@ HEADERS += \
     SDL_compat.h \
     backend/nvaddress.h \
     backend/nvapp.h \
+    backend/supercmds.h \
     backend/usbforwardingenvironment.h \
     backend/usbforwardingbackend.h \
     backend/usbforwardinglocalserver.h \

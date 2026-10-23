@@ -79,6 +79,10 @@ signals:
     void hostStatusChanged();
     void gpuCheckChanged();
 
+private slots:
+    // Called on the GUI thread when the capability check finishes.
+    void publishGpuCheck(int state, const QString& summary, const QString& report);
+
 private:
     explicit PyrowaveStatus(QObject* parent = nullptr);
 

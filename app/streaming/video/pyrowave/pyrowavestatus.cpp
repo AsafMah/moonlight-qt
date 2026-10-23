@@ -6,7 +6,40 @@
 
 #include <QLocale>
 #include <QMetaObject>
+#include <QRunnable>
 #include <QThreadPool>
+
+namespace {
+
+// Runs the capability check on a pool thread and hands plain values back to
+// the GUI thread through a queued call.
+class CapabilityCheckTask : public QRunnable
+{
+public:
+    explicit CapabilityCheckTask(PyrowaveStatus* status) : m_Status(status) {}
+
+    void run() override
+    {
+        const PyrowaveCapabilityReport report = probePyrowaveCapabilities();
+
+        // Translate and format on the worker; only plain values cross back.
+        // A failure to read the GPUs is reported apart from a missing feature.
+        int state = PyrowaveStatus::GpuCheckUnavailable;
+        if (report.failure == PyrowaveCapabilityReport::Failure::None) {
+            state = report.anyDeviceMeetsPrerequisites() ? PyrowaveStatus::GpuCheckPassed
+                                                         : PyrowaveStatus::GpuCheckFailed;
+        }
+
+        QMetaObject::invokeMethod(m_Status, "publishGpuCheck", Qt::QueuedConnection,
+                                  Q_ARG(int, state), Q_ARG(QString, report.summary()),
+                                  Q_ARG(QString, report.toText()));
+    }
+
+private:
+    PyrowaveStatus* m_Status;
+};
+
+}
 
 PyrowaveStatus* PyrowaveStatus::get()
 {
@@ -64,24 +97,15 @@ void PyrowaveStatus::runCapabilityCheck()
     m_GpuCheckSummary = tr("Checking Vulkan capabilities...");
     emit gpuCheckChanged();
 
-    QThreadPool::globalInstance()->start([this]() {
-        const PyrowaveCapabilityReport report = probePyrowaveCapabilities();
+    // A QRunnable subclass rather than a lambda: QThreadPool::start() only
+    // takes a functor from Qt 5.15, and the Steam Link build uses older Qt.
+    QThreadPool::globalInstance()->start(new CapabilityCheckTask(this));
+}
 
-        // Translate and format on the worker; only plain values cross back.
-        // A failure to read the GPUs is reported apart from a missing feature.
-        int state = GpuCheckUnavailable;
-        if (report.failure == PyrowaveCapabilityReport::Failure::None) {
-            state = report.anyDeviceMeetsPrerequisites() ? GpuCheckPassed : GpuCheckFailed;
-        }
-        const QString summary = report.summary();
-        const QString text = report.toText();
-
-        auto publish = [this, state, summary, text]() {
-            m_GpuCheckState = state;
-            m_GpuCheckSummary = summary;
-            m_CapabilityReport = text;
-            emit gpuCheckChanged();
-        };
-        QMetaObject::invokeMethod(this, publish, Qt::QueuedConnection);
-    });
+void PyrowaveStatus::publishGpuCheck(int state, const QString& summary, const QString& report)
+{
+    m_GpuCheckState = state;
+    m_GpuCheckSummary = summary;
+    m_CapabilityReport = report;
+    emit gpuCheckChanged();
 }

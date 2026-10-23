@@ -102,7 +102,14 @@ SettingsCard {
                                                               shortcutCard.captureSlot === index
                             readonly property bool conflicted: actionItem.conflicts[index] !== ""
 
-                            width: 150
+                            // 按最长的常见组合定宽，各行对齐且按键名不被截断
+                            TextMetrics {
+                                id: longestBinding
+                                font: bindingButton.font
+                                text: "Ctrl+Alt+Shift+Win+PgDn"
+                            }
+
+                            width: Math.max(150, Math.ceil(longestBinding.width) + leftPadding + rightPadding)
                             primary: capturing
                             font.family: Theme.fontMono
                             font.bold: false

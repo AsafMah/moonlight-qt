@@ -227,11 +227,9 @@ static int shortcutLatinKey(SDL_Keycode sym)
 {
     if (sym >= SDLK_a && sym <= SDLK_z) {
         return ShortcutKeys::A + (sym - SDLK_a);
-    }
-    else if (sym >= SDLK_1 && sym <= SDLK_9) {
+    } else if (sym >= SDLK_1 && sym <= SDLK_9) {
         return ShortcutKeys::Num1 + (sym - SDLK_1);
-    }
-    else if (sym == SDLK_0) {
+    } else if (sym == SDLK_0) {
         return ShortcutKeys::Num0;
     }
     return ShortcutKeys::Unknown;
@@ -260,11 +258,10 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
     // if nothing matched, so non-latin layouts still have working shortcuts.
     // The exact set of modifiers must match, and both the key-down and key-up
     // of a shortcut key are kept from the host.
-    if (m_ShortcutMatcher.processKeyEvent(event->keysym.scancode,
-                                          shortcutLatinKey(event->keysym.sym),
-                                          shortcutModifiers(event->keysym.mod),
-                                          event->state == SDL_PRESSED, event->repeat != 0,
-                                          m_ShortcutDispatcher)) {
+    if (m_ShortcutMatcher.processKeyEvent(
+            event->keysym.scancode, shortcutLatinKey(event->keysym.sym),
+            shortcutModifiers(event->keysym.mod), event->state == SDL_PRESSED, event->repeat != 0,
+            m_ShortcutDispatcher)) {
         return;
     }
 

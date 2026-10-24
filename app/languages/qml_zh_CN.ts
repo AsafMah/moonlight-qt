@@ -2126,6 +2126,162 @@
         <source>Diagnostics</source>
         <translation>诊断</translation>
     </message>
+    <message>
+        <source>Where the menu opens</source>
+        <translation>菜单打开位置</translation>
+    </message>
+    <message>
+        <source>Follow the position above, or open the menu somewhere else. Drag the menu by its title bar to choose a spot of your own.</source>
+        <translation>沿用上面的位置，或在别处打开菜单。拖动菜单标题栏可以自选位置。</translation>
+    </message>
+    <message>
+        <source>Follow the position above (default)</source>
+        <translation>跟随上面的位置（默认）</translation>
+    </message>
+    <message>
+        <source>Centered</source>
+        <translation>居中</translation>
+    </message>
+    <message>
+        <source>At the pointer</source>
+        <translation>鼠标所在处</translation>
+    </message>
+    <message>
+        <source>Bottom edge</source>
+        <translation>底部边缘</translation>
+    </message>
+    <message>
+        <source>Top-left corner</source>
+        <translation>左上角</translation>
+    </message>
+    <message>
+        <source>Top-right corner</source>
+        <translation>右上角</translation>
+    </message>
+    <message>
+        <source>Bottom-left corner</source>
+        <translation>左下角</translation>
+    </message>
+    <message>
+        <source>Bottom-right corner</source>
+        <translation>右下角</translation>
+    </message>
+    <message>
+        <source>Left side panel</source>
+        <translation>左侧面板</translation>
+    </message>
+    <message>
+        <source>Right side panel</source>
+        <translation>右侧面板</translation>
+    </message>
+    <message>
+        <source>Where I last dragged it</source>
+        <translation>上次拖动到的位置</translation>
+    </message>
+    <message>
+        <source>Dragged position</source>
+        <translation>拖动的位置</translation>
+    </message>
+    <message>
+        <source>Forget where the menu was dragged to.</source>
+        <translation>忘记菜单被拖动到的位置。</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation>重置</translation>
+    </message>
+    <message>
+        <source>Menu layout</source>
+        <translation>菜单布局</translation>
+    </message>
+    <message>
+        <source>Compact (default)</source>
+        <translation>紧凑（默认）</translation>
+    </message>
+    <message>
+        <source>Comfortable: bigger rows for a TV or gamepad</source>
+        <translation>宽松：更大的行，适合电视或手柄</translation>
+    </message>
+    <message>
+        <source>Side panel: tabs in a column</source>
+        <translation>侧边栏：标签页竖向排列</translation>
+    </message>
+    <message>
+        <source>Menu scale</source>
+        <translation>菜单缩放</translation>
+    </message>
+    <message>
+        <source>Menu opacity</source>
+        <translation>菜单不透明度</translation>
+    </message>
+    <message>
+        <source>Always show</source>
+        <translation>始终显示</translation>
+    </message>
+    <message>
+        <source>Never show</source>
+        <translation>从不显示</translation>
+    </message>
+    <message>
+        <source>Screen edge trigger</source>
+        <translation>屏幕边缘触发</translation>
+    </message>
+    <message>
+        <source>Open the menu when the pointer rests on an edge or corner of the stream while the mouse is free.</source>
+        <translation>鼠标未被捕获时，指针停在串流画面的边缘或角落即打开菜单。</translation>
+    </message>
+    <message>
+        <source>On</source>
+        <translation>开</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>关</translation>
+    </message>
+    <message>
+        <source>Trigger edge or corner</source>
+        <translation>触发的边缘或角落</translation>
+    </message>
+    <message>
+        <source>Trigger delay</source>
+        <translation>触发延迟</translation>
+    </message>
+    <message>
+        <source>Hold the shortcut to peek</source>
+        <translation>按住快捷键临时查看</translation>
+    </message>
+    <message>
+        <source>Holding the overlay menu shortcut shows the menu until you let go. Use the menu meanwhile and it stays open.</source>
+        <translation>按住悬浮菜单快捷键时显示菜单，松开即关闭。期间操作过菜单则保持打开。</translation>
+    </message>
+    <message>
+        <source>Esc and gamepad B</source>
+        <translation>Esc 与手柄 B 键</translation>
+    </message>
+    <message>
+        <source>Go back one level (default)</source>
+        <translation>返回上一级（默认）</translation>
+    </message>
+    <message>
+        <source>Close the menu</source>
+        <translation>关闭菜单</translation>
+    </message>
+    <message>
+        <source>Gamepad button</source>
+        <translation>手柄按键</translation>
+    </message>
+    <message>
+        <source>Hold it to open the menu while Gamepad Mouse is off.</source>
+        <translation>关闭手柄鼠标时，长按此键打开菜单。</translation>
+    </message>
+    <message>
+        <source>Hold Start (default)</source>
+        <translation>长按 Start（默认）</translation>
+    </message>
+    <message>
+        <source>Hold Back / Select</source>
+        <translation>长按 Back / Select</translation>
+    </message>
 </context>
 <context>
     <name>NvHTTP</name>
@@ -2424,6 +2580,58 @@
     <message>
         <source>No stats yet</source>
         <translation>暂无统计</translation>
+    </message>
+    <message>
+        <source>Menu Layout</source>
+        <translation>菜单布局</translation>
+    </message>
+    <message>
+        <source>Centered</source>
+        <translation>居中</translation>
+    </message>
+    <message>
+        <source>At the pointer</source>
+        <translation>鼠标所在处</translation>
+    </message>
+    <message>
+        <source>Bottom edge</source>
+        <translation>底部边缘</translation>
+    </message>
+    <message>
+        <source>Top-left corner</source>
+        <translation>左上角</translation>
+    </message>
+    <message>
+        <source>Top-right corner</source>
+        <translation>右上角</translation>
+    </message>
+    <message>
+        <source>Bottom-left corner</source>
+        <translation>左下角</translation>
+    </message>
+    <message>
+        <source>Bottom-right corner</source>
+        <translation>右下角</translation>
+    </message>
+    <message>
+        <source>Left side panel</source>
+        <translation>左侧面板</translation>
+    </message>
+    <message>
+        <source>Right side panel</source>
+        <translation>右侧面板</translation>
+    </message>
+    <message>
+        <source>Comfortable</source>
+        <translation>宽松</translation>
+    </message>
+    <message>
+        <source>Side panel</source>
+        <translation>侧边栏</translation>
+    </message>
+    <message>
+        <source>Scale %1%</source>
+        <translation>缩放 %1%</translation>
     </message>
 </context>
 <context>

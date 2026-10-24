@@ -238,6 +238,10 @@ jobs:
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat overlay_toast_event_state overlay_toast_event_state
         if errorlevel 1 exit /b %ERRORLEVEL%
+        call scripts\run-test.bat stats_model stats_model
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        call scripts\run-test.bat stats_overlay_layout stats_overlay_layout
+        if errorlevel 1 exit /b %ERRORLEVEL%
         rem overlay_menu_navigation 用 QTest 合成鼠标事件,CI 无桌面会话,必须 offscreen
         set QT_QPA_PLATFORM=offscreen
         call scripts\run-test.bat overlay_menu_navigation overlay_menu_navigation

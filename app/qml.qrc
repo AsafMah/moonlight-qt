@@ -13,6 +13,7 @@
         <file>gui/WindowControlButton.qml</file>
         <file>gui/NavigableItemDelegate.qml</file>
         <file>gui/NavigableMenuItem.qml</file>
+        <file>gui/ShortcutSettingsGroupBox.qml</file>
         <file>gui/CliQuitStreamSegue.qml</file>
         <file>gui/CliStartStreamSegue.qml</file>
         <file>gui/AutoResizingComboBox.qml</file>
@@ -62,5 +63,6 @@
         <file>gui/settings/TechPhrase.qml</file>
         <file>gui/settings/EcosystemCapabilityGroup.qml</file>
         <file>gui/settings/CommunityLicenseNotice.qml</file>
+        <file>gui/settings/ShortcutSettingsCard.qml</file>
     </qresource>
 </RCC>

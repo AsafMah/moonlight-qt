@@ -85,6 +85,7 @@ static QString getStartupApplicationDir(const char* argv0)
 #include "utils.h"
 #include "gui/computermodel.h"
 #include "gui/appmodel.h"
+#include "gui/shortcutmodel.h"
 #include "backend/autoupdatechecker.h"
 #include "backend/computermanager.h"
 #include "backend/systemproperties.h"
@@ -96,6 +97,7 @@ static QString getStartupApplicationDir(const char* argv0)
 #include "streaming/waylandqtsdlbridge.h"
 #endif
 #include "settings/streamingpreferences.h"
+#include "settings/statsoverlaysettings.h"
 #include "gui/sdlgamepadkeynavigation.h"
 #include "gui/windowplacement.h"
 #include "gui/windowswindowchrome.h"
@@ -1358,6 +1360,9 @@ int main(int argc, char *argv[])
                                                 [](QQmlEngine*, QJSEngine*) -> QObject* {
                                                     return new AutoUpdateChecker();
                                                 });
+    qmlRegisterSingletonType<ShortcutModel>(
+        "ShortcutModel", 1, 0, "ShortcutModel",
+        [](QQmlEngine*, QJSEngine*) -> QObject* { return new ShortcutModel(); });
     qmlRegisterSingletonType<SystemProperties>("SystemProperties", 1, 0,
                                                "SystemProperties",
                                                [](QQmlEngine*, QJSEngine*) -> QObject* {
@@ -1390,6 +1395,9 @@ int main(int argc, char *argv[])
                                                    [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                                        return StreamingPreferences::get(qmlEngine);
                                                    });
+    qmlRegisterSingletonType<StatsOverlaySettings>(
+        "StatsOverlaySettings", 1, 0, "StatsOverlaySettings",
+        [](QQmlEngine*, QJSEngine*) -> QObject* { return new StatsOverlaySettings(); });
     qmlRegisterSingletonType<PyrowaveStatus>(
         "PyrowaveStatus", 1, 0, "PyrowaveStatus", [](QQmlEngine*, QJSEngine*) -> QObject* {
             // Static singleton; QML must not delete it.

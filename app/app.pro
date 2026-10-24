@@ -251,6 +251,7 @@ SOURCES += \
     streaming/input/gamepad.cpp \
     streaming/input/input.cpp \
     streaming/input/keyboard.cpp \
+    streaming/input/shortcuts.cpp \
     streaming/input/mouse.cpp \
     streaming/input/touchpad.cpp \
     streaming/input/reltouch.cpp \
@@ -266,7 +267,11 @@ SOURCES += \
     streaming/audio/renderers/sdlaud.cpp \
     streaming/bandwidth.cpp \
     gui/computermodel.cpp \
+    gui/shortcutmodel.cpp \
     gui/appmodel.cpp \
+    streaming/stats/statsmath.cpp \
+    streaming/stats/streamstatsmodel.cpp \
+    streaming/stats/videostatsbridge.cpp \
     streaming/streamutils.cpp \
     backend/autoupdatechecker.cpp \
     backend/portableupdateinstaller.cpp \
@@ -281,6 +286,13 @@ SOURCES += \
     streaming/video/overlaybuttonposition.cpp \
     streaming/video/overlaymenubutton.cpp \
     streaming/video/overlaytoast.cpp \
+    streaming/video/overlaystatspreset.cpp \
+    streaming/video/overlaystatslayout.cpp \
+    streaming/video/overlaystatswindow.cpp \
+    streaming/video/overlaystatstooltip.cpp \
+    streaming/video/overlaystatscontroller.cpp \
+    streaming/sessionstatsoverlay.cpp \
+    settings/statsoverlaysettings.cpp \
     backend/systemproperties.cpp \
     backend/usbforwardingenvironment.cpp \
     backend/usbforwardingbackend.cpp \
@@ -340,9 +352,15 @@ HEADERS += \
     streaming/audio/dualsensehapticsstream.h \
     streaming/audio/renderers/sdl.h \
     gui/computermodel.h \
+    gui/shortcutmodel.h \
+    streaming/input/shortcuts.h \
     gui/appmodel.h \
     streaming/video/decoder.h \
     streaming/bandwidth.h \
+    streaming/stats/statsmath.h \
+    streaming/stats/statssnapshot.h \
+    streaming/stats/streamstatsmodel.h \
+    streaming/stats/videostatsbridge.h \
     streaming/streamutils.h \
     backend/autoupdatechecker.h \
     backend/portableupdateinstaller.h \
@@ -361,6 +379,13 @@ HEADERS += \
     streaming/video/overlaymenubutton.h \
     streaming/video/overlaytoasteventstate.h \
     streaming/video/overlaytoast.h \
+    streaming/video/overlaystatspreset.h \
+    streaming/video/overlaystatslayout.h \
+    streaming/video/overlaystatsfonts.h \
+    streaming/video/overlaystatswindow.h \
+    streaming/video/overlaystatstooltip.h \
+    streaming/video/overlaystatscontroller.h \
+    settings/statsoverlaysettings.h \
     backend/systemproperties.h \
     imageutils.h \
     pipwbackground.h \

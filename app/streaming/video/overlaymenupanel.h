@@ -19,6 +19,8 @@
 #include <vector>
 
 #include "streaming/input/gamepadglyphs.h"
+#include "streaming/input/shortcuts.h"
+#include "overlaystatspreset.h"
 #include "overlaywindowpolicy.h"
 
 /**
@@ -42,7 +44,8 @@ class OverlayMenuPanel : public OverlayRasterWindow
 {
     Q_OBJECT
 public:
-    enum class MenuAction {
+    enum class MenuAction
+    {
         // Quick actions (keyboard shortcuts)
         Quit,
         QuitAndExit,
@@ -69,6 +72,15 @@ public:
         SetMenuPlacementLeft,
         SetMenuPlacementButton,
         SetMenuPlacementDisabled,
+        // Performance overlay (OverlayStatsController). OpenStatsOverlay marks
+        // the submenu entry; it is never dispatched.
+        OpenStatsOverlay,
+        SetStatsPresetOff,
+        SetStatsPresetMinimal,
+        SetStatsPresetCompact,
+        SetStatsPresetDetailed,
+        SetStatsPresetCustom,
+        EditStatsOverlayPosition,
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         OpenStylusReplayPanel,
 #endif
@@ -137,6 +149,10 @@ public:
     // Human-readable bitrate label shared with toast/log formatting.
     static QString formatBitrateKbps(int kbps);
 
+    // Shortcut action (see ShortcutActions) behind a quick action, or empty.
+    // The session triggers these through the input handler's dispatcher.
+    static QString shortcutActionId(MenuAction action);
+
     // Position the panel at the right edge of the given Qt logical parent rect.
     void showAtRightEdge(int parentX, int parentY, int parentW, int parentH,
                          std::optional<QPoint> pointerGlobalPosition = std::nullopt,
@@ -167,6 +183,12 @@ public:
     void updateMicrophoneState(bool enabled);
     void updateBitrateState(int bitrateKbps);
     void updateMenuPositionState(MenuAction activePlacementAction);
+    // Marks the active performance overlay preset. canEditPosition is false
+    // where the overlay falls back to the in-renderer text.
+    void updateStatsOverlayState(StatsOverlay::Preset preset, bool canEditPosition);
+
+    // Overlay preset behind a SetStatsPreset* action
+    static std::optional<StatsOverlay::Preset> statsPresetForAction(MenuAction action);
     void updateGamepadMouseState(bool enabled);
     void updateFileMappingState(FileMappingState state, const QString& detail);
     void updateRemoteUsbState(bool available,
@@ -259,6 +281,8 @@ private:
     };
 
     void buildMenuLevels();
+    void applyStatsOverlayState();
+    QString shortcutDetail(MenuAction action) const; // live key binding text
     void navigateToLevel(int level);
     void repositionWindow();
     void showInternal();     // shared show logic after geometry is set
@@ -279,6 +303,12 @@ private:
     void commitBitrateNow();                        // flush pending change to callback
     void refreshBitrateDetails();                   // level-0 detail + preset checkmarks
 
+    // Index of the performance overlay level. It is appended after the
+    // fixed levels, so it is looked up rather than hard-coded.
+    int m_StatsOverlayLevel = -1;
+    StatsOverlay::Preset m_StatsOverlayPreset = StatsOverlay::Preset::Off;
+    bool m_StatsOverlayEditable = true;
+
     std::vector<MenuLevel> m_MenuLevels;
     int  m_CurrentLevel;
     int  m_HoveredIndex;
@@ -287,6 +317,7 @@ private:
     GamepadUiStyle m_GamepadUiStyle;
     bool m_SwapFaceButtons;
     QString m_QuitComboGlyphs;
+    ShortcutProfile m_ShortcutProfile;
     FileMappingState m_FileMappingState;
     QString m_FileMappingDetail;
     bool m_RemoteUsbAvailable;

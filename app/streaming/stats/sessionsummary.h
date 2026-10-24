@@ -18,8 +18,8 @@ struct SessionSummary
 
     QString host;
     QString app;
-    QDateTime startTime; // wall clock, when recording started
-    QDateTime endTime;   // wall clock, when recording stopped
+    QDateTime startTime;     // wall clock, when recording started
+    QDateTime endTime;       // wall clock, when recording stopped
     uint64_t durationUs = 0; // since the first frame arrived
 
     // Stream description from the last window

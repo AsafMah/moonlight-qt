@@ -79,7 +79,9 @@ struct FakeClock
     std::atomic<uint64_t> nowUs{ 10000000 };
     SessionStatsRecorder::Clock clock()
     {
-        return [this] { return nowUs.load(); };
+        return [this] {
+            return nowUs.load();
+        };
     }
 };
 
@@ -240,7 +242,9 @@ bool testCsvFormat(QTextStream& err)
         return false;
     }
 
-    auto field = [&](const char* name) { return fields.at(columns.indexOf(QLatin1String(name))); };
+    auto field = [&](const char* name) {
+        return fields.at(columns.indexOf(QLatin1String(name)));
+    };
     ok &= require(field("timestamp") == QLatin1String("2026-10-24T21:05:03.250+03:00"),
                   QStringLiteral("timestamp is not ISO 8601 with offset: ") + field("timestamp"),
                   err);
@@ -281,9 +285,9 @@ bool testCsvFormat(QTextStream& err)
         auto unknownField = [&](const char* name) {
             return unknownFields.at(columns.indexOf(QLatin1String(name)));
         };
-        for (const char* name : { "rtt_ms", "bitrate_mbps", "latency_host_ms",
-                                  "latency_network_ms", "fec_recovered_frames",
-                                  "fec_unrecoverable_frames", "frametime_p99_ms", "host_min_ms" }) {
+        for (const char* name : { "rtt_ms", "bitrate_mbps", "latency_host_ms", "latency_network_ms",
+                                  "fec_recovered_frames", "fec_unrecoverable_frames",
+                                  "frametime_p99_ms", "host_min_ms" }) {
             ok &= require(unknownField(name).isEmpty(),
                           QStringLiteral("unknown %1 is not empty: %2")
                               .arg(QLatin1String(name), unknownField(name)),
@@ -303,8 +307,8 @@ bool testFileName(QTextStream& err)
     ok &= require(name == QLatin1String("GAMING-PC_Steam_ Big Picture__20261024-210503.csv"),
                   QStringLiteral("file name: ") + name, err);
 
-    const QString odd = SessionStatsRecorder::csvFileName(
-        QStringLiteral("a/b\\c"), QStringLiteral("..."), fixedWallTime());
+    const QString odd = SessionStatsRecorder::csvFileName(QStringLiteral("a/b\\c"),
+                                                          QStringLiteral("..."), fixedWallTime());
     ok &= require(odd == QLatin1String("a_b_c_unknown_20261024-210503.csv"),
                   QStringLiteral("file name: ") + odd, err);
 
@@ -352,7 +356,8 @@ bool testRecorder(QTextStream& err)
         window.bitrateMbps = 40 + 20 * i; // 40, 60, 80
         model.publishWindow(window, window, clock.nowUs);
         ok &= require(recorder.poll(), QStringLiteral("poll missed window %1").arg(i), err);
-        ok &= require(!recorder.poll(), QStringLiteral("poll recorded window %1 twice").arg(i), err);
+        ok &=
+            require(!recorder.poll(), QStringLiteral("poll recorded window %1 twice").arg(i), err);
     }
 
     // Published but not polled: finish() must still pick it up
@@ -369,8 +374,8 @@ bool testRecorder(QTextStream& err)
                       summary.startTime == fixedWallTime(),
                   QStringLiteral("session identity is wrong"), err);
     ok &= require(summary.framesTotal == 480, describe("frames", summary.framesTotal, 480), err);
-    ok &= require(summary.durationUs == 4000000,
-                  describe("duration", summary.durationUs, 4000000), err);
+    ok &= require(summary.durationUs == 4000000, describe("duration", summary.durationUs, 4000000),
+                  err);
 
     ok &= require(!summary.csvPath.isEmpty() &&
                       summary.csvPath.endsWith(QStringLiteral("host_app_20261024-210503.csv")),

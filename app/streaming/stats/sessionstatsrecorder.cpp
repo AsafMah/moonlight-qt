@@ -66,9 +66,7 @@ QString settingsKey()
 
 SessionStatsRecorder::SessionStatsRecorder(const StreamStatsModel& model, Options options,
                                            Clock clock, WallClock wallClock)
-    : m_Model(model),
-      m_Options(std::move(options)),
-      m_Clock(std::move(clock)),
+    : m_Model(model), m_Options(std::move(options)), m_Clock(std::move(clock)),
       m_WallClock(wallClock ? std::move(wallClock) : [] { return QDateTime::currentDateTime(); }),
       m_StartTime(m_WallClock())
 {
@@ -215,8 +213,9 @@ void SessionStatsRecorder::writeRow(const StatsSnapshot& snapshot, uint64_t nowU
     }
 
     // The window was published a little before this poll
-    const qint64 ageMs =
-        nowUs > snapshot.timestampUs ? static_cast<qint64>((nowUs - snapshot.timestampUs) / 1000) : 0;
+    const qint64 ageMs = nowUs > snapshot.timestampUs
+                             ? static_cast<qint64>((nowUs - snapshot.timestampUs) / 1000)
+                             : 0;
     const QDateTime windowTime = m_WallClock().addMSecs(-ageMs);
 
     m_Csv->write(csvRow(snapshot, windowTime).toUtf8());
@@ -289,16 +288,15 @@ QString SessionStatsRecorder::csvRow(const StatsSnapshot& s, const QDateTime& wi
     fields.reserve(43);
     fields << windowTime.toOffsetFromUtc(windowTime.offsetFromUtc()).toString(Qt::ISODateWithMs);
     fields << number(static_cast<double>(s.sessionDurationUs) / 1000000.0, 3);
-    fields << QString::number(s.width) << QString::number(s.height)
-           << QString::number(s.targetFps);
+    fields << QString::number(s.width) << QString::number(s.height) << QString::number(s.targetFps);
     fields << csvField(s.codec) << csvField(s.decoder);
     fields << QString::number(s.hardwareDecode ? 1 : 0);
     fields << number(s.totalFps, 2) << number(s.receivedFps, 2) << number(s.decodedFps, 2)
            << number(s.renderedFps, 2);
     if (hasFrames) {
-        fields << number(frames.averageMs, 3) << number(frames.maxMs, 3)
-               << number(frames.p99Ms, 3) << number(frames.p999Ms, 3)
-               << number(frames.onePercentLowFps, 2) << number(frames.pointOnePercentLowFps, 2);
+        fields << number(frames.averageMs, 3) << number(frames.maxMs, 3) << number(frames.p99Ms, 3)
+               << number(frames.p999Ms, 3) << number(frames.onePercentLowFps, 2)
+               << number(frames.pointOnePercentLowFps, 2);
     } else {
         fields << QString() << QString() << QString() << QString() << QString() << QString();
     }

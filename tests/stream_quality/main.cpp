@@ -108,7 +108,7 @@ bool testNamesDiffAndPath(QTextStream& err)
                       QStringLiteral("3440") + QChar(0x00D7) + QStringLiteral("1440"),
                   "custom name", err);
 
-    const Settings base { 1920, 1080, 60, 20000 };
+    const Settings base{ 1920, 1080, 60, 20000 };
     Settings to = base;
     Change change = diff(base, to);
     ok &= require(!change.any() && choosePath(change, true) == Path::None, "no change", err);
@@ -127,7 +127,8 @@ bool testNamesDiffAndPath(QTextStream& err)
     to.width = 2560;
     to.height = 1440;
     change = diff(base, to);
-    ok &= require(change.resolution && !change.fps && change.needsRestart(), "resolution diff", err);
+    ok &=
+        require(change.resolution && !change.fps && change.needsRestart(), "resolution diff", err);
     ok &= require(choosePath(change, false) == Path::Reconnect, "resolution reconnects", err);
     ok &= require(choosePath(change, true) == Path::LiveResolution,
                   "resolution goes live when supported", err);
@@ -142,8 +143,7 @@ bool testNamesDiffAndPath(QTextStream& err)
 
     ok &= require(bitrateForSwitch(true, 20000, 80000) == 80000, "auto bitrate follows", err);
     ok &= require(bitrateForSwitch(false, 20000, 80000) == 20000, "manual bitrate kept", err);
-    ok &= require(bitrateForSwitch(false, 0, 80000) == 80000, "missing bitrate uses default",
-                  err);
+    ok &= require(bitrateForSwitch(false, 0, 80000) == 80000, "missing bitrate uses default", err);
     return ok;
 }
 } // namespace

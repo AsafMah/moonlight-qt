@@ -2,11 +2,9 @@
 
 #include <algorithm>
 
-namespace StreamQuality
-{
+namespace StreamQuality {
 
-namespace
-{
+namespace {
 constexpr int kMaxDimension = 16384;
 
 bool usableSize(QSize size)
@@ -35,12 +33,12 @@ QVector<ResolutionPreset> resolutionPresets(QSize nativeDisplay, QSize current)
                 return;
             }
         }
-        presets.append({size, native, isCurrent});
+        presets.append({ size, native, isCurrent });
     };
 
     add(nativeDisplay, true, nativeDisplay == current);
-    for (QSize standard : {QSize(3840, 2160), QSize(2560, 1440), QSize(1920, 1080),
-                           QSize(1280, 720)}) {
+    for (QSize standard :
+         { QSize(3840, 2160), QSize(2560, 1440), QSize(1920, 1080), QSize(1280, 720) }) {
         add(standard, false, standard == current);
     }
     add(current, false, true);
@@ -70,10 +68,10 @@ QVector<FpsPreset> fpsPresets(int displayHz, int currentFps)
                 return;
             }
         }
-        presets.append({fps, display, isCurrent});
+        presets.append({ fps, display, isCurrent });
     };
 
-    for (int fps : {30, 60, 90, 120, 144}) {
+    for (int fps : { 30, 60, 90, 120, 144 }) {
         add(fps, false, fps == currentFps);
     }
     add(displayHz, true, displayHz == currentFps);

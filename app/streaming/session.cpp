@@ -3876,7 +3876,8 @@ void Session::updateStreamQualityMenuState()
         SDL_DisplayMode mode;
         SDL_Rect safeArea;
         const int displayIndex = SDL_GetWindowDisplayIndex(m_Window);
-        if (displayIndex >= 0 && StreamUtils::getNativeDesktopMode(displayIndex, &mode, &safeArea)) {
+        if (displayIndex >= 0 &&
+            StreamUtils::getNativeDesktopMode(displayIndex, &mode, &safeArea)) {
             state.nativeResolution = QSize(mode.w, mode.h);
         }
         state.displayHz = StreamUtils::getDisplayRefreshRate(m_Window);
@@ -3910,8 +3911,8 @@ bool Session::applyPendingStreamQualityChange()
     const OverlayMenuPanel::StreamQualityRequest request = *m_PendingStreamQuality;
     m_PendingStreamQuality.reset();
 
-    const StreamQuality::Settings current { m_StreamConfig.width, m_StreamConfig.height,
-                                            m_StreamConfig.fps, m_Preferences->bitrateKbps };
+    const StreamQuality::Settings current{ m_StreamConfig.width, m_StreamConfig.height,
+                                           m_StreamConfig.fps, m_Preferences->bitrateKbps };
     StreamQuality::Settings target = current;
     if (request.resolution.isValid()) {
         target.width = request.resolution.width();
@@ -3929,9 +3930,8 @@ bool Session::applyPendingStreamQualityChange()
         change = StreamQuality::diff(current, target);
     }
 
-    const QString summary = tr("%1 at %2 FPS")
-                                .arg(StreamQuality::resolutionName(target.resolution()))
-                                .arg(target.fps);
+    const QString summary =
+        tr("%1 at %2 FPS").arg(StreamQuality::resolutionName(target.resolution())).arg(target.fps);
 
     if (request.saveAsDefault) {
         // The saved value is the exact stream size, so don't scale it again.
@@ -3962,8 +3962,8 @@ bool Session::applyPendingStreamQualityChange()
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                 "Restarting stream for quality change: %dx%dx%d -> %dx%dx%d (%d kbps)",
-                current.width, current.height, current.fps, target.width, target.height,
-                target.fps, target.bitrateKbps);
+                current.width, current.height, current.fps, target.width, target.height, target.fps,
+                target.bitrateKbps);
 
     // Reconnect fallback: stop the stream and resume the same app with the
     // new configuration. The window, fullscreen state, input handler and
@@ -4093,11 +4093,9 @@ bool Session::tryReconnect(ReconnectReason reason)
                                    .arg(m_StreamConfig.fps)
                                    .arg(remainingSeconds),
                                2500);
-        }
-        else {
-            showStreamingToast(tr("Connection interrupted. Reconnecting... (%1s)")
-                                   .arg(remainingSeconds),
-                               2500);
+        } else {
+            showStreamingToast(
+                tr("Connection interrupted. Reconnecting... (%1s)").arg(remainingSeconds), 2500);
         }
 
         // Run the connection start on a worker thread and pump events while we wait
@@ -4409,18 +4407,10 @@ bool Session::startConnectionAsync()
     try {
         NvHTTP http(m_Computer);
         RemoteStreamConfig remoteStreamConfig(
-            remoteResolution,
-            m_Preferences->remoteResolutionWidth,
-            m_Preferences->remoteResolutionHeight,
-            remoteFps,
-            m_Preferences->remoteFpsRate,
-            originalStreamWidth,
-            originalStreamHeight,
-            maxBrightness,
-            minBrightness,
-            maxAverageBrightness,
-            sdrWhiteBrightness
-        );
+            remoteResolution, m_Preferences->remoteResolutionWidth,
+            m_Preferences->remoteResolutionHeight, remoteFps, m_Preferences->remoteFpsRate,
+            originalStreamWidth, originalStreamHeight, maxBrightness, minBrightness,
+            maxAverageBrightness, sdrWhiteBrightness);
         m_LastClientSdrWhiteNits = sdrWhiteBrightness;
         http.startApp(resumingSession ? "resume" : "launch",
                       m_Computer->isNvidiaServerSoftware,

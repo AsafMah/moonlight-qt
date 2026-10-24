@@ -190,9 +190,8 @@ int main(int argc, char **argv)
 
     // --- Stream Quality: level found by action, pending choice, apply ---
     std::optional<OverlayMenuPanel::StreamQualityRequest> qualityRequest;
-    panel.setStreamQualityCallback([&](const OverlayMenuPanel::StreamQualityRequest& request) {
-        qualityRequest = request;
-    });
+    panel.setStreamQualityCallback(
+        [&](const OverlayMenuPanel::StreamQualityRequest &request) { qualityRequest = request; });
     OverlayMenuPanel::StreamQualityState qualityState;
     qualityState.resolution = QSize(1920, 1080);
     qualityState.fps = 60;
@@ -206,16 +205,20 @@ int main(int argc, char **argv)
     // Level rows: Switch (disabled until a change), 4K, 1440p, 1080p, 720p, ...
     QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
                       QPoint(140, 8 + 32 + 4 + 0 * 38 + 19));
-    if (qualityRequest || !panel.isMenuVisible()) qFatal("unchanged stream quality was applied");
+    if (qualityRequest || !panel.isMenuVisible())
+        qFatal("unchanged stream quality was applied");
     QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
                       QPoint(140, 8 + 32 + 4 + 2 * 38 + 19));
-    if (qualityRequest || !panel.isMenuVisible()) qFatal("picking a resolution closed the menu");
+    if (qualityRequest || !panel.isMenuVisible())
+        qFatal("picking a resolution closed the menu");
     QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
                       QPoint(140, 8 + 32 + 4 + 0 * 38 + 19));
     if (!qualityRequest || qualityRequest->resolution != QSize(2560, 1440) ||
         qualityRequest->fps != 60 || qualityRequest->saveAsDefault)
         qFatal("stream quality switch did not report 1440p60");
-    for (int i = 0; i < 40 && panel.isVisible(); i++) QTest::qWait(50);
-    if (panel.isVisible()) qFatal("applying stream quality did not close the menu");
+    for (int i = 0; i < 40 && panel.isVisible(); i++)
+        QTest::qWait(50);
+    if (panel.isVisible())
+        qFatal("applying stream quality did not close the menu");
     return 0;
 }

@@ -745,26 +745,27 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamQualityLevel() const
           changed ? QString() : tr("Pick a resolution or frame rate"), MenuItemType::Action,
           MenuAction::ApplyStreamQuality, 0, changed, false, true });
 
-    const auto resolutions =
-        StreamQuality::resolutionPresets(m_StreamQuality.nativeResolution, m_StreamQuality.resolution);
+    const auto resolutions = StreamQuality::resolutionPresets(m_StreamQuality.nativeResolution,
+                                                              m_StreamQuality.resolution);
     for (int i = 0; i < resolutions.size(); i++) {
         const StreamQuality::ResolutionPreset& preset = resolutions[i];
         const QString label =
             preset.native ? tr("Native display") : StreamQuality::resolutionName(preset.size);
         const QString note = preset.current ? tr("Current") : sizeText(preset.size);
-        level.items.push_back({ label, detailText(preset.size == m_PendingStreamResolution, note),
-                                MenuItemType::Action, MenuAction::SelectStreamResolution, 0, true,
-                                false, i == resolutions.size() - 1,
-                                QStringLiteral("%1x%2")
-                                    .arg(preset.size.width())
-                                    .arg(preset.size.height()) });
+        level.items.push_back(
+            { label, detailText(preset.size == m_PendingStreamResolution, note),
+              MenuItemType::Action, MenuAction::SelectStreamResolution, 0, true, false,
+              i == resolutions.size() - 1,
+              QStringLiteral("%1x%2").arg(preset.size.width()).arg(preset.size.height()) });
     }
 
-    const auto frameRates = StreamQuality::fpsPresets(m_StreamQuality.displayHz, m_StreamQuality.fps);
+    const auto frameRates =
+        StreamQuality::fpsPresets(m_StreamQuality.displayHz, m_StreamQuality.fps);
     for (int i = 0; i < frameRates.size(); i++) {
         const StreamQuality::FpsPreset& preset = frameRates[i];
-        const QString note =
-            preset.current ? tr("Current") : preset.display ? tr("Display") : QString();
+        const QString note = preset.current   ? tr("Current")
+                             : preset.display ? tr("Display")
+                                              : QString();
         level.items.push_back({ tr("%1 FPS").arg(preset.fps),
                                 detailText(preset.fps == m_PendingStreamFps, note),
                                 MenuItemType::Action, MenuAction::SelectStreamFps, 0, true, false,
@@ -797,8 +798,7 @@ bool OverlayMenuPanel::handleStreamQualityItem(const MenuItem& item)
 {
     switch (item.action) {
     case MenuAction::SelectStreamResolution:
-    case MenuAction::SelectStreamFps:
-    {
+    case MenuAction::SelectStreamFps: {
         // Rebuilding the level replaces the item, so read it first.
         const MenuAction action = item.action;
         const QString payload = item.payload;
@@ -807,8 +807,7 @@ bool OverlayMenuPanel::handleStreamQualityItem(const MenuItem& item)
             if (parts.size() == 2) {
                 m_PendingStreamResolution = QSize(parts[0].toInt(), parts[1].toInt());
             }
-        }
-        else {
+        } else {
             m_PendingStreamFps = payload.toInt();
         }
         beginInteraction();
@@ -819,8 +818,7 @@ bool OverlayMenuPanel::handleStreamQualityItem(const MenuItem& item)
         return true;
     }
     case MenuAction::ApplyStreamQuality:
-    case MenuAction::SaveStreamQualityAsDefault:
-    {
+    case MenuAction::SaveStreamQualityAsDefault: {
         StreamQualityRequest request;
         request.resolution = m_PendingStreamResolution;
         request.fps = m_PendingStreamFps;

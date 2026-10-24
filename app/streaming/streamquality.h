@@ -7,8 +7,7 @@
 // Pure logic behind the in-stream "Stream quality" menu: the preset lists it
 // shows and the decision of how a requested change is applied. No SDL, no
 // session state, so it is unit-tested on its own (tests/stream_quality).
-namespace StreamQuality
-{
+namespace StreamQuality {
 
 // What the stream is running at (or should switch to).
 struct Settings

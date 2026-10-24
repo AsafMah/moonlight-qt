@@ -45,7 +45,8 @@ class OverlayMenuPanel : public OverlayRasterWindow
 {
     Q_OBJECT
 public:
-    enum class MenuAction {
+    enum class MenuAction
+    {
         // Quick actions (keyboard shortcuts)
         Quit,
         QuitAndExit,

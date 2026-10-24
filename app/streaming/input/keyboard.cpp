@@ -231,6 +231,24 @@ static int shortcutLatinKey(SDL_Keycode sym)
     return ShortcutKeys::Unknown;
 }
 
+#ifdef Q_OS_WIN32
+// Windows reports AltGr as a fake Left Ctrl press with the same timestamp as
+// the Right Alt press right behind it in the queue
+static bool isAltGrControlPress(const SDL_KeyboardEvent* event)
+{
+    if (event->keysym.scancode != SDL_SCANCODE_LCTRL || event->state != SDL_PRESSED) {
+        return false;
+    }
+
+    SDL_Event next;
+    if (SDL_PeepEvents(&next, 1, SDL_PEEKEVENT, SDL_KEYDOWN, SDL_KEYDOWN) != 1) {
+        return false;
+    }
+    return next.key.keysym.scancode == SDL_SCANCODE_RALT &&
+           next.key.timestamp - event->timestamp <= 1;
+}
+#endif
+
 void SdlInputHandler::reloadShortcuts()
 {
     m_ShortcutMatcher.setProfile(ShortcutProfile::loadFromSettings());
@@ -248,11 +266,25 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
         return;
     }
 
+#ifdef Q_OS_WIN32
+    // When Right Alt alone is bound (e.g. hold to release the mouse), AltGr's
+    // fake Left Ctrl must neither reach the host nor spoil the match
+    if (event->keysym.scancode == SDL_SCANCODE_LCTRL &&
+        (event->state == SDL_RELEASED || isAltGrControlPress(event)) &&
+        m_ShortcutMatcher.processAltGrControl(event->state == SDL_PRESSED, m_ShortcutDispatcher)) {
+        return;
+    }
+#endif
+
     // Check for keyboard shortcuts. As before, letters and digits match the
     // key the user sees on their keyboard (keysym) first, and the scancode only
     // if nothing matched, so non-latin layouts still have working shortcuts.
     // The exact set of modifiers must match, and both the key-down and key-up
     // of a shortcut key are kept from the host.
+    //
+    // Other keys pressed while a hold action's key is held are forwarded as
+    // usual. If that key is a modifier (Right Alt, say), its modifier is left
+    // out of them, since the host never saw it go down.
     if (m_ShortcutMatcher.processKeyEvent(
             event->keysym.scancode, shortcutLatinKey(event->keysym.sym),
             shortcutModifiers(event->keysym.mod), event->state == SDL_PRESSED, event->repeat != 0,
@@ -260,18 +292,19 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
         return;
     }
 
-    // Set modifier flags
+    // Set modifier flags, leaving out those of swallowed modifier keys
+    const quint8 suppressed = m_ShortcutMatcher.suppressedModifiers();
     modifiers = 0;
-    if (event->keysym.mod & KMOD_CTRL) {
+    if ((event->keysym.mod & KMOD_CTRL) && !(suppressed & ShortcutBinding::ModCtrl)) {
         modifiers |= MODIFIER_CTRL;
     }
-    if (event->keysym.mod & KMOD_ALT) {
+    if ((event->keysym.mod & KMOD_ALT) && !(suppressed & ShortcutBinding::ModAlt)) {
         modifiers |= MODIFIER_ALT;
     }
-    if (event->keysym.mod & KMOD_SHIFT) {
+    if ((event->keysym.mod & KMOD_SHIFT) && !(suppressed & ShortcutBinding::ModShift)) {
         modifiers |= MODIFIER_SHIFT;
     }
-    if (event->keysym.mod & KMOD_GUI) {
+    if ((event->keysym.mod & KMOD_GUI) && !(suppressed & ShortcutBinding::ModGui)) {
         if (isSystemKeyCaptureActive()) {
             modifiers |= MODIFIER_META;
         }

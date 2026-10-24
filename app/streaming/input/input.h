@@ -151,6 +151,15 @@ public:
 
     bool isCaptureActive();
 
+    // Hold to release mouse: true while its key is held and the hold released
+    // a captured mouse, which the key-up captures again
+    bool isMouseHoldReleased() const { return m_MouseHoldReleased; }
+
+    // Ends a hold to release the mouse without capturing it again, e.g. when
+    // a menu opens and takes over the pointer. Returns true if the hold had
+    // released a captured mouse, so the caller can restore capture itself.
+    bool cancelMouseHoldRelease();
+
     bool isSystemKeyCaptureActive();
 
     void setCaptureActive(bool active);
@@ -229,6 +238,10 @@ private:
     GamepadState m_GamepadState[MAX_GAMEPADS];
     QSet<short> m_KeysDown;
     bool m_FakeMouseCaptureActive;
+
+    // hold-release-mouse handler, see isMouseHoldReleased()
+    void holdReleaseMouse(bool held);
+    bool m_MouseHoldReleased = false;
     bool m_KeyboardCaptureActive;
     QString m_OldIgnoreDevices;
     QString m_OldIgnoreDevicesExcept;

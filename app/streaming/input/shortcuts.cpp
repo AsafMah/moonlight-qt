@@ -61,6 +61,14 @@ const NamedKey k_NamedKeys[] = {
     { 100, "NonUsBackslash", "\\" },
     { 101, "Application", "Menu" },
     { 103, "KpEquals", "Num =" },
+    { ShortcutKeys::LeftCtrl, "LeftCtrl", "Left Ctrl" },
+    { ShortcutKeys::LeftShift, "LeftShift", "Left Shift" },
+    { ShortcutKeys::LeftAlt, "LeftAlt", "Left Alt" },
+    { ShortcutKeys::LeftGui, "LeftGui", "Left Win" },
+    { ShortcutKeys::RightCtrl, "RightCtrl", "Right Ctrl" },
+    { ShortcutKeys::RightShift, "RightShift", "Right Shift" },
+    { ShortcutKeys::RightAlt, "RightAlt", "Right Alt" },
+    { ShortcutKeys::RightGui, "RightGui", "Right Win" },
     { ShortcutKeys::Mute, "Mute", "Mute" },
     { ShortcutKeys::VolumeUp, "VolumeUp", "Volume Up" },
     { ShortcutKeys::VolumeDown, "VolumeDown", "Volume Down" },
@@ -79,6 +87,40 @@ const NamedKey* findNamedKey(int scancode)
         }
     }
     return nullptr;
+}
+
+// Display name of a modifier key in the platform's own words
+QString modifierKeyDisplay(int scancode)
+{
+    const bool left = scancode < ShortcutKeys::RightCtrl;
+    QString name;
+    switch (ShortcutBinding::modifierForKey(scancode)) {
+    case ShortcutBinding::ModCtrl:
+        name = QStringLiteral("Ctrl");
+        break;
+    case ShortcutBinding::ModShift:
+        name = QStringLiteral("Shift");
+        break;
+    case ShortcutBinding::ModAlt:
+#if defined(Q_OS_DARWIN)
+        name = QStringLiteral("Option");
+#else
+        name = QStringLiteral("Alt");
+#endif
+        break;
+    case ShortcutBinding::ModGui:
+#if defined(Q_OS_DARWIN)
+        name = QStringLiteral("Cmd");
+#elif defined(Q_OS_WIN32)
+        name = QStringLiteral("Win");
+#else
+        name = QStringLiteral("Super");
+#endif
+        break;
+    default:
+        return QString();
+    }
+    return (left ? QStringLiteral("Left ") : QStringLiteral("Right ")) + name;
 }
 
 // Generated names: letters, digits, F1-F24 and keypad 1-9 (keypad 0 is named)
@@ -206,9 +248,21 @@ const NativeKey k_MacKeys[] = {
     { 0x79, 78 },  { 0x7A, 58 },  { 0x7B, 80 },  { 0x7C, 79 },  { 0x7D, 81 },  { 0x7E, 82 },
 };
 
+// Modifier keys, for hold actions bound to one of them
+const NativeKey k_MacModifierKeys[] = {
+    { 0x36, 231 }, { 0x37, 227 }, { 0x38, 225 }, { 0x3A, 226 },
+    { 0x3B, 224 }, { 0x3C, 229 }, { 0x3D, 230 }, { 0x3E, 228 },
+};
+
 int fromNativeScanCode(quint32 native)
 {
-    return lookupNative(k_MacKeys, int(sizeof(k_MacKeys) / sizeof(k_MacKeys[0])), native);
+    const int scancode =
+        lookupNative(k_MacKeys, int(sizeof(k_MacKeys) / sizeof(k_MacKeys[0])), native);
+    if (scancode != ShortcutKeys::Unknown) {
+        return scancode;
+    }
+    return lookupNative(k_MacModifierKeys,
+                        int(sizeof(k_MacModifierKeys) / sizeof(k_MacModifierKeys[0])), native);
 }
 #elif defined(Q_OS_UNIX)
 // X11, Wayland and libinput report evdev key codes offset by 8
@@ -390,6 +444,12 @@ ShortcutAction makeAction(const char* id, const char* name, const char* group, c
                            { { true, ShortcutBinding::ModNone, ShortcutKeys::letter(key) } } };
 }
 
+// A hold action, unbound by default
+ShortcutAction makeHoldAction(const char* id, const char* name, const char* group)
+{
+    return ShortcutAction{ QString::fromLatin1(id), name, group, {}, true };
+}
+
 QVector<ShortcutAction> builtinActions()
 {
     // Default keys are the historical Ctrl+Alt+Shift combos
@@ -425,6 +485,9 @@ QVector<ShortcutAction> builtinActions()
         makeAction(ShortcutActions::PasteText,
                    QT_TRANSLATE_NOOP("Shortcuts", "Type clipboard text on the host"),
                    QT_TRANSLATE_NOOP("Shortcuts", "Input"), 'V'),
+        makeHoldAction(ShortcutActions::HoldReleaseMouse,
+                       QT_TRANSLATE_NOOP("Shortcuts", "Hold to release mouse"),
+                       QT_TRANSLATE_NOOP("Shortcuts", "Input")),
     };
 }
 
@@ -557,6 +620,35 @@ bool ShortcutBinding::isValid() const
     return ShortcutKeys::isExtendedFunctionKey(scancode) || ShortcutKeys::isMediaKey(scancode);
 }
 
+bool ShortcutBinding::isValidHold() const
+{
+    if (isValid()) {
+        return true;
+    }
+    return ShortcutKeys::isModifierKey(scancode) && (modifiers & ~ModAll) == 0 &&
+           (modifiers & modifierForKey(scancode)) == 0;
+}
+
+quint8 ShortcutBinding::modifierForKey(int scancode)
+{
+    switch (scancode) {
+    case ShortcutKeys::LeftCtrl:
+    case ShortcutKeys::RightCtrl:
+        return ModCtrl;
+    case ShortcutKeys::LeftShift:
+    case ShortcutKeys::RightShift:
+        return ModShift;
+    case ShortcutKeys::LeftAlt:
+    case ShortcutKeys::RightAlt:
+        return ModAlt;
+    case ShortcutKeys::LeftGui:
+    case ShortcutKeys::RightGui:
+        return ModGui;
+    default:
+        return ModNone;
+    }
+}
+
 QString ShortcutBinding::toString() const
 {
     if (isNull()) {
@@ -589,8 +681,10 @@ ShortcutBinding ShortcutBinding::fromString(const QString& string)
         modifiers |= modifier;
     }
 
+    // Modifier keys parse too; ShortcutAction::accepts() decides whether the
+    // action allows them
     const int scancode = ShortcutKeys::fromToken(parts.last());
-    if (scancode == ShortcutKeys::Unknown || ShortcutKeys::isModifierKey(scancode)) {
+    if (scancode == ShortcutKeys::Unknown) {
         return ShortcutBinding();
     }
     return ShortcutBinding(modifiers, scancode);
@@ -625,6 +719,8 @@ QString ShortcutBinding::toDisplayString() const
     QString key = generatedToken(scancode);
     if (key.startsWith(QLatin1String("Kp"))) {
         key = QStringLiteral("Num ") + key.mid(2);
+    } else if (ShortcutKeys::isModifierKey(scancode)) {
+        key = modifierKeyDisplay(scancode);
     } else if (key.isEmpty()) {
         const NamedKey* named = findNamedKey(scancode);
         key =
@@ -738,7 +834,7 @@ void ShortcutProfile::load(QSettings& settings)
         const QStringList entries = string.split(QLatin1Char(','));
         for (int slot = 0; slot < entries.size() && slot < ShortcutRegistry::MaxBindings; slot++) {
             const ShortcutBinding binding = ShortcutBinding::fromString(entries[slot]);
-            if (binding.isValid()) {
+            if (action.accepts(binding)) {
                 bindings[slot] = binding;
             }
         }
@@ -825,8 +921,9 @@ bool ShortcutProfile::isCustomized(const QString& actionId) const
 
 bool ShortcutProfile::setBinding(const QString& actionId, int slot, const ShortcutBinding& binding)
 {
-    if (m_Registry->find(actionId) == nullptr || slot < 0 ||
-        slot >= ShortcutRegistry::MaxBindings || (!binding.isNull() && !binding.isValid())) {
+    const ShortcutAction* action = m_Registry->find(actionId);
+    if (action == nullptr || slot < 0 || slot >= ShortcutRegistry::MaxBindings ||
+        (!binding.isNull() && !action->accepts(binding))) {
         return false;
     }
 
@@ -919,14 +1016,35 @@ void ShortcutDispatcher::setHandler(const QString& actionId, Handler handler)
     }
 }
 
+void ShortcutDispatcher::setHoldHandler(const QString& actionId, HoldHandler handler)
+{
+    if (handler) {
+        m_HoldHandlers.insert(actionId, std::move(handler));
+    } else {
+        m_HoldHandlers.remove(actionId);
+    }
+}
+
 void ShortcutDispatcher::removeHandler(const QString& actionId)
 {
     m_Handlers.remove(actionId);
+    m_HoldHandlers.remove(actionId);
 }
 
 bool ShortcutDispatcher::hasHandler(const QString& actionId) const
 {
-    return m_Handlers.contains(actionId);
+    return m_Handlers.contains(actionId) || m_HoldHandlers.contains(actionId);
+}
+
+QStringList ShortcutDispatcher::actionIds() const
+{
+    QStringList ids = m_Handlers.keys();
+    for (auto it = m_HoldHandlers.constBegin(); it != m_HoldHandlers.constEnd(); ++it) {
+        if (!ids.contains(it.key())) {
+            ids.append(it.key());
+        }
+    }
+    return ids;
 }
 
 bool ShortcutDispatcher::trigger(const QString& actionId) const
@@ -942,12 +1060,54 @@ bool ShortcutDispatcher::trigger(const QString& actionId) const
     return true;
 }
 
+bool ShortcutDispatcher::triggerHold(const QString& actionId, bool held) const
+{
+    auto it = m_HoldHandlers.constFind(actionId);
+    if (it == m_HoldHandlers.constEnd()) {
+        return false;
+    }
+
+    const HoldHandler handler = *it;
+    handler(held);
+    return true;
+}
+
+void ModifierKeyRecorder::press(int scancode, quint8 modifiers)
+{
+    if (!ShortcutKeys::isModifierKey(scancode)) {
+        reset();
+        return;
+    }
+
+    quint8 others =
+        modifiers & ShortcutBinding::ModAll & ~ShortcutBinding::modifierForKey(scancode);
+    if (m_AltGrFakesControl && scancode == ShortcutKeys::RightAlt &&
+        m_Pending == ShortcutKeys::LeftCtrl && m_PendingModifiers == ShortcutBinding::ModNone) {
+        others &= ~ShortcutBinding::ModCtrl;
+    }
+    m_Pending = scancode;
+    m_PendingModifiers = others;
+}
+
+ShortcutBinding ModifierKeyRecorder::release(int scancode)
+{
+    if (scancode == ShortcutKeys::Unknown || scancode != m_Pending) {
+        // Another modifier coming up first (e.g. AltGr's fake Ctrl) keeps the
+        // pending one
+        return ShortcutBinding();
+    }
+
+    const ShortcutBinding binding(m_PendingModifiers, m_Pending);
+    reset();
+    return binding;
+}
+
 void ShortcutMatcher::setProfile(const ShortcutProfile& profile)
 {
     m_Bindings.clear();
     for (const ShortcutAction& action : profile.registry().actions()) {
         for (const ShortcutBinding& binding : profile.bindings(action.id)) {
-            if (binding.isValid()) {
+            if (action.accepts(binding)) {
                 m_Bindings[binding.key()].append(action.id);
             }
         }
@@ -974,6 +1134,17 @@ bool ShortcutMatcher::processKeyEvent(int scancode, int latinKey, quint8 modifie
                                       bool repeat, const ShortcutDispatcher& dispatcher)
 {
     if (!pressed) {
+        // A hold ends with the key-up of the key that started it, whatever
+        // modifiers are down by then
+        const auto held = m_HeldActions.constFind(scancode);
+        if (held != m_HeldActions.constEnd()) {
+            const QString actionId = *held;
+            m_HeldActions.erase(held);
+            m_SwallowedKeys.remove(scancode);
+            dispatcher.triggerHold(actionId, false);
+            return true;
+        }
+
         // Swallow the key-up that belongs to a swallowed key-down
         return m_SwallowedKeys.remove(scancode);
     }
@@ -985,9 +1156,15 @@ bool ShortcutMatcher::processKeyEvent(int scancode, int latinKey, quint8 modifie
     // A fresh press. If the key was still marked, we lost its key-up (e.g.
     // focus moved to another window), so start over.
     m_SwallowedKeys.remove(scancode);
+    m_HeldActions.remove(scancode);
+
+    // Ignore the key's own modifier, and those of swallowed modifier keys,
+    // which the host and the bindings never see
+    const quint8 exactModifiers = modifiers & ShortcutBinding::ModAll &
+                                  ~ShortcutBinding::modifierForKey(scancode) &
+                                  ~suppressedModifiers();
 
     // Character pass over all bindings, then the physical key pass
-    const quint8 exactModifiers = modifiers & ShortcutBinding::ModAll;
     QString actionId;
     if (ShortcutKeys::isLatinKey(latinKey)) {
         actionId = actionFor(ShortcutBinding(exactModifiers, latinKey), &dispatcher);
@@ -1001,6 +1178,36 @@ bool ShortcutMatcher::processKeyEvent(int scancode, int latinKey, quint8 modifie
 
     // Mark first, since the handler may reset us
     m_SwallowedKeys.insert(scancode);
-    dispatcher.trigger(actionId);
+    if (dispatcher.triggerHold(actionId, true)) {
+        m_HeldActions.insert(scancode, actionId);
+    } else {
+        dispatcher.trigger(actionId);
+    }
     return true;
+}
+
+bool ShortcutMatcher::processAltGrControl(bool pressed, const ShortcutDispatcher& dispatcher)
+{
+    if (!pressed) {
+        const bool swallowed = m_AltGrControlSwallowed;
+        m_AltGrControlSwallowed = false;
+        return swallowed;
+    }
+
+    // Only worth hiding when the Right Alt that follows will be swallowed too;
+    // otherwise the host needs Ctrl+Alt to type AltGr characters
+    m_AltGrControlSwallowed =
+        !actionFor(ShortcutBinding(ShortcutBinding::ModNone, ShortcutKeys::RightAlt), &dispatcher)
+             .isEmpty();
+    return m_AltGrControlSwallowed;
+}
+
+quint8 ShortcutMatcher::suppressedModifiers() const
+{
+    quint8 modifiers =
+        m_AltGrControlSwallowed ? ShortcutBinding::ModCtrl : ShortcutBinding::ModNone;
+    for (auto it = m_HeldActions.constBegin(); it != m_HeldActions.constEnd(); ++it) {
+        modifiers |= ShortcutBinding::modifierForKey(it.key());
+    }
+    return modifiers;
 }

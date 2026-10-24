@@ -102,6 +102,7 @@ GroupBox {
                 spacing: 2
 
                 property int actionRow: index
+                property bool actionHold: model.hold
                 property var actionBindings: [model.binding1, model.binding2]
                 property var actionConflicts: [model.conflict1, model.conflict2]
 
@@ -187,6 +188,28 @@ GroupBox {
                                 }
                             }
 
+                            // A hold action may be bound to a modifier key on its own,
+                            // which is recorded when that key comes up
+                            Keys.onReleased: {
+                                if (!capturing) {
+                                    return
+                                }
+
+                                event.accepted = true
+                                if (event.isAutoRepeat) {
+                                    return
+                                }
+
+                                var result = ShortcutModel.captureKeyRelease(actionDelegate.actionRow, index, event.key,
+                                                                             event.nativeScanCode !== undefined ? event.nativeScanCode : 0)
+                                if (result === ShortcutModel.CaptureInvalid) {
+                                    shortcutsGroupBox.captureRejected = true
+                                }
+                                else if (result === ShortcutModel.CaptureAccepted) {
+                                    shortcutsGroupBox.stopCapture()
+                                }
+                            }
+
                             ToolTip.delay: 1000
                             ToolTip.timeout: 5000
                             ToolTip.visible: hovered && !capturing
@@ -214,8 +237,18 @@ GroupBox {
 
                 Label {
                     width: parent.width
+                    visible: actionDelegate.actionHold
+                    text: qsTr("Works while the key is held down. A modifier key on its own works too, e.g. Right Alt; it then no longer reaches the host, so AltGr typing stops there.")
+                    font.pointSize: 9
+                    wrapMode: Text.Wrap
+                }
+
+                Label {
+                    width: parent.width
                     visible: shortcutsGroupBox.captureRejected && shortcutsGroupBox.captureRow === actionDelegate.actionRow
-                    text: qsTr("Use Ctrl, Alt or the Windows/Command key with this key. Only F13-F24 and media keys work on their own.")
+                    text: actionDelegate.actionHold ?
+                              qsTr("Use a modifier key on its own, or Ctrl, Alt or the Windows/Command key with another key.") :
+                              qsTr("Use Ctrl, Alt or the Windows/Command key with this key. Only F13-F24 and media keys work on their own.")
                     color: "#ff6e6e"
                     font.pointSize: 9
                     wrapMode: Text.Wrap

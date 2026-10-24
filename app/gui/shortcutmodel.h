@@ -26,6 +26,8 @@ public:
         Conflict1Role,
         Conflict2Role,
         CustomizedRole,
+        // Fires while held (press and release); may be bound to a modifier alone
+        HoldRole,
     };
 
     enum DefaultPrefix
@@ -63,6 +65,11 @@ public:
     Q_INVOKABLE int captureKey(int row, int slot, int qtKey, int qtModifiers,
                                quint32 nativeScanCode);
 
+    // Handles a key release while capturing. A hold action is bound to a
+    // modifier key on its own when that key comes up with no other key
+    // pressed in between.
+    Q_INVOKABLE int captureKeyRelease(int row, int slot, int qtKey, quint32 nativeScanCode);
+
     Q_INVOKABLE void clearBinding(int row, int slot);
     Q_INVOKABLE void resetAction(int row);
     Q_INVOKABLE void resetAll();
@@ -80,4 +87,7 @@ private:
     void commit();
 
     ShortcutProfile m_Profile;
+    ModifierKeyRecorder m_ModifierRecorder;
+    int m_RecorderRow = -1;
+    int m_RecorderSlot = -1;
 };

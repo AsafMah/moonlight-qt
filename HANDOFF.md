@@ -47,7 +47,7 @@ It is **not** yet the submodule pin. The app code is already guarded with `#ifde
 
 The hold-to-release state reaches the overlay tooltips through `isCaptureActive()`, so no extra wiring was needed. Opening the menu or the overlay's edit mode ends a hold (`cancelMouseHoldRelease()`).
 
-`integration` @ `d9401f29` contains all of this: it builds locally and passes all 29 CI unit tests plus the QML localization test. CI run [40106099523](https://github.com/AsafMah/moonlight-qt/actions/runs/40106099523) was started on it; check its result.
+**The latest good build is now** CI run [40107512892](https://github.com/AsafMah/moonlight-qt/actions/runs/40107512892) on `integration` @ `126c581d`: every job passed on every platform. (The run before it failed only on Steam Link: Qt 5.14 finds `QStringList = { ... }` ambiguous, so spell out `QStringList{ ... }`.)
 
 **Still unverified:** all of it on a real host and on screen. The layouts were checked only by offscreen renders. The QML settings rows were only qmllinted.
 

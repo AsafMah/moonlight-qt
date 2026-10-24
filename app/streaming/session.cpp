@@ -5484,6 +5484,7 @@ void Session::exec()
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                                 "Disabling V-sync because refresh rate limit exceeded");
                 }
+                m_VrrPresentCapFps = sync.enableVrr ? sync.presentCapFps : -1;
                 if (sync.enableVrr) {
                     SDL_LogInfo(
                         SDL_LOG_CATEGORY_APPLICATION,

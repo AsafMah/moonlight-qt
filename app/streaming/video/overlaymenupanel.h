@@ -5,6 +5,7 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QPoint>
+#include <QSize>
 #include <QFont>
 #include <QIcon>
 #include <QHash>
@@ -34,6 +35,8 @@
  *   Level 2 (Bitrate):  piecewise-linear scrubber row + 1/2/5/10/20/30/50/100 Mbps presets
  *   Level 3 (Position): Top, Right, Left, Floating button, Disabled
  *   Developer builds may append a function-test panel entry.
+ *   Then:             Stream Quality (resolution / FPS presets, no fixed
+ *                      index; see m_StreamQualityLevel).
  *
  * Sub-level navigation uses a title bar with back button (◂ Title).
  * Square industrial theme matching Theme.qml, with hard shadows and brand accents.
@@ -69,6 +72,14 @@ public:
         SetMenuPlacementLeft,
         SetMenuPlacementButton,
         SetMenuPlacementDisabled,
+        // Stream quality. OpenStreamQuality tags the level's SubMenu row; the
+        // Select* rows carry "WxH" / FPS in MenuItem::payload and only change
+        // the pending choice. Apply/Save go out through the quality callback.
+        OpenStreamQuality,
+        SelectStreamResolution,
+        SelectStreamFps,
+        ApplyStreamQuality,
+        SaveStreamQualityAsDefault,
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         OpenStylusReplayPanel,
 #endif
@@ -118,6 +129,25 @@ public:
     // immediate for preset taps). The value is in kbps.
     using BitrateChangeCallback = std::function<void(int)>;
 
+    // What the stream runs at, and the client display, for the Stream
+    // Quality level's presets.
+    struct StreamQualityState
+    {
+        QSize resolution;
+        int fps = 0;
+        QSize nativeResolution;
+        int displayHz = 0;
+    };
+    // A requested resolution/FPS. saveAsDefault also stores it in the
+    // streaming preferences; otherwise it lasts for this session only.
+    struct StreamQualityRequest
+    {
+        QSize resolution;
+        int fps = 0;
+        bool saveAsDefault = false;
+    };
+    using StreamQualityCallback = std::function<void(const StreamQualityRequest&)>;
+
     explicit OverlayMenuPanel(QWindow* parent = nullptr,
                               OverlayWindowMode windowMode = OverlayWindowMode::Detached);
     ~OverlayMenuPanel() override;
@@ -132,6 +162,10 @@ public:
     }
     void setBitrateChangeCallback(BitrateChangeCallback cb) {
         m_BitrateChangeCallback = std::move(cb);
+    }
+    void setStreamQualityCallback(StreamQualityCallback cb)
+    {
+        m_StreamQualityCallback = std::move(cb);
     }
 
     // Human-readable bitrate label shared with toast/log formatting.
@@ -167,6 +201,8 @@ public:
     void updateMicrophoneState(bool enabled);
     void updateBitrateState(int bitrateKbps);
     void updateMenuPositionState(MenuAction activePlacementAction);
+    // Resets the pending Stream Quality choice to what the stream runs at.
+    void updateStreamQualityState(const StreamQualityState& state);
     void updateGamepadMouseState(bool enabled);
     void updateFileMappingState(FileMappingState state, const QString& detail);
     void updateRemoteUsbState(bool available,
@@ -259,6 +295,8 @@ private:
     };
 
     void buildMenuLevels();
+    MenuLevel buildStreamQualityLevel() const;
+    bool handleStreamQualityItem(const MenuItem& item); // true when consumed
     void navigateToLevel(int level);
     void repositionWindow();
     void showInternal();     // shared show logic after geometry is set
@@ -301,6 +339,14 @@ private:
     RemoteUsbDeviceCallback m_RemoteUsbDeviceCallback;
     RemoteUsbReleaseCallback m_RemoteUsbReleaseCallback;
     BitrateChangeCallback m_BitrateChangeCallback;
+    StreamQualityCallback m_StreamQualityCallback;
+
+    // Stream Quality level: running state, the pending choice, and the level
+    // index in m_MenuLevels (-1 before the first build).
+    StreamQualityState m_StreamQuality;
+    QSize m_PendingStreamResolution;
+    int m_PendingStreamFps = 0;
+    int m_StreamQualityLevel = -1;
 
     // Bitrate slider state. m_BitrateKbps is the on-screen value;
     // m_CommittedBitrateKbps is the last value sent to the callback.

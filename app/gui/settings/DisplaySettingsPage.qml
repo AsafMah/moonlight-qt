@@ -111,19 +111,34 @@ Column {
         ToggleRow {
             id: vsyncToggle
             title: qsTr("V-Sync")
-            description: qsTr("Disabling V-Sync allows sub-frame rendering latency, but it can display visible tearing")
-            checked: StreamingPreferences.enableVsync
+            description: StreamingPreferences.enableVrr
+                         ? qsTr("Not used while variable refresh rate is on.")
+                         : qsTr("Disabling V-Sync allows sub-frame rendering latency, but it can display visible tearing")
+            // VRR 开着时垂直同步不生效：置灰并显示为关，保存的值不动，关掉 VRR 就恢复。
+            controlEnabled: !StreamingPreferences.enableVrr
+            checked: StreamingPreferences.enableVsync && !StreamingPreferences.enableVrr
             onToggled: function(value) { StreamingPreferences.enableVsync = value }
         }
 
         ToggleRow {
             title: qsTr("Frame pacing")
-            description: StreamingPreferences.enableVsync
-                         ? qsTr("Frame pacing reduces micro-stutter by delaying frames that come in too early")
-                         : qsTr("Enable V-Sync to use frame pacing.")
-            controlEnabled: StreamingPreferences.enableVsync
-            checked: StreamingPreferences.enableVsync && StreamingPreferences.framePacing
+            description: StreamingPreferences.enableVrr
+                         ? qsTr("Not used while variable refresh rate is on.")
+                         : StreamingPreferences.enableVsync
+                           ? qsTr("Frame pacing reduces micro-stutter by delaying frames that come in too early")
+                           : qsTr("Enable V-Sync to use frame pacing.")
+            controlEnabled: StreamingPreferences.enableVsync && !StreamingPreferences.enableVrr
+            checked: StreamingPreferences.enableVsync && StreamingPreferences.framePacing && !StreamingPreferences.enableVrr
             onToggled: function(value) { StreamingPreferences.framePacing = value }
+        }
+
+        // 可变刷新率：每帧一解码完就呈现（允许撕裂的翻转模型 / Vulkan Immediate），让
+        // G-Sync/FreeSync 显示器跟着串流的帧时间刷新；取代垂直同步和帧平滑。
+        ToggleRow {
+            title: qsTr("Variable refresh rate (G-Sync / FreeSync)")
+            description: qsTr("Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). For the smoothest result, stream a few FPS below the display's refresh rate.")
+            checked: StreamingPreferences.enableVrr
+            onToggled: function(value) { StreamingPreferences.enableVrr = value }
         }
     }
 

@@ -363,6 +363,7 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     parser.addToggleOption("game-optimization", "game optimizations");
     parser.addToggleOption("audio-on-host", "audio on host PC");
     parser.addToggleOption("frame-pacing", "frame pacing");
+    parser.addToggleOption("vrr", "VRR (G-Sync / FreeSync) mode");
     parser.addToggleOption("video-enhancement", "Enhance video with AI");
     parser.addToggleOption("mute-on-focus-loss", "mute audio when Moonlight window loses focus");
     parser.addToggleOption("background-gamepad", "background gamepad input");
@@ -479,6 +480,9 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
 
     // Resolve --frame-pacing and --no-frame-pacing options
     preferences->framePacing = parser.getToggleOptionValue("frame-pacing", preferences->framePacing);
+
+    // Resolve --vrr and --no-vrr options
+    preferences->enableVrr = parser.getToggleOptionValue("vrr", preferences->enableVrr);
 
     // Resolve --video-enhancement and --no-video-enhancement options
     preferences->videoEnhancement = parser.getToggleOptionValue("video-enhancement", preferences->videoEnhancement);

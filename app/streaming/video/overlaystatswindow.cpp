@@ -344,6 +344,13 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
                 // A display slower than the stream has to drop frames
                 cell.grade = m_Extras.displayHz + 0.5 < s.targetFps ? Grade::Warn : Grade::Good;
             }
+            if (m_Extras.vrrCapFps >= 0) {
+                // In VRR mode presents are capped just below the refresh rate
+                cell.value += QStringLiteral(" · VRR");
+                if (m_Extras.vrrCapFps > 0 && s.targetFps > m_Extras.vrrCapFps) {
+                    cell.grade = Grade::Warn;
+                }
+            }
         } else {
             cell.value = dash();
         }

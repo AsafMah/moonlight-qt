@@ -722,6 +722,20 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
                         "Defaulting to DXVA2 for FSE without DXGI_FEATURE_PRESENT_ALLOW_TEARING support");
             return false;
         }
+
+        // VRR mode uses this same present-on-arrival path. With tearing allowed, a
+        // full-screen flip-model swapchain gets independent flip, which is what
+        // lets G-Sync/FreeSync refresh the display when each frame is presented.
+        if (params->enableVrr) {
+            if (m_AllowTearing) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "VRR mode: flip-model swapchain with tearing allowed");
+            } else {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "VRR mode: tearing isn't supported, so DWM may compose frames at a "
+                            "fixed refresh rate");
+            }
+        }
     }
 
     SDL_SysWMinfo info;

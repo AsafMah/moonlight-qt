@@ -40,6 +40,7 @@ public:
         bool abrEnabled = false;   // Sunshine adaptive bitrate is running
         int targetBitrateKbps = 0; // what the host was asked to send
         double displayHz = 0;      // refresh rate of the stream's display
+        int vrrCapFps = -1;        // VRR mode's present cap; 0 without one, -1 when VRR is off
     };
 
     // What a hover tooltip shows for a metric

@@ -43,6 +43,10 @@ typedef struct _DECODER_PARAMETERS {
     int height;
     int frameRate;
     bool enableVsync;
+    // VRR (G-Sync / FreeSync) mode: V-Sync and frame pacing are off, frames
+    // are presented on arrival with tearing allowed, and Pacer caps the
+    // present rate just below the refresh rate
+    bool enableVrr;
     bool enableFramePacing;
     bool enableVideoEnhancement;
     bool ignoreAspectRatio;

@@ -225,6 +225,7 @@ public:
     Q_PROPERTY(bool enableNativeTouchpad MEMBER enableNativeTouchpad NOTIFY enableNativeTouchpadChanged)
     Q_PROPERTY(DualSenseHapticsMode dualSenseHapticsMode MEMBER dualSenseHapticsMode NOTIFY dualSenseHapticsModeChanged)
     Q_PROPERTY(bool framePacing MEMBER framePacing NOTIFY framePacingChanged)
+    Q_PROPERTY(bool enableVrr MEMBER enableVrr NOTIFY enableVrrChanged)
     Q_PROPERTY(bool videoEnhancement MEMBER videoEnhancement NOTIFY videoEnhancementChanged)
     Q_PROPERTY(bool streamResolutionScale MEMBER streamResolutionScale NOTIFY streamResolutionScaleChanged)
     Q_PROPERTY(int streamResolutionScaleRatio MEMBER streamResolutionScaleRatio NOTIFY streamResolutionScaleRatioChanged)
@@ -304,6 +305,8 @@ public:
     bool enableNativeTouchpad;
     DualSenseHapticsMode dualSenseHapticsMode;
     bool framePacing;
+    // VRR (G-Sync / FreeSync): present each frame on arrival; overrides V-Sync and frame pacing
+    bool enableVrr;
     bool videoEnhancement;
     bool streamResolutionScale;
     int streamResolutionScaleRatio;
@@ -388,6 +391,7 @@ signals:
     void backgroundSetupCompletedChanged();
     void windowModeChanged();
     void framePacingChanged();
+    void enableVrrChanged();
     void videoEnhancementChanged();
     void streamResolutionScaleChanged();
     void streamResolutionScaleRatioChanged();

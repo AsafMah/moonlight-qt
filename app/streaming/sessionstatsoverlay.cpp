@@ -44,6 +44,7 @@ void Session::createStatsOverlay(OverlayWindowMode windowMode)
         // Updated by ABR feedback and by runtime bitrate changes
         const int appliedKbps = m_AbrCurrentBitrateKbps->load();
         extras.targetBitrateKbps = appliedKbps > 0 ? appliedKbps : m_StreamConfig.bitrate;
+        extras.vrrCapFps = m_VrrPresentCapFps;
         return extras;
     });
 

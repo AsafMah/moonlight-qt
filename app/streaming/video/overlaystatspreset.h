@@ -143,6 +143,19 @@ QPoint anchoredPosition(Anchor anchor, const QRect& parent, const QSize& size, i
 // The anchor whose third of parent contains point (clamped into parent)
 Anchor nearestAnchor(const QRect& parent, const QPoint& point);
 
+// How much of a remembered detached window, in pixels each way, must still be
+// on a screen for it to go back there
+constexpr int DetachedMinVisible = 48;
+
+// Top-left corner of a detached overlay window of the given size. screens are
+// the available geometries of all screens, streamScreen the one the stream is
+// on. A remembered position is kept, moved fully onto the screen it overlaps
+// most, as long as DetachedMinVisible of it is on that screen. Otherwise the
+// window goes margin from the top-left of the first screen apart from the
+// stream's, or of the stream's screen when there is no other.
+QPoint detachedWindowPosition(const std::optional<QPoint>& saved, const QSize& size,
+                              const QVector<QRect>& screens, const QRect& streamScreen, int margin);
+
 // A display name made safe for use as one QSettings key segment
 QString displayKey(const QString& screenName);
 

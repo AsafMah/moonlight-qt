@@ -33,6 +33,7 @@
 #ifdef HAVE_FFMPEG
 #include "video/ffmpeg.h"
 #endif
+#include "video/vrrpolicy.h"
 
 #ifdef Q_OS_DARWIN
 #include "streaming/video/macqteventpumpinputguard.h"
@@ -976,6 +977,17 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                             SDL_Window* window, int videoFormat, int width, int height,
                             int frameRate, bool enableVsync, bool enableFramePacing, bool enableVideoEnhancement, bool ignoreAspectRatio, bool testOnly, IVideoDecoder*& chosenDecoder)
 {
+    return chooseDecoder(vds, renderer, window, videoFormat, width, height, frameRate, enableVsync,
+                         false, enableFramePacing, enableVideoEnhancement, ignoreAspectRatio,
+                         testOnly, chosenDecoder);
+}
+
+bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
+                            StreamingPreferences::RendererSelection renderer, SDL_Window* window,
+                            int videoFormat, int width, int height, int frameRate, bool enableVsync,
+                            bool enableVrr, bool enableFramePacing, bool enableVideoEnhancement,
+                            bool ignoreAspectRatio, bool testOnly, IVideoDecoder*& chosenDecoder)
+{
     DECODER_PARAMETERS params;
 
     // We should never have vsync enabled for test-mode.
@@ -983,12 +995,16 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     // block while waiting for a backbuffer swap.
     SDL_assert(!enableVsync || !testOnly);
 
+    // VRR presents on arrival, so it never combines with V-Sync waits
+    SDL_assert(!enableVrr || (!enableVsync && !enableFramePacing));
+
     params.width = width;
     params.height = height;
     params.frameRate = frameRate;
     params.videoFormat = videoFormat;
     params.window = window;
     params.enableVsync = enableVsync;
+    params.enableVrr = enableVrr && !testOnly;
     params.enableFramePacing = enableFramePacing;
     // Preserve the saved preference while making the effective decoder state
     // match the UI: video enhancement is unavailable with software decoding.
@@ -2599,12 +2615,14 @@ void Session::updateOptimalWindowDisplayMode()
     bestMode.refresh_rate = 0;
     if (!matchVideo) {
         // Start with the native desktop resolution and try to find
-        // the highest refresh rate that our stream FPS evenly divides.
+        // the highest refresh rate that our stream FPS evenly divides
+        // (or simply the highest one in VRR mode).
         int numDisplayModes = SDL_GetNumDisplayModes(displayIndex);
         for (int i = 0; i < numDisplayModes; i++) {
             if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
                 if (mode.w == desktopMode.w && mode.h == desktopMode.h &&
-                    mode.refresh_rate % m_StreamConfig.fps == 0) {
+                    VrrPolicy::displayModeSuitsStream(mode.refresh_rate, m_StreamConfig.fps,
+                                                      m_Preferences->enableVrr)) {
                     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                                 "Found display mode with desktop resolution: %dx%dx%d",
                                 mode.w, mode.h, mode.refresh_rate);
@@ -2629,7 +2647,8 @@ void Session::updateOptimalWindowDisplayMode()
             if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
                 float modeAspectRatio = (float)mode.w / (float)mode.h;
                 if (mode.w >= m_ActiveVideoWidth && mode.h >= m_ActiveVideoHeight &&
-                        mode.refresh_rate % m_StreamConfig.fps == 0) {
+                    VrrPolicy::displayModeSuitsStream(mode.refresh_rate, m_StreamConfig.fps,
+                                                      m_Preferences->enableVrr)) {
                     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                                 "Found display mode with video resolution: %dx%dx%d",
                                 mode.w, mode.h, mode.refresh_rate);
@@ -5580,26 +5599,45 @@ void Session::exec()
                 // If the stream exceeds the display refresh rate (plus some slack),
                 // forcefully disable V-sync to allow the stream to render faster
                 // than the display.
+                // VRR mode turns off V-Sync and frame pacing and presents
+                // each frame on arrival instead.
                 int displayHz = StreamUtils::getDisplayRefreshRate(m_Window);
-                bool enableVsync = m_Preferences->enableVsync;
-                if (displayHz + 5 < m_StreamConfig.fps) {
+                const VrrPolicy::SyncDecision sync =
+                    VrrPolicy::decide({ m_Preferences->enableVsync, m_Preferences->framePacing,
+                                        m_Preferences->enableVrr, m_StreamConfig.fps, displayHz });
+                if (m_Preferences->enableVsync && !sync.enableVsync && !sync.enableVrr) {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                                 "Disabling V-sync because refresh rate limit exceeded");
-                    enableVsync = false;
+                }
+                m_VrrPresentCapFps = sync.enableVrr ? sync.presentCapFps : -1;
+                if (sync.enableVrr) {
+                    SDL_LogInfo(
+                        SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR mode: %d FPS stream on a %d Hz display, presents capped at %d FPS",
+                        m_StreamConfig.fps, displayHz, sync.presentCapFps);
+                    if (sync.streamAboveVrrRange && !m_VrrRangeWarningShown) {
+                        m_VrrRangeWarningShown = true;
+                        SDL_LogWarn(
+                            SDL_LOG_CATEGORY_APPLICATION,
+                            "VRR mode: stream FPS is above the VRR range; frames will be dropped");
+                        showStreamingToast(tr("VRR: this %1 FPS stream is faster than the %2 Hz "
+                                              "display can follow, so some frames are dropped. "
+                                              "Stream at %3 FPS or lower for the smoothest VRR.")
+                                               .arg(m_StreamConfig.fps)
+                                               .arg(displayHz)
+                                               .arg(sync.presentCapFps),
+                                           8000);
+                    }
                 }
 
                 // Choose a new decoder (hopefully the same one, but possibly
                 // not if a GPU was removed or something).
-                if (!chooseDecoder(m_Preferences->videoDecoderSelection,
-                                   m_Preferences->rendererSelection,
-                                   m_Window, m_ActiveVideoFormat, m_ActiveVideoWidth,
-                                   m_ActiveVideoHeight, m_ActiveVideoFrameRate,
-                                   enableVsync,
-                                   enableVsync && m_Preferences->framePacing,
-                                   m_Preferences->videoEnhancement,
-                                   m_Preferences->ignoreAspectRatio,
-                                   false,
-                                   s_ActiveSession->m_VideoDecoder)) {
+                if (!chooseDecoder(
+                        m_Preferences->videoDecoderSelection, m_Preferences->rendererSelection,
+                        m_Window, m_ActiveVideoFormat, m_ActiveVideoWidth, m_ActiveVideoHeight,
+                        m_ActiveVideoFrameRate, sync.enableVsync, sync.enableVrr,
+                        sync.enableFramePacing, m_Preferences->videoEnhancement,
+                        m_Preferences->ignoreAspectRatio, false, s_ActiveSession->m_VideoDecoder)) {
                     SDL_UnlockMutex(m_DecoderLock);
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                                  "Failed to recreate decoder after reset");

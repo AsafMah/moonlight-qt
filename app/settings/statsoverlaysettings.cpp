@@ -13,6 +13,8 @@
 #define SER_DISPLAYS "displays"
 #define SER_ANCHOR "anchor"
 #define SER_SIZE "size"
+#define SER_DETACHED "detached"
+#define SER_DETACHED_POS "detached/pos"
 
 using namespace StatsOverlay;
 
@@ -56,6 +58,21 @@ Preset StatsOverlaySettings::presetValue() const
 {
     const QString id = QSettings().value(key(SER_PRESET)).toString();
     return visiblePreset(presetFromId(id, DefaultPreset));
+}
+
+bool StatsOverlaySettings::detached() const
+{
+    return QSettings().value(key(SER_DETACHED), false).toBool();
+}
+
+void StatsOverlaySettings::setDetached(bool detached)
+{
+    if (detached == this->detached()) {
+        return;
+    }
+
+    QSettings().setValue(key(SER_DETACHED), detached);
+    emit detachedChanged();
 }
 
 int StatsOverlaySettings::scalePercent() const
@@ -204,6 +221,7 @@ void StatsOverlaySettings::reload()
     emit scalePercentChanged();
     emit opacityPercentChanged();
     emit metricsChanged();
+    emit detachedChanged();
 }
 
 StatsOverlaySettings::DisplayState
@@ -272,6 +290,21 @@ void StatsOverlaySettings::setDisplaySize(const QString& displayKey, Preset pres
         QSettings().remove(key);
     }
     emit sizesChanged();
+}
+
+std::optional<QPoint> StatsOverlaySettings::detachedPosition(const QString& displayKey) const
+{
+    const QVariant value =
+        QSettings().value(displayGroup(displayKey) + QStringLiteral("/" SER_DETACHED_POS));
+    if (!value.isValid()) {
+        return std::nullopt;
+    }
+    return value.toPoint();
+}
+
+void StatsOverlaySettings::setDetachedPosition(const QString& displayKey, const QPoint& position)
+{
+    QSettings().setValue(displayGroup(displayKey) + QStringLiteral("/" SER_DETACHED_POS), position);
 }
 
 QString StatsOverlaySettings::metricName(Metric metric)

@@ -956,6 +956,18 @@
         <translation>开启垂直同步后才能使用帧平滑。</translation>
     </message>
     <message>
+        <source>Not used while variable refresh rate is on.</source>
+        <translation>可变刷新率开启时不使用此项。</translation>
+    </message>
+    <message>
+        <source>Variable refresh rate (G-Sync / FreeSync)</source>
+        <translation>可变刷新率（G-Sync / FreeSync）</translation>
+    </message>
+    <message>
+        <source>Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). For the smoothest result, stream a few FPS below the display&apos;s refresh rate.</source>
+        <translation>每一帧到达后立即显示，让支持 VRR 的显示器跟着串流的节奏刷新：延迟低且不撕裂。开启后取代垂直同步和帧平滑。需要 G-Sync 或 FreeSync 显示器、在显卡驱动中开启 VRR，并使用“全屏”或“无边框窗口”显示模式（只有驱动为窗口化程序开启了 VRR 时，“窗口”模式才有效）。想要最流畅的效果，请把串流帧率设得比显示器刷新率低几帧。</translation>
+    </message>
+    <message>
         <source>Performance overlay</source>
         <translation>性能浮层</translation>
     </message>
@@ -1026,6 +1038,14 @@
     <message>
         <source>Reset size</source>
         <translation>重置尺寸</translation>
+    </message>
+    <message>
+        <source>Detach the performance overlay</source>
+        <translation>分离性能浮层</translation>
+    </message>
+    <message>
+        <source>Show the overlay in a window of its own that you can drag anywhere, including to another screen. It opens on another screen if there is one and remembers where you leave it. Exclusive fullscreen on the same monitor covers it. Takes effect when the next stream starts.</source>
+        <translation>把浮层放进一个独立窗口，可以拖到任意位置，包括其他显示器。如有其他显示器，它会在那里打开，并记住你放下的位置。同一显示器上的独占全屏会遮住它。下次串流开始时生效。</translation>
     </message>
 </context>
 <context>
@@ -2240,165 +2260,6 @@
     </message>
 </context>
 <context>
-    <name>OverlayStatsWindow</name>
-    <message>
-        <source>Stream</source>
-        <translation>串流</translation>
-    </message>
-    <message>
-        <source>FPS</source>
-        <translation>帧率</translation>
-    </message>
-    <message>
-        <source>1% low</source>
-        <translation>1% 低帧</translation>
-    </message>
-    <message>
-        <source>0.1% low</source>
-        <translation>0.1% 低帧</translation>
-    </message>
-    <message>
-        <source>Latency</source>
-        <translation>延迟</translation>
-    </message>
-    <message>
-        <source>Bitrate</source>
-        <translation>码率</translation>
-    </message>
-    <message>
-        <source>Loss</source>
-        <translation>丢包</translation>
-    </message>
-    <message>
-        <source>RTT</source>
-        <translation>往返</translation>
-    </message>
-    <message>
-        <source>Jitter</source>
-        <translation>抖动</translation>
-    </message>
-    <message>
-        <source>Host</source>
-        <translation>主机</translation>
-    </message>
-    <message>
-        <source>Decode</source>
-        <translation>解码</translation>
-    </message>
-    <message>
-        <source>Queue</source>
-        <translation>队列</translation>
-    </message>
-    <message>
-        <source>Render</source>
-        <translation>渲染</translation>
-    </message>
-    <message>
-        <source>Network</source>
-        <translation>网络</translation>
-    </message>
-    <message>
-        <source>FEC</source>
-        <translation>FEC</translation>
-    </message>
-    <message>
-        <source>%1% parity</source>
-        <translation>%1% 冗余</translation>
-    </message>
-    <message>
-        <source>%1 recovered, %2 lost</source>
-        <translation>已恢复 %1，丢失 %2</translation>
-    </message>
-    <message>
-        <source>ABR</source>
-        <translation>自适应码率</translation>
-    </message>
-    <message>
-        <source>On</source>
-        <translation>开</translation>
-    </message>
-    <message>
-        <source>Off</source>
-        <translation>关</translation>
-    </message>
-    <message>
-        <source>Pacer drops</source>
-        <translation>帧同步丢帧</translation>
-    </message>
-    <message>
-        <source>Display</source>
-        <translation>显示器</translation>
-    </message>
-    <message>
-        <source>Time</source>
-        <translation>时长</translation>
-    </message>
-    <message>
-        <source>Frame time</source>
-        <translation>帧时间</translation>
-    </message>
-    <message>
-        <source>avg %1 · p99 %2 ms</source>
-        <translation>平均 %1 · p99 %2 ms</translation>
-    </message>
-    <message>
-        <source>Estimated latency</source>
-        <translation>估算延迟</translation>
-    </message>
-    <message>
-        <source>No metrics selected</source>
-        <translation>未选择任何指标</translation>
-    </message>
-    <message>
-        <source>Drag to move · Wheel to zoom · Esc when done</source>
-        <translation>拖动移动 · 滚轮缩放 · Esc 完成</translation>
-    </message>
-    <message>
-        <source>Lat</source>
-        <comment>Short form of the Latency label</comment>
-        <translation>延迟</translation>
-    </message>
-    <message>
-        <source>Rate</source>
-        <comment>Short form of the Bitrate label</comment>
-        <translation>码率</translation>
-    </message>
-    <message>
-        <source>Jit</source>
-        <comment>Short form of the Jitter label</comment>
-        <translation>抖动</translation>
-    </message>
-    <message>
-        <source>Dec</source>
-        <comment>Short form of the Decode label</comment>
-        <translation>解码</translation>
-    </message>
-    <message>
-        <source>Rend</source>
-        <comment>Short form of the Render label</comment>
-        <translation>渲染</translation>
-    </message>
-    <message>
-        <source>Drops</source>
-        <comment>Short form of the Pacer drops label</comment>
-        <translation>丢帧</translation>
-    </message>
-    <message>
-        <source>Disp</source>
-        <comment>Short form of the Display label</comment>
-        <translation>显示</translation>
-    </message>
-    <message>
-        <source>Res</source>
-        <comment>Short form of the Stream (resolution) label</comment>
-        <translation>串流</translation>
-    </message>
-    <message>
-        <source>Drag to move · Drag the edges to resize · Wheel to zoom · Esc when done</source>
-        <translation>拖动移动 · 拖动边缘调整大小 · 滚轮缩放 · Esc 完成</translation>
-    </message>
-</context>
-<context>
     <name>PcView</name>
     <message>
         <source>No keyboard? Press %1 to open the on-screen keyboard.</source>
@@ -3426,6 +3287,10 @@
         <translation>无法初始化视频解码器。请检查你的流式传输设置，然后重试。</translation>
     </message>
     <message>
+        <source>VRR: this %1 FPS stream is faster than the %2 Hz display can follow, so some frames are dropped. Stream at %3 FPS or lower for the smoothest VRR.</source>
+        <translation>VRR：%1 FPS 的串流超出了 %2 Hz 显示器能跟随的范围，部分帧会被丢弃。将串流帧率设为 %3 FPS 或更低，VRR 效果最流畅。</translation>
+    </message>
+    <message>
         <source>Drag the overlay to move it. Press Esc when done.</source>
         <translation>拖动浮层即可移动，完成后按 Esc。</translation>
     </message>
@@ -3491,306 +3356,6 @@
     <message>
         <source>Interface</source>
         <translation>界面</translation>
-    </message>
-</context>
-<context>
-    <name>ShortcutModel</name>
-    <message>
-        <source>Also used by: %1</source>
-        <translation>与以下操作冲突：%1</translation>
-    </message>
-</context>
-<context>
-    <name>ShortcutSettingsCard</name>
-    <message>
-        <source>Keyboard shortcuts</source>
-        <translation>键盘快捷键</translation>
-    </message>
-    <message>
-        <source>Click a shortcut, then press the new key combination. Esc cancels and Backspace removes the shortcut. Shortcuts follow key positions, so they keep working when you switch keyboard layouts.</source>
-        <translation>点击快捷键后按下新的组合键。Esc 取消，Backspace 删除该快捷键。快捷键按物理键位匹配，切换键盘布局后依然有效。</translation>
-    </message>
-    <message>
-        <source>Default modifier keys</source>
-        <translation>默认修饰键</translation>
-    </message>
-    <message>
-        <source>Changes every shortcut that still uses its default key combination.</source>
-        <translation>同时修改所有仍在使用默认组合键的快捷键。</translation>
-    </message>
-    <message>
-        <source>NOTE: Ctrl+Alt is also how AltGr is reported on some keyboard layouts, so Ctrl+Alt shortcuts can trigger while typing.</source>
-        <translation>注意：部分键盘布局会把 AltGr 报告为 Ctrl+Alt，因此 Ctrl+Alt 快捷键可能在打字时被误触发。</translation>
-    </message>
-    <message>
-        <source>Use Ctrl, Alt or the Windows/Command key with this key. Only F13-F24 and media keys work on their own.</source>
-        <translation>此键需要配合 Ctrl、Alt 或 Windows/Command 键使用。只有 F13-F24 和媒体键可以单独使用。</translation>
-    </message>
-    <message>
-        <source>Press keys...</source>
-        <translation>请按下按键...</translation>
-    </message>
-    <message>
-        <source>None</source>
-        <translation>无</translation>
-    </message>
-    <message>
-        <source>Reset</source>
-        <translation>重置</translation>
-    </message>
-    <message>
-        <source>Reset all shortcuts</source>
-        <translation>重置所有快捷键</translation>
-    </message>
-    <message>
-        <source>Restores every default shortcut and the Ctrl+Alt+Shift modifier keys.</source>
-        <translation>恢复所有默认快捷键和 Ctrl+Alt+Shift 修饰键。</translation>
-    </message>
-    <message>
-        <source>Reset all</source>
-        <translation>全部重置</translation>
-    </message>
-</context>
-<context>
-    <name>Shortcuts</name>
-    <message>
-        <source>Disconnect from host</source>
-        <translation>断开与主机的连接</translation>
-    </message>
-    <message>
-        <source>Session</source>
-        <translation>会话</translation>
-    </message>
-    <message>
-        <source>Disconnect and quit Moonlight</source>
-        <translation>断开连接并退出 Moonlight</translation>
-    </message>
-    <message>
-        <source>Toggle full-screen</source>
-        <translation>切换全屏</translation>
-    </message>
-    <message>
-        <source>Window</source>
-        <translation>窗口</translation>
-    </message>
-    <message>
-        <source>Minimize window</source>
-        <translation>最小化窗口</translation>
-    </message>
-    <message>
-        <source>Toggle performance stats</source>
-        <translation>切换性能统计</translation>
-    </message>
-    <message>
-        <source>Show or hide the overlay menu</source>
-        <translation>显示或隐藏悬浮菜单</translation>
-    </message>
-    <message>
-        <source>Toggle mouse and keyboard capture</source>
-        <translation>切换鼠标和键盘捕获</translation>
-    </message>
-    <message>
-        <source>Input</source>
-        <translation>输入</translation>
-    </message>
-    <message>
-        <source>Toggle remote desktop mouse mode</source>
-        <translation>切换远程桌面鼠标模式</translation>
-    </message>
-    <message>
-        <source>Show or hide the local cursor</source>
-        <translation>显示或隐藏本地光标</translation>
-    </message>
-    <message>
-        <source>Toggle pointer region lock</source>
-        <translation>切换指针区域锁定</translation>
-    </message>
-    <message>
-        <source>Toggle system keyboard shortcut capture</source>
-        <translation>切换系统快捷键捕获</translation>
-    </message>
-    <message>
-        <source>Type clipboard text on the host</source>
-        <translation>在主机上输入剪贴板文本</translation>
-    </message>
-    <message>
-        <source>Cycle performance overlay presets</source>
-        <translation>轮换性能浮层预设</translation>
-    </message>
-    <message>
-        <source>Move the performance overlay</source>
-        <translation>移动性能浮层</translation>
-    </message>
-</context>
-<context>
-    <name>StatsOverlaySettings</name>
-    <message>
-        <source>Resolution and codec</source>
-        <translation>分辨率与编码</translation>
-    </message>
-    <message>
-        <source>Frame rate</source>
-        <translation>帧率</translation>
-    </message>
-    <message>
-        <source>1% low frame rate</source>
-        <translation>1% 低帧率</translation>
-    </message>
-    <message>
-        <source>Estimated latency</source>
-        <translation>估算延迟</translation>
-    </message>
-    <message>
-        <source>Bitrate</source>
-        <translation>码率</translation>
-    </message>
-    <message>
-        <source>Frames lost by the network</source>
-        <translation>网络丢帧</translation>
-    </message>
-    <message>
-        <source>Round trip time</source>
-        <translation>往返时间</translation>
-    </message>
-    <message>
-        <source>Network jitter</source>
-        <translation>网络抖动</translation>
-    </message>
-    <message>
-        <source>Host processing time</source>
-        <translation>主机处理时间</translation>
-    </message>
-    <message>
-        <source>Decode time</source>
-        <translation>解码时间</translation>
-    </message>
-    <message>
-        <source>Frame queue delay</source>
-        <translation>帧队列延迟</translation>
-    </message>
-    <message>
-        <source>Render time</source>
-        <translation>渲染时间</translation>
-    </message>
-    <message>
-        <source>FEC</source>
-        <translation>FEC</translation>
-    </message>
-    <message>
-        <source>Adaptive bitrate</source>
-        <translation>自适应码率</translation>
-    </message>
-    <message>
-        <source>Frames dropped by pacing</source>
-        <translation>帧同步丢弃的帧</translation>
-    </message>
-    <message>
-        <source>Display refresh rate</source>
-        <translation>显示器刷新率</translation>
-    </message>
-    <message>
-        <source>Session time</source>
-        <translation>串流时长</translation>
-    </message>
-    <message>
-        <source>Frame time graph</source>
-        <translation>帧时间图</translation>
-    </message>
-    <message>
-        <source>Latency breakdown bar</source>
-        <translation>延迟分解条</translation>
-    </message>
-    <message>
-        <source>%1 on %2: %3 × %4</source>
-        <translation>%2 上的%1：%3 × %4</translation>
-    </message>
-    <message>
-        <source>Detailed</source>
-        <translation>详细</translation>
-    </message>
-    <message>
-        <source>Custom</source>
-        <translation>自定义</translation>
-    </message>
-    <message>
-        <source>Default</source>
-        <translation>默认</translation>
-    </message>
-    <message>
-        <source>The resolution, frame rate and codec the host is streaming.</source>
-        <translation>主机正在串流的分辨率、帧率和编码。</translation>
-    </message>
-    <message>
-        <source>Frames shown per second. It should match the stream&apos;s frame rate; lower means frames are lost or arrive late.</source>
-        <translation>每秒显示的帧数。应与串流帧率一致；偏低说明有帧丢失或迟到。</translation>
-    </message>
-    <message>
-        <source>The frame rate of the slowest 1% of frames. Close to the FPS is smooth; much lower means stutter.</source>
-        <translation>最慢的 1% 帧对应的帧率。接近 FPS 表示流畅；明显偏低表示卡顿。</translation>
-    </message>
-    <message>
-        <source>Estimated time from the host capturing a frame to it appearing here. Under 40 ms is good; over 80 ms feels sluggish.</source>
-        <translation>从主机采集一帧到它显示在这里的估算时间。低于 40 ms 为佳；超过 80 ms 会明显迟滞。</translation>
-    </message>
-    <message>
-        <source>Video data received per second, and the bitrate the host was asked for. Higher gives a sharper picture, as long as the network keeps up.</source>
-        <translation>每秒收到的视频数据量，以及向主机请求的码率。网络跟得上时，越高画面越清晰。</translation>
-    </message>
-    <message>
-        <source>Frames lost on the network. Above 0.25% shows as glitches; above 1% the network is struggling.</source>
-        <translation>网络上丢失的帧。超过 0.25% 会出现花屏；超过 1% 说明网络吃紧。</translation>
-    </message>
-    <message>
-        <source>Round trip time to the host, and how much it varies. Under 20 ms is good; over 50 ms adds noticeable input delay.</source>
-        <translation>到主机的往返时间及其波动。低于 20 ms 为佳；超过 50 ms 会带来明显的输入延迟。</translation>
-    </message>
-    <message>
-        <source>How much the arrival time of video packets varies. Under 2 ms is good; more makes frame pacing uneven.</source>
-        <translation>视频包到达时间的波动程度。低于 2 ms 为佳；更高会让帧节奏不均匀。</translation>
-    </message>
-    <message>
-        <source>Time the host spent capturing and encoding each frame. Lower is better.</source>
-        <translation>主机采集并编码每一帧所用的时间。越低越好。</translation>
-    </message>
-    <message>
-        <source>Time this computer takes to decode a frame. Under 5 ms is good; over 8 ms can limit the frame rate.</source>
-        <translation>本机解码一帧所需的时间。低于 5 ms 为佳；超过 8 ms 可能限制帧率。</translation>
-    </message>
-    <message>
-        <source>Time a decoded frame waits before it is shown. It should stay low; high values add latency.</source>
-        <translation>解码后的帧等待显示的时间。应保持很低；偏高会增加延迟。</translation>
-    </message>
-    <message>
-        <source>Time to draw a decoded frame on screen. Lower is better.</source>
-        <translation>将解码后的帧绘制到屏幕的时间。越低越好。</translation>
-    </message>
-    <message>
-        <source>Share of packets that are error correction (parity), and the frames it recovered or could not recover. Lost frames mean the network drops more than FEC can repair.</source>
-        <translation>纠错（冗余）包所占比例，以及它恢复或未能恢复的帧数。出现丢失帧说明网络丢包超出了 FEC 的修复能力。</translation>
-    </message>
-    <message>
-        <source>Whether the host adapts the bitrate to the network automatically.</source>
-        <translation>主机是否根据网络自动调整码率。</translation>
-    </message>
-    <message>
-        <source>Frames dropped to stay in step with the display. Above 1% shows as stutter.</source>
-        <translation>为与显示器同步而丢弃的帧。超过 1% 会出现卡顿。</translation>
-    </message>
-    <message>
-        <source>Refresh rate of this display, and the stream&apos;s frame rate. A display slower than the stream has to drop frames.</source>
-        <translation>本显示器的刷新率以及串流帧率。显示器比串流慢时必然丢帧。</translation>
-    </message>
-    <message>
-        <source>How long this stream has been running.</source>
-        <translation>本次串流已持续的时间。</translation>
-    </message>
-    <message>
-        <source>Time between recent frames. Bars above the dashed target line are late frames; tall spikes are visible hitches.</source>
-        <translation>最近各帧之间的间隔。高于虚线目标线的柱是迟到的帧；高耸的尖峰就是可见的卡顿。</translation>
-    </message>
-    <message>
-        <source>How the estimated latency splits between the host, the network, decoding, queueing and rendering.</source>
-        <translation>估算延迟在主机、网络、解码、排队和渲染之间的分布。</translation>
     </message>
 </context>
 <context>
@@ -4368,6 +3933,469 @@
     <message><source>Pipw image is unavailable</source><translation>Pipw 图片不可用</translation></message>
     <message><source>This background image is unavailable. Please try another image.</source><translation>这张背景图片无法使用，请换一张重试。</translation></message>
     <message><source>Unable to load the background image. Please try another image.</source><translation>无法加载背景图片，请换一张重试。</translation></message>
+</context>
+<context>
+    <name>OverlayStatsWindow</name>
+    <message>
+        <source>Stream</source>
+        <translation>串流</translation>
+    </message>
+    <message>
+        <source>FPS</source>
+        <translation>帧率</translation>
+    </message>
+    <message>
+        <source>1% low</source>
+        <translation>1% 低帧</translation>
+    </message>
+    <message>
+        <source>0.1% low</source>
+        <translation>0.1% 低帧</translation>
+    </message>
+    <message>
+        <source>Latency</source>
+        <translation>延迟</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>码率</translation>
+    </message>
+    <message>
+        <source>Loss</source>
+        <translation>丢包</translation>
+    </message>
+    <message>
+        <source>RTT</source>
+        <translation>往返</translation>
+    </message>
+    <message>
+        <source>Jitter</source>
+        <translation>抖动</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>主机</translation>
+    </message>
+    <message>
+        <source>Decode</source>
+        <translation>解码</translation>
+    </message>
+    <message>
+        <source>Queue</source>
+        <translation>队列</translation>
+    </message>
+    <message>
+        <source>Render</source>
+        <translation>渲染</translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <translation>网络</translation>
+    </message>
+    <message>
+        <source>FEC</source>
+        <translation>FEC</translation>
+    </message>
+    <message>
+        <source>%1% parity</source>
+        <translation>%1% 冗余</translation>
+    </message>
+    <message>
+        <source>%1 recovered, %2 lost</source>
+        <translation>已恢复 %1，丢失 %2</translation>
+    </message>
+    <message>
+        <source>ABR</source>
+        <translation>自适应码率</translation>
+    </message>
+    <message>
+        <source>On</source>
+        <translation>开</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>关</translation>
+    </message>
+    <message>
+        <source>Pacer drops</source>
+        <translation>帧同步丢帧</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>显示器</translation>
+    </message>
+    <message>
+        <source>Time</source>
+        <translation>时长</translation>
+    </message>
+    <message>
+        <source>Frame time</source>
+        <translation>帧时间</translation>
+    </message>
+    <message>
+        <source>avg %1 · p99 %2 ms</source>
+        <translation>平均 %1 · p99 %2 ms</translation>
+    </message>
+    <message>
+        <source>Estimated latency</source>
+        <translation>估算延迟</translation>
+    </message>
+    <message>
+        <source>No metrics selected</source>
+        <translation>未选择任何指标</translation>
+    </message>
+    <message>
+        <source>Drag to move · Wheel to zoom · Esc when done</source>
+        <translation>拖动移动 · 滚轮缩放 · Esc 完成</translation>
+    </message>
+    <message>
+        <source>Lat</source>
+        <comment>Short form of the Latency label</comment>
+        <translation>延迟</translation>
+    </message>
+    <message>
+        <source>Rate</source>
+        <comment>Short form of the Bitrate label</comment>
+        <translation>码率</translation>
+    </message>
+    <message>
+        <source>Jit</source>
+        <comment>Short form of the Jitter label</comment>
+        <translation>抖动</translation>
+    </message>
+    <message>
+        <source>Dec</source>
+        <comment>Short form of the Decode label</comment>
+        <translation>解码</translation>
+    </message>
+    <message>
+        <source>Rend</source>
+        <comment>Short form of the Render label</comment>
+        <translation>渲染</translation>
+    </message>
+    <message>
+        <source>Drops</source>
+        <comment>Short form of the Pacer drops label</comment>
+        <translation>丢帧</translation>
+    </message>
+    <message>
+        <source>Disp</source>
+        <comment>Short form of the Display label</comment>
+        <translation>显示</translation>
+    </message>
+    <message>
+        <source>Res</source>
+        <comment>Short form of the Stream (resolution) label</comment>
+        <translation>串流</translation>
+    </message>
+    <message>
+        <source>Drag to move · Drag the edges to resize · Wheel to zoom · Esc when done</source>
+        <translation>拖动移动 · 拖动边缘调整大小 · 滚轮缩放 · Esc 完成</translation>
+    </message>
+    <message>
+        <source>Moonlight performance overlay</source>
+        <translation>Moonlight 性能浮层</translation>
+    </message>
+</context>
+<context>
+    <name>ShortcutModel</name>
+    <message>
+        <source>Also used by: %1</source>
+        <translation>与以下操作冲突：%1</translation>
+    </message>
+</context>
+<context>
+    <name>ShortcutSettingsCard</name>
+    <message>
+        <source>Keyboard shortcuts</source>
+        <translation>键盘快捷键</translation>
+    </message>
+    <message>
+        <source>Click a shortcut, then press the new key combination. Esc cancels and Backspace removes the shortcut. Shortcuts follow key positions, so they keep working when you switch keyboard layouts.</source>
+        <translation>点击快捷键后按下新的组合键。Esc 取消，Backspace 删除该快捷键。快捷键按物理键位匹配，切换键盘布局后依然有效。</translation>
+    </message>
+    <message>
+        <source>Default modifier keys</source>
+        <translation>默认修饰键</translation>
+    </message>
+    <message>
+        <source>Changes every shortcut that still uses its default key combination.</source>
+        <translation>同时修改所有仍在使用默认组合键的快捷键。</translation>
+    </message>
+    <message>
+        <source>NOTE: Ctrl+Alt is also how AltGr is reported on some keyboard layouts, so Ctrl+Alt shortcuts can trigger while typing.</source>
+        <translation>注意：部分键盘布局会把 AltGr 报告为 Ctrl+Alt，因此 Ctrl+Alt 快捷键可能在打字时被误触发。</translation>
+    </message>
+    <message>
+        <source>Use Ctrl, Alt or the Windows/Command key with this key. Only F13-F24 and media keys work on their own.</source>
+        <translation>此键需要配合 Ctrl、Alt 或 Windows/Command 键使用。只有 F13-F24 和媒体键可以单独使用。</translation>
+    </message>
+    <message>
+        <source>Press keys...</source>
+        <translation>请按下按键...</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>无</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation>重置</translation>
+    </message>
+    <message>
+        <source>Reset all shortcuts</source>
+        <translation>重置所有快捷键</translation>
+    </message>
+    <message>
+        <source>Restores every default shortcut and the Ctrl+Alt+Shift modifier keys.</source>
+        <translation>恢复所有默认快捷键和 Ctrl+Alt+Shift 修饰键。</translation>
+    </message>
+    <message>
+        <source>Reset all</source>
+        <translation>全部重置</translation>
+    </message>
+</context>
+<context>
+    <name>Shortcuts</name>
+    <message>
+        <source>Disconnect from host</source>
+        <translation>断开与主机的连接</translation>
+    </message>
+    <message>
+        <source>Session</source>
+        <translation>会话</translation>
+    </message>
+    <message>
+        <source>Disconnect and quit Moonlight</source>
+        <translation>断开连接并退出 Moonlight</translation>
+    </message>
+    <message>
+        <source>Toggle full-screen</source>
+        <translation>切换全屏</translation>
+    </message>
+    <message>
+        <source>Window</source>
+        <translation>窗口</translation>
+    </message>
+    <message>
+        <source>Minimize window</source>
+        <translation>最小化窗口</translation>
+    </message>
+    <message>
+        <source>Toggle performance stats</source>
+        <translation>切换性能统计</translation>
+    </message>
+    <message>
+        <source>Show or hide the overlay menu</source>
+        <translation>显示或隐藏悬浮菜单</translation>
+    </message>
+    <message>
+        <source>Toggle mouse and keyboard capture</source>
+        <translation>切换鼠标和键盘捕获</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>输入</translation>
+    </message>
+    <message>
+        <source>Toggle remote desktop mouse mode</source>
+        <translation>切换远程桌面鼠标模式</translation>
+    </message>
+    <message>
+        <source>Show or hide the local cursor</source>
+        <translation>显示或隐藏本地光标</translation>
+    </message>
+    <message>
+        <source>Toggle pointer region lock</source>
+        <translation>切换指针区域锁定</translation>
+    </message>
+    <message>
+        <source>Toggle system keyboard shortcut capture</source>
+        <translation>切换系统快捷键捕获</translation>
+    </message>
+    <message>
+        <source>Type clipboard text on the host</source>
+        <translation>在主机上输入剪贴板文本</translation>
+    </message>
+    <message>
+        <source>Cycle performance overlay presets</source>
+        <translation>轮换性能浮层预设</translation>
+    </message>
+    <message>
+        <source>Move the performance overlay</source>
+        <translation>移动性能浮层</translation>
+    </message>
+</context>
+<context>
+    <name>StatsOverlaySettings</name>
+    <message>
+        <source>Resolution and codec</source>
+        <translation>分辨率与编码</translation>
+    </message>
+    <message>
+        <source>Frame rate</source>
+        <translation>帧率</translation>
+    </message>
+    <message>
+        <source>1% low frame rate</source>
+        <translation>1% 低帧率</translation>
+    </message>
+    <message>
+        <source>Estimated latency</source>
+        <translation>估算延迟</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>码率</translation>
+    </message>
+    <message>
+        <source>Frames lost by the network</source>
+        <translation>网络丢帧</translation>
+    </message>
+    <message>
+        <source>Round trip time</source>
+        <translation>往返时间</translation>
+    </message>
+    <message>
+        <source>Network jitter</source>
+        <translation>网络抖动</translation>
+    </message>
+    <message>
+        <source>Host processing time</source>
+        <translation>主机处理时间</translation>
+    </message>
+    <message>
+        <source>Decode time</source>
+        <translation>解码时间</translation>
+    </message>
+    <message>
+        <source>Frame queue delay</source>
+        <translation>帧队列延迟</translation>
+    </message>
+    <message>
+        <source>Render time</source>
+        <translation>渲染时间</translation>
+    </message>
+    <message>
+        <source>FEC</source>
+        <translation>FEC</translation>
+    </message>
+    <message>
+        <source>Adaptive bitrate</source>
+        <translation>自适应码率</translation>
+    </message>
+    <message>
+        <source>Frames dropped by pacing</source>
+        <translation>帧同步丢弃的帧</translation>
+    </message>
+    <message>
+        <source>Display refresh rate</source>
+        <translation>显示器刷新率</translation>
+    </message>
+    <message>
+        <source>Session time</source>
+        <translation>串流时长</translation>
+    </message>
+    <message>
+        <source>Frame time graph</source>
+        <translation>帧时间图</translation>
+    </message>
+    <message>
+        <source>Latency breakdown bar</source>
+        <translation>延迟分解条</translation>
+    </message>
+    <message>
+        <source>%1 on %2: %3 × %4</source>
+        <translation>%2 上的%1：%3 × %4</translation>
+    </message>
+    <message>
+        <source>Detailed</source>
+        <translation>详细</translation>
+    </message>
+    <message>
+        <source>Custom</source>
+        <translation>自定义</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>默认</translation>
+    </message>
+    <message>
+        <source>The resolution, frame rate and codec the host is streaming.</source>
+        <translation>主机正在串流的分辨率、帧率和编码。</translation>
+    </message>
+    <message>
+        <source>Frames shown per second. It should match the stream&apos;s frame rate; lower means frames are lost or arrive late.</source>
+        <translation>每秒显示的帧数。应与串流帧率一致；偏低说明有帧丢失或迟到。</translation>
+    </message>
+    <message>
+        <source>The frame rate of the slowest 1% of frames. Close to the FPS is smooth; much lower means stutter.</source>
+        <translation>最慢的 1% 帧对应的帧率。接近 FPS 表示流畅；明显偏低表示卡顿。</translation>
+    </message>
+    <message>
+        <source>Estimated time from the host capturing a frame to it appearing here. Under 40 ms is good; over 80 ms feels sluggish.</source>
+        <translation>从主机采集一帧到它显示在这里的估算时间。低于 40 ms 为佳；超过 80 ms 会明显迟滞。</translation>
+    </message>
+    <message>
+        <source>Video data received per second, and the bitrate the host was asked for. Higher gives a sharper picture, as long as the network keeps up.</source>
+        <translation>每秒收到的视频数据量，以及向主机请求的码率。网络跟得上时，越高画面越清晰。</translation>
+    </message>
+    <message>
+        <source>Frames lost on the network. Above 0.25% shows as glitches; above 1% the network is struggling.</source>
+        <translation>网络上丢失的帧。超过 0.25% 会出现花屏；超过 1% 说明网络吃紧。</translation>
+    </message>
+    <message>
+        <source>Round trip time to the host, and how much it varies. Under 20 ms is good; over 50 ms adds noticeable input delay.</source>
+        <translation>到主机的往返时间及其波动。低于 20 ms 为佳；超过 50 ms 会带来明显的输入延迟。</translation>
+    </message>
+    <message>
+        <source>How much the arrival time of video packets varies. Under 2 ms is good; more makes frame pacing uneven.</source>
+        <translation>视频包到达时间的波动程度。低于 2 ms 为佳；更高会让帧节奏不均匀。</translation>
+    </message>
+    <message>
+        <source>Time the host spent capturing and encoding each frame. Lower is better.</source>
+        <translation>主机采集并编码每一帧所用的时间。越低越好。</translation>
+    </message>
+    <message>
+        <source>Time this computer takes to decode a frame. Under 5 ms is good; over 8 ms can limit the frame rate.</source>
+        <translation>本机解码一帧所需的时间。低于 5 ms 为佳；超过 8 ms 可能限制帧率。</translation>
+    </message>
+    <message>
+        <source>Time a decoded frame waits before it is shown. It should stay low; high values add latency.</source>
+        <translation>解码后的帧等待显示的时间。应保持很低；偏高会增加延迟。</translation>
+    </message>
+    <message>
+        <source>Time to draw a decoded frame on screen. Lower is better.</source>
+        <translation>将解码后的帧绘制到屏幕的时间。越低越好。</translation>
+    </message>
+    <message>
+        <source>Share of packets that are error correction (parity), and the frames it recovered or could not recover. Lost frames mean the network drops more than FEC can repair.</source>
+        <translation>纠错（冗余）包所占比例，以及它恢复或未能恢复的帧数。出现丢失帧说明网络丢包超出了 FEC 的修复能力。</translation>
+    </message>
+    <message>
+        <source>Whether the host adapts the bitrate to the network automatically.</source>
+        <translation>主机是否根据网络自动调整码率。</translation>
+    </message>
+    <message>
+        <source>Frames dropped to stay in step with the display. Above 1% shows as stutter.</source>
+        <translation>为与显示器同步而丢弃的帧。超过 1% 会出现卡顿。</translation>
+    </message>
+    <message>
+        <source>Refresh rate of this display, and the stream&apos;s frame rate. A display slower than the stream has to drop frames.</source>
+        <translation>本显示器的刷新率以及串流帧率。显示器比串流慢时必然丢帧。</translation>
+    </message>
+    <message>
+        <source>How long this stream has been running.</source>
+        <translation>本次串流已持续的时间。</translation>
+    </message>
+    <message>
+        <source>Time between recent frames. Bars above the dashed target line are late frames; tall spikes are visible hitches.</source>
+        <translation>最近各帧之间的间隔。高于虚线目标线的柱是迟到的帧；高耸的尖峰就是可见的卡顿。</translation>
+    </message>
+    <message>
+        <source>How the estimated latency splits between the host, the network, decoding, queueing and rendering.</source>
+        <translation>估算延迟在主机、网络、解码、排队和渲染之间的分布。</translation>
+    </message>
 </context>
 <context>
     <name>OverlayStatsTooltip</name>

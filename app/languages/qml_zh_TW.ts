@@ -670,6 +670,18 @@
         <translation>開啟垂直同步後才能使用影格平滑。</translation>
     </message>
     <message>
+        <source>Not used while variable refresh rate is on.</source>
+        <translation>可變更新率開啟時不使用此項。</translation>
+    </message>
+    <message>
+        <source>Variable refresh rate (G-Sync / FreeSync)</source>
+        <translation>可變更新率（G-Sync / FreeSync）</translation>
+    </message>
+    <message>
+        <source>Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). For the smoothest result, stream a few FPS below the display&apos;s refresh rate.</source>
+        <translation>每一影格到達後立即顯示，讓支援 VRR 的顯示器跟著串流的節奏更新：延遲低且不撕裂。開啟後取代垂直同步和影格平滑。需要 G-Sync 或 FreeSync 顯示器、在顯示卡驅動程式中開啟 VRR，並使用「全螢幕」或「無邊框視窗」顯示模式（只有驅動程式為視窗化程式開啟 VRR 時，「視窗」模式才有效）。想要最流暢的效果，請把串流影格率設得比顯示器更新率低幾格。</translation>
+    </message>
+    <message>
         <source>Performance overlay</source>
         <translation>效能浮層</translation>
     </message>
@@ -740,6 +752,14 @@
     <message>
         <source>Reset size</source>
         <translation>重設尺寸</translation>
+    </message>
+    <message>
+        <source>Detach the performance overlay</source>
+        <translation>分離效能浮層</translation>
+    </message>
+    <message>
+        <source>Show the overlay in a window of its own that you can drag anywhere, including to another screen. It opens on another screen if there is one and remembers where you leave it. Exclusive fullscreen on the same monitor covers it. Takes effect when the next stream starts.</source>
+        <translation>將浮層放進獨立視窗，可拖曳到任意位置，包括其他螢幕。若有其他螢幕，它會在那裡開啟，並記住你放下的位置。同一螢幕上的獨佔全螢幕會遮住它。下次串流開始時生效。</translation>
     </message>
 </context>
 <context>
@@ -1762,165 +1782,6 @@
     <message>
         <source>Edit position</source>
         <translation>調整位置</translation>
-    </message>
-</context>
-<context>
-    <name>OverlayStatsWindow</name>
-    <message>
-        <source>Stream</source>
-        <translation>串流</translation>
-    </message>
-    <message>
-        <source>FPS</source>
-        <translation>影格率</translation>
-    </message>
-    <message>
-        <source>1% low</source>
-        <translation>1% 低影格</translation>
-    </message>
-    <message>
-        <source>0.1% low</source>
-        <translation>0.1% 低影格</translation>
-    </message>
-    <message>
-        <source>Latency</source>
-        <translation>延遲</translation>
-    </message>
-    <message>
-        <source>Bitrate</source>
-        <translation>位元率</translation>
-    </message>
-    <message>
-        <source>Loss</source>
-        <translation>遺失</translation>
-    </message>
-    <message>
-        <source>RTT</source>
-        <translation>往返</translation>
-    </message>
-    <message>
-        <source>Jitter</source>
-        <translation>抖動</translation>
-    </message>
-    <message>
-        <source>Host</source>
-        <translation>主機</translation>
-    </message>
-    <message>
-        <source>Decode</source>
-        <translation>解碼</translation>
-    </message>
-    <message>
-        <source>Queue</source>
-        <translation>佇列</translation>
-    </message>
-    <message>
-        <source>Render</source>
-        <translation>繪製</translation>
-    </message>
-    <message>
-        <source>Network</source>
-        <translation>網路</translation>
-    </message>
-    <message>
-        <source>FEC</source>
-        <translation>FEC</translation>
-    </message>
-    <message>
-        <source>%1% parity</source>
-        <translation>%1% 冗餘</translation>
-    </message>
-    <message>
-        <source>%1 recovered, %2 lost</source>
-        <translation>已恢復 %1，遺失 %2</translation>
-    </message>
-    <message>
-        <source>ABR</source>
-        <translation>自適應位元率</translation>
-    </message>
-    <message>
-        <source>On</source>
-        <translation>開</translation>
-    </message>
-    <message>
-        <source>Off</source>
-        <translation>關</translation>
-    </message>
-    <message>
-        <source>Pacer drops</source>
-        <translation>影格同步丟影格</translation>
-    </message>
-    <message>
-        <source>Display</source>
-        <translation>顯示器</translation>
-    </message>
-    <message>
-        <source>Time</source>
-        <translation>時長</translation>
-    </message>
-    <message>
-        <source>Frame time</source>
-        <translation>影格時間</translation>
-    </message>
-    <message>
-        <source>avg %1 · p99 %2 ms</source>
-        <translation>平均 %1 · p99 %2 ms</translation>
-    </message>
-    <message>
-        <source>Estimated latency</source>
-        <translation>估算延遲</translation>
-    </message>
-    <message>
-        <source>No metrics selected</source>
-        <translation>未選擇任何指標</translation>
-    </message>
-    <message>
-        <source>Drag to move · Wheel to zoom · Esc when done</source>
-        <translation>拖曳移動 · 滾輪縮放 · Esc 完成</translation>
-    </message>
-    <message>
-        <source>Lat</source>
-        <comment>Short form of the Latency label</comment>
-        <translation>延遲</translation>
-    </message>
-    <message>
-        <source>Rate</source>
-        <comment>Short form of the Bitrate label</comment>
-        <translation>位元率</translation>
-    </message>
-    <message>
-        <source>Jit</source>
-        <comment>Short form of the Jitter label</comment>
-        <translation>抖動</translation>
-    </message>
-    <message>
-        <source>Dec</source>
-        <comment>Short form of the Decode label</comment>
-        <translation>解碼</translation>
-    </message>
-    <message>
-        <source>Rend</source>
-        <comment>Short form of the Render label</comment>
-        <translation>繪製</translation>
-    </message>
-    <message>
-        <source>Drops</source>
-        <comment>Short form of the Pacer drops label</comment>
-        <translation>丟影格</translation>
-    </message>
-    <message>
-        <source>Disp</source>
-        <comment>Short form of the Display label</comment>
-        <translation>顯示</translation>
-    </message>
-    <message>
-        <source>Res</source>
-        <comment>Short form of the Stream (resolution) label</comment>
-        <translation>串流</translation>
-    </message>
-    <message>
-        <source>Drag to move · Drag the edges to resize · Wheel to zoom · Esc when done</source>
-        <translation>拖曳移動 · 拖曳邊緣調整大小 · 滾輪縮放 · Esc 完成</translation>
     </message>
 </context>
 <context>
@@ -2992,6 +2853,10 @@
         <translation>無法初始化畫面解碼器。請檢查您的串流設定並再試一次。</translation>
     </message>
     <message>
+        <source>VRR: this %1 FPS stream is faster than the %2 Hz display can follow, so some frames are dropped. Stream at %3 FPS or lower for the smoothest VRR.</source>
+        <translation>VRR：%1 FPS 的串流超出了 %2 Hz 顯示器能跟隨的範圍，部分影格會被捨棄。將串流影格率設為 %3 FPS 或更低，VRR 效果最流暢。</translation>
+    </message>
+    <message>
         <source>Drag the overlay to move it. Press Esc when done.</source>
         <translation>拖曳浮層即可移動，完成後按 Esc。</translation>
     </message>
@@ -3054,6 +2919,403 @@
     <message>
         <source>Interface</source>
         <translation>介面</translation>
+    </message>
+</context>
+<context>
+    <name>StreamSegue</name>
+    <message>
+        <location filename="../gui/StreamSegue.qml" line="22"/>
+        <source>Resuming %1...</source>
+        <translation>正在恢復 %1...</translation>
+    </message>
+    <message>
+        <location filename="../gui/StreamSegue.qml" line="23"/>
+        <location filename="../gui/StreamSegue.qml" line="30"/>
+        <source>Starting %1...</source>
+        <translation>正在啟動 %1...</translation>
+    </message>
+    <message>
+        <location filename="../gui/StreamSegue.qml" line="36"/>
+        <source>Starting %1 failed: Error %2</source>
+        <translation>啟動 %1 失敗：錯誤 %2</translation>
+    </message>
+    <message>
+        <location filename="../gui/StreamSegue.qml" line="39"/>
+        <source>Check your firewall and port forwarding rules for port(s): %1</source>
+        <translation>檢查您的防火牆和通訊埠轉送規則中的通訊埠：%1</translation>
+    </message>
+    <message>
+        <location filename="../gui/StreamSegue.qml" line="84"/>
+        <source>This PC&apos;s Internet connection is blocking Moonlight. Streaming over the Internet may not work while connected to this network.</source>
+        <translation>此電腦的網路連線遭到封鎖。在連線到此網路時，網際網路上的串流傳輸可能無法使用。</translation>
+    </message>
+    <message>
+        <location filename="../gui/StreamSegue.qml" line="320"/>
+        <source>Tip:</source>
+        <translation>提示：</translation>
+    </message>
+    <message>
+        <location filename="../gui/StreamSegue.qml" line="320"/>
+        <source>Press %1 to disconnect your session</source>
+        <translation>按下 %1 以中斷您的工作階段</translation>
+    </message>
+    <message>
+        <location filename="../gui/StreamSegue.qml" line="321"/>
+        <source>Start+Select+L1+R1</source>
+        <translation>Start+Select+L1+R1</translation>
+    </message>
+    <message>
+        <location filename="../gui/StreamSegue.qml" line="321"/>
+        <source>Ctrl+Alt+Shift+Q</source>
+        <translation>Ctrl+Alt+Shift+Q</translation>
+    </message>
+</context>
+<context>
+    <name>main</name>
+    <message>
+        <location filename="../gui/main.qml" line="734"/>
+        <source>Settings</source>
+        <translation>設定</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="505"/>
+        <source>Version %1</source>
+        <translation>版本 %1</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="547"/>
+        <source>Add PC manually</source>
+        <translation>手動新增電腦</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="592"/>
+        <source>Update available for Moonlight: Version %1</source>
+        <translation>Moonlight 有可用更新：版本 %1</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="528"/>
+        <source>Join our QQ group</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="658"/>
+        <source>Gamepad Mapper</source>
+        <translation>手把對應</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="800"/>
+        <source>Hardware acceleration doesn&apos;t work on XWayland. Continuing on XWayland may result in poor streaming performance. Try running with QT_QPA_PLATFORM=wayland or switch to X11.</source>
+        <translation>硬體加速無法在 XWayland 運作。若繼續使用 XWayland 可能會造成串流品質降低。請嘗試以 QT_QPA_PLATFORM=wayland 執行或切換至 X11。</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="809"/>
+        <source>This version of Moonlight isn&apos;t optimized for your PC. Please download the &apos;%1&apos; version of Moonlight for the best streaming performance.</source>
+        <translation>此版本的 Moonlight 尚未針對你的電腦最佳化。請下載「%1」版本的 Moonlight，以獲得最佳的串流效能。</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="818"/>
+        <source>Moonlight detected gamepads without a mapping:</source>
+        <translation>Moonlight 偵測到沒有對應的手把：</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="635"/>
+        <source>Help</source>
+        <translation>說明</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="581"/>
+        <location filename="../gui/main.qml" line="790"/>
+        <source>Preparing update...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="679"/>
+        <source>Connection IP</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="701"/>
+        <source>Display Settings</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="748"/>
+        <source>Minimize</source>
+        <translation>最小化</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="756"/>
+        <source>Restore</source>
+        <translation>還原</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="756"/>
+        <source>Maximize</source>
+        <translation>最大化</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="770"/>
+        <source>Close</source>
+        <translation>關閉</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="779"/>
+        <source>No functioning hardware accelerated video decoder was detected by Moonlight. Your streaming performance may be severely degraded in this configuration.</source>
+        <translation>Moonlight 沒有偵測到有效的硬體加速視訊解碼器。在這種組態下，你的串流效能可能會嚴重下降。</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="781"/>
+        <source>Click the Help button for more information on solving this problem.</source>
+        <translation>按下說明按鈕以瞭解更多如何解決此問題的資訊。</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="802"/>
+        <source>Click the Help button for more information.</source>
+        <translation>按下說明按鈕以瞭解更多資訊。</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="820"/>
+        <source>Click the Help button for information on how to map your gamepads.</source>
+        <translation>按下說明按鈕以取得有關如何對應手把的資訊。</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="828"/>
+        <source>Are you sure you want to quit?</source>
+        <translation>您確定要結束嗎？</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="858"/>
+        <source>Enter the IP address of your host PC:</source>
+        <translation>輸入您的主機電腦 IP 位址：</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="933"/>
+        <source>No host PC of your own?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="942"/>
+        <source>Procriva Cloud rents out cloud hosts that are ready to stream.</source>
+        <extracomment>Procriva Cloud is a product name and must not be translated.</extracomment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="950"/>
+        <source>Learn more</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>UsbForwardingEnvironment</name>
+    <message>
+        <source>The USB forwarding driver is not running. Start VBoxUSBMon as administrator, or restart Windows.</source>
+        <translation>USB 轉發驅動未執行。請以系統管理員身分啟動 VBoxUSBMon，或重新啟動 Windows。</translation>
+    </message>
+    <message>
+        <source>The usbipd service is not running. Start the service and retry.</source>
+        <translation>usbipd 服務未執行。請啟動服務後重試。</translation>
+    </message>
+    <message>
+        <source>Could not verify the local USB service and driver. Check the usbipd-win installation.</source>
+        <translation>無法確認本機 USB 服務和驅動狀態。請檢查 usbipd-win 安裝。</translation>
+    </message>
+</context>
+<context>
+    <name>PeripheralsSettingsPage</name>
+    <message>
+        <source>USB driver not running. Start VBoxUSBMon as administrator, or restart Windows.</source>
+        <translation>USB 驅動未執行。請以系統管理員身分啟動 VBoxUSBMon，或重新啟動 Windows。</translation>
+    </message>
+    <message>
+        <source>Could not verify the USB service and driver. Check the usbipd-win installation.</source>
+        <translation>無法確認 USB 服務和驅動狀態。請檢查 usbipd-win 安裝。</translation>
+    </message>
+</context>
+<context>
+    <name>UsbForwarding::Tunnel</name>
+    <message>
+        <source>The host could not start USB forwarding.</source>
+        <translation>主機未能啟動 USB 轉發。</translation>
+    </message>
+    <message>
+        <source>The host could not start USB forwarding: %1</source>
+        <translation>主機未能啟動 USB 轉發：%1</translation>
+    </message>
+</context>
+<context>
+    <name>PipwBackgroundDownloader</name>
+    <message><source>Background download timed out</source><translation>背景圖片下載逾時</translation></message>
+    <message><source>Unable to retrieve a background image. Please try again later.</source><translation>無法取得背景圖片，請稍後再試。</translation></message>
+    <message><source>Invalid Pipw redirect chain</source><translation>Pipw 重新導向鏈無效</translation></message>
+    <message><source>Invalid or oversized Pipw image</source><translation>Pipw 圖片無效或過大</translation></message>
+    <message><source>Pipw image exceeds the 20 MiB limit</source><translation>Pipw 圖片超過 20 MiB 大小限制</translation></message>
+    <message><source>Invalid Pipw redirect</source><translation>Pipw 重新導向無效</translation></message>
+    <message><source>Pipw API did not return an image redirect</source><translation>Pipw 介面未回傳圖片重新導向</translation></message>
+    <message><source>Pipw image is unavailable</source><translation>Pipw 圖片無法使用</translation></message>
+    <message><source>This background image is unavailable. Please try another image.</source><translation>這張背景圖片無法使用，請換一張再試。</translation></message>
+    <message><source>Unable to load the background image. Please try another image.</source><translation>無法載入背景圖片，請換一張再試。</translation></message>
+</context>
+<context>
+    <name>OverlayStatsWindow</name>
+    <message>
+        <source>Stream</source>
+        <translation>串流</translation>
+    </message>
+    <message>
+        <source>FPS</source>
+        <translation>影格率</translation>
+    </message>
+    <message>
+        <source>1% low</source>
+        <translation>1% 低影格</translation>
+    </message>
+    <message>
+        <source>0.1% low</source>
+        <translation>0.1% 低影格</translation>
+    </message>
+    <message>
+        <source>Latency</source>
+        <translation>延遲</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>位元率</translation>
+    </message>
+    <message>
+        <source>Loss</source>
+        <translation>遺失</translation>
+    </message>
+    <message>
+        <source>RTT</source>
+        <translation>往返</translation>
+    </message>
+    <message>
+        <source>Jitter</source>
+        <translation>抖動</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>主機</translation>
+    </message>
+    <message>
+        <source>Decode</source>
+        <translation>解碼</translation>
+    </message>
+    <message>
+        <source>Queue</source>
+        <translation>佇列</translation>
+    </message>
+    <message>
+        <source>Render</source>
+        <translation>繪製</translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <translation>網路</translation>
+    </message>
+    <message>
+        <source>FEC</source>
+        <translation>FEC</translation>
+    </message>
+    <message>
+        <source>%1% parity</source>
+        <translation>%1% 冗餘</translation>
+    </message>
+    <message>
+        <source>%1 recovered, %2 lost</source>
+        <translation>已恢復 %1，遺失 %2</translation>
+    </message>
+    <message>
+        <source>ABR</source>
+        <translation>自適應位元率</translation>
+    </message>
+    <message>
+        <source>On</source>
+        <translation>開</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>關</translation>
+    </message>
+    <message>
+        <source>Pacer drops</source>
+        <translation>影格同步丟影格</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>顯示器</translation>
+    </message>
+    <message>
+        <source>Time</source>
+        <translation>時長</translation>
+    </message>
+    <message>
+        <source>Frame time</source>
+        <translation>影格時間</translation>
+    </message>
+    <message>
+        <source>avg %1 · p99 %2 ms</source>
+        <translation>平均 %1 · p99 %2 ms</translation>
+    </message>
+    <message>
+        <source>Estimated latency</source>
+        <translation>估算延遲</translation>
+    </message>
+    <message>
+        <source>No metrics selected</source>
+        <translation>未選擇任何指標</translation>
+    </message>
+    <message>
+        <source>Drag to move · Wheel to zoom · Esc when done</source>
+        <translation>拖曳移動 · 滾輪縮放 · Esc 完成</translation>
+    </message>
+    <message>
+        <source>Lat</source>
+        <comment>Short form of the Latency label</comment>
+        <translation>延遲</translation>
+    </message>
+    <message>
+        <source>Rate</source>
+        <comment>Short form of the Bitrate label</comment>
+        <translation>位元率</translation>
+    </message>
+    <message>
+        <source>Jit</source>
+        <comment>Short form of the Jitter label</comment>
+        <translation>抖動</translation>
+    </message>
+    <message>
+        <source>Dec</source>
+        <comment>Short form of the Decode label</comment>
+        <translation>解碼</translation>
+    </message>
+    <message>
+        <source>Rend</source>
+        <comment>Short form of the Render label</comment>
+        <translation>繪製</translation>
+    </message>
+    <message>
+        <source>Drops</source>
+        <comment>Short form of the Pacer drops label</comment>
+        <translation>丟影格</translation>
+    </message>
+    <message>
+        <source>Disp</source>
+        <comment>Short form of the Display label</comment>
+        <translation>顯示</translation>
+    </message>
+    <message>
+        <source>Res</source>
+        <comment>Short form of the Stream (resolution) label</comment>
+        <translation>串流</translation>
+    </message>
+    <message>
+        <source>Drag to move · Drag the edges to resize · Wheel to zoom · Esc when done</source>
+        <translation>拖曳移動 · 拖曳邊緣調整大小 · 滾輪縮放 · Esc 完成</translation>
+    </message>
+    <message>
+        <source>Moonlight performance overlay</source>
+        <translation>Moonlight 效能浮層</translation>
     </message>
 </context>
 <context>
@@ -3355,240 +3617,6 @@
         <source>How the estimated latency splits between the host, the network, decoding, queueing and rendering.</source>
         <translation>估算延遲在主機、網路、解碼、排隊與繪製之間的分佈。</translation>
     </message>
-</context>
-<context>
-    <name>StreamSegue</name>
-    <message>
-        <location filename="../gui/StreamSegue.qml" line="22"/>
-        <source>Resuming %1...</source>
-        <translation>正在恢復 %1...</translation>
-    </message>
-    <message>
-        <location filename="../gui/StreamSegue.qml" line="23"/>
-        <location filename="../gui/StreamSegue.qml" line="30"/>
-        <source>Starting %1...</source>
-        <translation>正在啟動 %1...</translation>
-    </message>
-    <message>
-        <location filename="../gui/StreamSegue.qml" line="36"/>
-        <source>Starting %1 failed: Error %2</source>
-        <translation>啟動 %1 失敗：錯誤 %2</translation>
-    </message>
-    <message>
-        <location filename="../gui/StreamSegue.qml" line="39"/>
-        <source>Check your firewall and port forwarding rules for port(s): %1</source>
-        <translation>檢查您的防火牆和通訊埠轉送規則中的通訊埠：%1</translation>
-    </message>
-    <message>
-        <location filename="../gui/StreamSegue.qml" line="84"/>
-        <source>This PC&apos;s Internet connection is blocking Moonlight. Streaming over the Internet may not work while connected to this network.</source>
-        <translation>此電腦的網路連線遭到封鎖。在連線到此網路時，網際網路上的串流傳輸可能無法使用。</translation>
-    </message>
-    <message>
-        <location filename="../gui/StreamSegue.qml" line="320"/>
-        <source>Tip:</source>
-        <translation>提示：</translation>
-    </message>
-    <message>
-        <location filename="../gui/StreamSegue.qml" line="320"/>
-        <source>Press %1 to disconnect your session</source>
-        <translation>按下 %1 以中斷您的工作階段</translation>
-    </message>
-    <message>
-        <location filename="../gui/StreamSegue.qml" line="321"/>
-        <source>Start+Select+L1+R1</source>
-        <translation>Start+Select+L1+R1</translation>
-    </message>
-    <message>
-        <location filename="../gui/StreamSegue.qml" line="321"/>
-        <source>Ctrl+Alt+Shift+Q</source>
-        <translation>Ctrl+Alt+Shift+Q</translation>
-    </message>
-</context>
-<context>
-    <name>main</name>
-    <message>
-        <location filename="../gui/main.qml" line="734"/>
-        <source>Settings</source>
-        <translation>設定</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="505"/>
-        <source>Version %1</source>
-        <translation>版本 %1</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="547"/>
-        <source>Add PC manually</source>
-        <translation>手動新增電腦</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="592"/>
-        <source>Update available for Moonlight: Version %1</source>
-        <translation>Moonlight 有可用更新：版本 %1</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="528"/>
-        <source>Join our QQ group</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="658"/>
-        <source>Gamepad Mapper</source>
-        <translation>手把對應</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="800"/>
-        <source>Hardware acceleration doesn&apos;t work on XWayland. Continuing on XWayland may result in poor streaming performance. Try running with QT_QPA_PLATFORM=wayland or switch to X11.</source>
-        <translation>硬體加速無法在 XWayland 運作。若繼續使用 XWayland 可能會造成串流品質降低。請嘗試以 QT_QPA_PLATFORM=wayland 執行或切換至 X11。</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="809"/>
-        <source>This version of Moonlight isn&apos;t optimized for your PC. Please download the &apos;%1&apos; version of Moonlight for the best streaming performance.</source>
-        <translation>此版本的 Moonlight 尚未針對你的電腦最佳化。請下載「%1」版本的 Moonlight，以獲得最佳的串流效能。</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="818"/>
-        <source>Moonlight detected gamepads without a mapping:</source>
-        <translation>Moonlight 偵測到沒有對應的手把：</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="635"/>
-        <source>Help</source>
-        <translation>說明</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="581"/>
-        <location filename="../gui/main.qml" line="790"/>
-        <source>Preparing update...</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="679"/>
-        <source>Connection IP</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="701"/>
-        <source>Display Settings</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="748"/>
-        <source>Minimize</source>
-        <translation>最小化</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="756"/>
-        <source>Restore</source>
-        <translation>還原</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="756"/>
-        <source>Maximize</source>
-        <translation>最大化</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="770"/>
-        <source>Close</source>
-        <translation>關閉</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="779"/>
-        <source>No functioning hardware accelerated video decoder was detected by Moonlight. Your streaming performance may be severely degraded in this configuration.</source>
-        <translation>Moonlight 沒有偵測到有效的硬體加速視訊解碼器。在這種組態下，你的串流效能可能會嚴重下降。</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="781"/>
-        <source>Click the Help button for more information on solving this problem.</source>
-        <translation>按下說明按鈕以瞭解更多如何解決此問題的資訊。</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="802"/>
-        <source>Click the Help button for more information.</source>
-        <translation>按下說明按鈕以瞭解更多資訊。</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="820"/>
-        <source>Click the Help button for information on how to map your gamepads.</source>
-        <translation>按下說明按鈕以取得有關如何對應手把的資訊。</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="828"/>
-        <source>Are you sure you want to quit?</source>
-        <translation>您確定要結束嗎？</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="858"/>
-        <source>Enter the IP address of your host PC:</source>
-        <translation>輸入您的主機電腦 IP 位址：</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="933"/>
-        <source>No host PC of your own?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="942"/>
-        <source>Procriva Cloud rents out cloud hosts that are ready to stream.</source>
-        <extracomment>Procriva Cloud is a product name and must not be translated.</extracomment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="950"/>
-        <source>Learn more</source>
-        <translation type="unfinished"></translation>
-    </message>
-</context>
-<context>
-    <name>UsbForwardingEnvironment</name>
-    <message>
-        <source>The USB forwarding driver is not running. Start VBoxUSBMon as administrator, or restart Windows.</source>
-        <translation>USB 轉發驅動未執行。請以系統管理員身分啟動 VBoxUSBMon，或重新啟動 Windows。</translation>
-    </message>
-    <message>
-        <source>The usbipd service is not running. Start the service and retry.</source>
-        <translation>usbipd 服務未執行。請啟動服務後重試。</translation>
-    </message>
-    <message>
-        <source>Could not verify the local USB service and driver. Check the usbipd-win installation.</source>
-        <translation>無法確認本機 USB 服務和驅動狀態。請檢查 usbipd-win 安裝。</translation>
-    </message>
-</context>
-<context>
-    <name>PeripheralsSettingsPage</name>
-    <message>
-        <source>USB driver not running. Start VBoxUSBMon as administrator, or restart Windows.</source>
-        <translation>USB 驅動未執行。請以系統管理員身分啟動 VBoxUSBMon，或重新啟動 Windows。</translation>
-    </message>
-    <message>
-        <source>Could not verify the USB service and driver. Check the usbipd-win installation.</source>
-        <translation>無法確認 USB 服務和驅動狀態。請檢查 usbipd-win 安裝。</translation>
-    </message>
-</context>
-<context>
-    <name>UsbForwarding::Tunnel</name>
-    <message>
-        <source>The host could not start USB forwarding.</source>
-        <translation>主機未能啟動 USB 轉發。</translation>
-    </message>
-    <message>
-        <source>The host could not start USB forwarding: %1</source>
-        <translation>主機未能啟動 USB 轉發：%1</translation>
-    </message>
-</context>
-<context>
-    <name>PipwBackgroundDownloader</name>
-    <message><source>Background download timed out</source><translation>背景圖片下載逾時</translation></message>
-    <message><source>Unable to retrieve a background image. Please try again later.</source><translation>無法取得背景圖片，請稍後再試。</translation></message>
-    <message><source>Invalid Pipw redirect chain</source><translation>Pipw 重新導向鏈無效</translation></message>
-    <message><source>Invalid or oversized Pipw image</source><translation>Pipw 圖片無效或過大</translation></message>
-    <message><source>Pipw image exceeds the 20 MiB limit</source><translation>Pipw 圖片超過 20 MiB 大小限制</translation></message>
-    <message><source>Invalid Pipw redirect</source><translation>Pipw 重新導向無效</translation></message>
-    <message><source>Pipw API did not return an image redirect</source><translation>Pipw 介面未回傳圖片重新導向</translation></message>
-    <message><source>Pipw image is unavailable</source><translation>Pipw 圖片無法使用</translation></message>
-    <message><source>This background image is unavailable. Please try another image.</source><translation>這張背景圖片無法使用，請換一張再試。</translation></message>
-    <message><source>Unable to load the background image. Please try another image.</source><translation>無法載入背景圖片，請換一張再試。</translation></message>
 </context>
 <context>
     <name>OverlayStatsTooltip</name>

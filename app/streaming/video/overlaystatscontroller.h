@@ -12,6 +12,7 @@
 #include <optional>
 
 class OverlayStatsTooltip;
+class QScreen;
 class QWindow;
 class StreamStatsModel;
 
@@ -36,6 +37,12 @@ class OverlayManager;
  * or a hold-to-release key), hovering a metric shows a tooltip about it. The
  * overlay stays click-through outside edit mode, so the pointer is polled
  * through the PointerProvider rather than taken from mouse events.
+ *
+ * With StatsOverlaySettings::detached(), the overlay is instead a top-level
+ * window of its own (OverlayStatsWindow::setStandalone()) that the user can
+ * drag anywhere, including another screen. It is not anchored to the stream;
+ * its position is remembered per stream display, and its size per display
+ * and preset, shared with the anchored overlay.
  */
 class OverlayStatsController
 {
@@ -60,6 +67,7 @@ public:
     // False where an extra compositor window cannot be shown
     static bool compositorWindowSupported();
     bool usesCompositorWindow() const { return m_Window != nullptr; }
+    bool isDetached() const { return m_Detached && m_Window != nullptr; }
 
     void setParentGeometryProvider(ParentGeometryProvider provider);
     void setExtrasProvider(ExtrasProvider provider) { m_ExtrasProvider = std::move(provider); }
@@ -98,9 +106,13 @@ private:
     void scheduleRefresh() { m_RefreshDue = true; }
     int refreshIntervalMs() const;
     void updateDisplay();
+    QScreen* streamScreen() const;
     QString currentDisplayKey() const;
     double currentDisplayHz() const;
     void reposition();
+    void repositionDetached(const QRect& parentRect);
+    void onDetachedMoved(const QPoint& topLeft);
+    void saveDetachedPosition();
     void applyStyle();
     void onDragFinished(const QPoint& center);
     void onResizeFinished(const QPoint& center, const QSize& bodySize);
@@ -121,6 +133,15 @@ private:
     ExtrasProvider m_ExtrasProvider;
     EditModeCallback m_EditModeCallback;
     PointerProvider m_PointerProvider;
+
+    // Read once, when the stream starts
+    const bool m_Detached;
+    // Wayland windows cannot place themselves or learn where they are
+    bool m_DetachedPositionKnown = true;
+    bool m_DetachedPlaced = false;
+    QPoint m_DetachedPos; // where the window is, in global coordinates
+    bool m_DetachedSaveDue = false;
+    qint64 m_DetachedMovedAtMs = 0;
 
     bool m_Visible;
     bool m_StreamVisible = true;

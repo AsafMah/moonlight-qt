@@ -295,6 +295,13 @@ private:
                        bool enableVideoEnhancement, bool ignoreAspectRatio, bool testOnly,
                        IVideoDecoder*& chosenDecoder);
 
+    static bool chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
+                              StreamingPreferences::RendererSelection renderer, SDL_Window* window,
+                              int videoFormat, int width, int height, int frameRate,
+                              bool enableVsync, bool enableVrr, bool enableFramePacing,
+                              bool enableVideoEnhancement, bool ignoreAspectRatio, bool testOnly,
+                              IVideoDecoder*& chosenDecoder);
+
     static
     void clStageStarting(int stage);
 
@@ -480,6 +487,8 @@ private:
     std::mutex m_CursorUpdateMutex;
     std::shared_ptr<RemoteCursorUpdate> m_PendingCursorUpdate;
     bool m_CursorUpdateEventQueued = false;
+    bool m_VrrRangeWarningShown = false; // VRR toast shown once per session
+    int m_VrrPresentCapFps = -1;         // for the stats overlay; -1 while VRR is off
     /* USB forwarding: one reverse tunnel per forwarded device, owned by this
      * session. m_RemoteUsbDevices mirrors the bound-device list from
      * UsbForwardingBackend and feeds the overlay menu. On macOS the local

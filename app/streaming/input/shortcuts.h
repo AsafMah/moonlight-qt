@@ -11,6 +11,11 @@
 // Ctrl+Alt+Shift combos: a binding on Q fires for the key that types "q" in the
 // current layout (on AZERTY, the physical A key). Only when no binding matches
 // that way, e.g. on non-latin layouts, is the physical key position used.
+//
+// Most actions fire once, on the key-down. Hold actions (e.g. "hold to release
+// the mouse") get a call on the key-down and another on the key-up, and may be
+// bound to a modifier key on its own, such as Right Alt. Left and right
+// modifiers are different keys there.
 
 #include <QHash>
 #include <QSet>
@@ -42,6 +47,12 @@ enum : int
     VolumeUp = 128,
     VolumeDown = 129,
     LeftCtrl = 224,
+    LeftShift = 225,
+    LeftAlt = 226,
+    LeftGui = 227,
+    RightCtrl = 228,
+    RightShift = 229,
+    RightAlt = 230,
     RightGui = 231,
     AudioNext = 258,
     AudioPrev = 259,
@@ -105,6 +116,13 @@ struct ShortcutBinding
     // steal ordinary typing. F13-F24 and media keys may be bound bare.
     bool isValid() const;
 
+    // What a hold action accepts: anything isValid(), or a modifier key, on
+    // its own or with other modifiers (but not its own, see modifierForKey())
+    bool isValidHold() const;
+
+    // The modifier a modifier key sets, e.g. ModAlt for Right Alt, or ModNone
+    static quint8 modifierForKey(int scancode);
+
     // Persistent form, e.g. "ctrl+alt+shift+S". Empty for a null binding.
     QString toString() const;
 
@@ -137,6 +155,7 @@ constexpr const char Minimize[] = "minimize";
 constexpr const char PasteText[] = "paste-text";
 constexpr const char TogglePointerRegionLock[] = "toggle-pointer-region-lock";
 constexpr const char ToggleKeyboardGrab[] = "toggle-keyboard-grab";
+constexpr const char HoldReleaseMouse[] = "hold-release-mouse";
 // Moonlight V+ only
 constexpr const char ToggleOverlayMenu[] = "toggle-overlay-menu";
 }
@@ -156,6 +175,14 @@ struct ShortcutAction
     const char* name;
     const char* group;
     QVector<DefaultBinding> defaults;
+    // Fires on the key-down and again on the key-up (ShortcutDispatcher::
+    // setHoldHandler()), and accepts isValidHold() bindings
+    bool hold = false;
+
+    bool accepts(const ShortcutBinding& binding) const
+    {
+        return hold ? binding.isValidHold() : binding.isValid();
+    }
 
     QString translatedName() const;
     QString translatedGroup() const;
@@ -249,18 +276,59 @@ class ShortcutDispatcher
 {
 public:
     using Handler = std::function<void()>;
+    // Called with true when the key goes down and false when it comes up
+    using HoldHandler = std::function<void(bool held)>;
 
     void setHandler(const QString& actionId, Handler handler);
+    void setHoldHandler(const QString& actionId, HoldHandler handler);
     void removeHandler(const QString& actionId);
     bool hasHandler(const QString& actionId) const;
 
-    // Runs the handler. Returns false if the action has no handler.
+    // Runs the handler. Returns false if the action has no (plain) handler.
     bool trigger(const QString& actionId) const;
 
-    QStringList actionIds() const { return m_Handlers.keys(); }
+    // Runs the hold handler. Returns false if the action has none.
+    bool triggerHold(const QString& actionId, bool held) const;
+
+    QStringList actionIds() const;
 
 private:
     QHash<QString, Handler> m_Handlers;
+    QHash<QString, HoldHandler> m_HoldHandlers;
+};
+
+// Records a hold action's binding to a modifier key on its own, as the
+// settings page sees it: the modifier goes down (perhaps with others held) and
+// comes up again with no other key pressed in between.
+class ModifierKeyRecorder
+{
+public:
+    // altGrFakesControl: the platform reports AltGr as Left Ctrl + Right Alt
+    // (Windows), so Right Alt right after a lone Left Ctrl records as bare
+    // Right Alt
+    explicit ModifierKeyRecorder(bool altGrFakesControl = false)
+        : m_AltGrFakesControl(altGrFakesControl)
+    {
+    }
+
+    void reset()
+    {
+        m_Pending = ShortcutKeys::Unknown;
+        m_PendingModifiers = ShortcutBinding::ModNone;
+    }
+
+    // A key went down with these modifiers held. Any key but a modifier ends
+    // the recording.
+    void press(int scancode, quint8 modifiers);
+
+    // A key came up. Returns the binding when it is the pending modifier key,
+    // or a null binding.
+    ShortcutBinding release(int scancode);
+
+private:
+    bool m_AltGrFakesControl;
+    int m_Pending = ShortcutKeys::Unknown;
+    quint8 m_PendingModifiers = ShortcutBinding::ModNone;
 };
 
 // Matches raw key events against a profile. Runs before normal key handling.
@@ -287,16 +355,43 @@ public:
     //
     // Returns true when the event belongs to a shortcut and must not be
     // forwarded: the key-down that triggered it, its repeats, and the matching
-    // key-up. Triggers the action on the initial key-down.
+    // key-up. Triggers the action on the initial key-down; a hold action is
+    // triggered again on that key-up.
+    //
+    // A modifier key's own modifier is ignored, so a bare Right Alt matches
+    // the binding "RightAlt" although Alt is down when it is pressed. While a
+    // bound modifier key is held, its modifier is ignored for other keys too
+    // (see suppressedModifiers()).
     bool processKeyEvent(int scancode, int latinKey, quint8 modifiers, bool pressed, bool repeat,
                          const ShortcutDispatcher& dispatcher);
 
-    // Forgets keys being swallowed (e.g. after losing keyboard focus)
-    void reset() { m_SwallowedKeys.clear(); }
+    // Windows reports AltGr as a fake Left Ctrl press immediately followed by
+    // Right Alt. The caller detects the pair and passes the fake Left Ctrl
+    // here instead of to processKeyEvent(). Returns true when the fake Ctrl
+    // must not reach the host, which is when Right Alt alone triggers an
+    // action: the Ctrl is then ignored until its key-up, so the Right Alt
+    // that follows matches as a bare Right Alt.
+    bool processAltGrControl(bool pressed, const ShortcutDispatcher& dispatcher);
+
+    // Modifiers whose keys are being swallowed right now: forwarded key events
+    // must not carry them, or the host would see a modifier it never got.
+    quint8 suppressedModifiers() const;
+
+    // Forgets keys being swallowed and holds in progress, without calling any
+    // hold handler (e.g. after losing keyboard focus)
+    void reset()
+    {
+        m_SwallowedKeys.clear();
+        m_HeldActions.clear();
+        m_AltGrControlSwallowed = false;
+    }
 
 private:
     // Binding key() to actions in registry order. Conflicting bindings list
     // several actions; the first one that has a handler wins.
     QHash<int, QStringList> m_Bindings;
     QSet<int> m_SwallowedKeys;
+    // Hold actions in progress, by the scancode that started them
+    QHash<int, QString> m_HeldActions;
+    bool m_AltGrControlSwallowed = false;
 };

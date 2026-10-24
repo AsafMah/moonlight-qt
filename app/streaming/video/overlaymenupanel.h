@@ -236,6 +236,9 @@ public:
     // Opens the Host Commands level of the visible menu. Returns false when
     // the menu is hidden or the host has no super command support.
     bool showHostCommandsLevel();
+    // Opens the Send Keys level of the visible menu. Returns false when the
+    // menu is hidden.
+    bool showSendKeysLevel();
     // 手柄在位状态、UI 风格、swapFaceButtons 与退出组合键 glyph 文案：菜单
     // 打开前由 Session 推送，任一变化即重建菜单级（手柄专属条目与按键提示
     // 跟着变）

@@ -923,6 +923,15 @@ bool OverlayMenuPanel::showHostCommandsLevel()
     return true;
 }
 
+bool OverlayMenuPanel::showSendKeysLevel()
+{
+    if (!m_Visible || m_SendKeysLevel < 0) {
+        return false;
+    }
+    navigateToLevel(m_SendKeysLevel);
+    return true;
+}
+
 void OverlayMenuPanel::dispatchActionItem(const MenuItem& item)
 {
     // USB callbacks can synchronously rebuild the device list. Own the payload

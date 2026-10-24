@@ -206,9 +206,10 @@ int main(int argc, char **argv)
     if (panel.showHostCommandsLevel())
         qFatal("host commands opened without host support");
     const int topHeightWithoutCommands = panel.height();
-    // Send Keys is the row after USB Devices; its second row is the macro.
-    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
-                      QPoint(140, 8 + 32 + 4 + 5 * 38 + 19));
+    // Open Send Keys directly, since other branches add root rows before it;
+    // its second row is the macro.
+    if (!panel.showSendKeysLevel())
+        qFatal("Send Keys level did not open");
     QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
                       QPoint(140, 8 + 32 + 4 + 1 * 38 + 19));
     if (payloadAction != OverlayMenuPanel::MenuAction::SendHostKeys ||

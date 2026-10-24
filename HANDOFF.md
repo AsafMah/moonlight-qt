@@ -37,22 +37,24 @@ It is **not** yet the submodule pin. The app code is already guarded with `#ifde
 - The UI has barely been looked at on screen. Only the Shortcuts settings card was checked by hand.
 - PyroWave has never run on a GPU.
 
+### Done 2026-10-24 (second session; §6 briefs 1–3)
+
+| Item | Branch(es) | What it does |
+|---|---|---|
+| Overlay resize + layout + tooltips | `feat/stats-overlay` | `overlaystatslayout.*` is a pure layout (content, size, font metrics). Fallback order: more columns → stacked labels → short labels → smaller graph → drop low-priority metrics with "+N". Detailed and Custom resize by edges/corners in edit mode; the size is saved per display and preset (`statsoverlay/displays/<key>/size/<preset>`). Detailed defaults to 360 px wide. Hover tooltips (`overlaystatstooltip.*`) appear whenever the stream doesn't have the mouse; Session polls the pointer, so the overlay stays click-through. |
+| Hold shortcuts + "Hold to release mouse" | `up/shortcuts` → `feat/shortcuts` | Hold actions get key-down and key-up and may bind a lone modifier (left/right by scancode). Windows AltGr's fake LCtrl is swallowed when Right Alt alone is bound. `hold-release-mouse` is unbound by default; the settings recorder binds a lone modifier on key-up (`ModifierKeyRecorder`). |
+| Menu options | `feat/menu-tabs` | `overlaymenugeometry.*` (pure) and `OverlayMenuSettings` (`overlaymenu/...`): placements incl. corners, side panels and dragged position; Compact/Comfortable/Side-panel (rail) layouts; scale and opacity; button on/off; dwell edge trigger; hold to peek (hold handler on `toggle-overlay-menu`); Back/Select gamepad trigger; Esc closes vs. back. All defaults = old behaviour. `feat/menu-tabs` now merges `feat/shortcuts` (for hold handlers). |
+
+The hold-to-release state reaches the overlay tooltips through `isCaptureActive()`, so no extra wiring was needed. Opening the menu or the overlay's edit mode ends a hold (`cancelMouseHoldRelease()`).
+
+`integration` @ `d9401f29` contains all of this: it builds locally and passes all 29 CI unit tests plus the QML localization test. CI run [40106099523](https://github.com/AsafMah/moonlight-qt/actions/runs/40106099523) was started on it; check its result.
+
+**Still unverified:** all of it on a real host and on screen. The layouts were checked only by offscreen renders. The QML settings rows were only qmllinted.
+
 ## 2. Next tasks, in order
 
-The user asked for 1 to 3 together. Three agents were started for them, but they were cut off by usage limits before they had changed anything, so they start from scratch. The full briefs are in §6.
+1–3 of the old list are done (above).
 
-1. **Performance overlay: free resizing, responsive layout and tooltips** (`feat/stats-overlay`). User report: in the Detailed preset almost every field name is cut off. Needed:
-   - resizing by dragging edges and corners;
-   - a layout that adapts to the size, so no label is ever clipped;
-   - a fixed default Detailed size;
-   - hover tooltips with metric explanations whenever the mouse is not captured.
-2. **Hold to release the mouse** (core on `up/shortcuts`, the rest on `feat/shortcuts`). For example, hold Right Alt and the mouse is free; release it and the mouse is captured again. This needs press/release "hold" actions, bare-modifier bindings for hold actions, and AltGr handling. Afterwards, wire its "mouse released" state to the overlay tooltips.
-3. **More in-stream menu options** (`feat/menu-tabs`):
-   - positions: edges, corners, side panel, remember a dragged position;
-   - layouts: compact, comfortable, side panel; scale and opacity;
-   - triggers: gamepad combo choice, floating button on/off, hold-to-peek, an optional screen-edge trigger, Esc closes vs. goes back.
-
-   Defaults must keep today's behaviour exactly.
 4. **Detachable performance overlay:** its own top-level window that can move to another screen. The user asked for this "later", after 1–3. Exclusive fullscreen on the same monitor will cover it, so say so in the setting.
 5. **PW-4: PyroWave stats and capability page.**
    - Frame pacing.
@@ -66,11 +68,11 @@ The user asked for 1 to 3 together. Three agents were started for them, but they
 7. **A smoke test on screen with the user:** the tabbed menu, the overlay, the stream-quality switch and the summary card.
 8. **Upstream PRs** from the `up/*` branches. Never open these without asking the user.
 
-**Open questions for the user**, still unanswered from Track B (PyroWave):
-- Fallback codec: H.264, or Automatic?
-- A toast instead of a dialog?
-- Naming: "Foundation Sunshine" in the UI?
-- Should locked controls be greyed out?
+**Track B (PyroWave) answers from the user, 2026-10-24** (apply in PW-4):
+- Fallback codec: **Automatic** (today's code and strings say H.264).
+- "Foundation Sunshine" in the UI: yes.
+- Locked controls: grey them out.
+- Toast vs. dialog: the user asked "where?". The fallback notice is already an 8 s in-stream toast; confirm whether anything else should change.
 
 Optional: V1 VRR (roadmap §07; compare with qiin2333/moonlight-qt#10). This hasn't been picked yet.
 
@@ -128,10 +130,16 @@ Use short paths: the scratch and long paths broke git and Win32 tools before. Th
    - The workflow has `cancel-in-progress: false`, but a *new pending* run still replaces an older pending one.
    - The portable artifact is named `Moonlight-VPlus-Portable-x64-*`.
 
+### The user's second PC (2026-10-24)
+- Qt 6.12.0 and jom are in `C:\tmp\qt` (not `E:\Qt`); VS 2022 Community is installed next to VS 18, and `vswhere -latest` picks 18, so the patched scripts in `E:\Code\moonlight-tools` hard-code the 2022 path.
+- Prebuilt `libs/`: `C:\Users\mahle\programming\moonlight-qt-worktrees\feat-client-driven-resolution\libs` (junction it in).
+- `tools/*.txt` and `*.sh` have CRLF endings in the dev-tools checkout: strip them (`tr -d '\r'`) or `branches.txt` names get a trailing `\r`.
+- Pass checkouts to `test-local.bat` as `E:/Code/...` from bash; single backslashes get lost.
+
 ### Gotchas that cost time before
 - **Python output on Windows:** `python -I` ignores `PYTHONIOENCODING`, so use `sys.stdout.reconfigure(encoding='utf-8')` when printing CJK text.
 - **Backslashes in heredocs:** in the agent's Bash tool, `\\` inside a heredoc sometimes reached Python as a single `\`. Use `chr(92)`, or edit with the Edit tool.
-- **Chinese .ts merges:** keep each message in its original `<context>`. A plain keep-both merge can move messages into the wrong context.
+- **Chinese .ts merges:** keep each message in its original `<context>`. A plain keep-both merge can move messages into the wrong context. The `feat/menu-tabs` merge into `integration` produces nested diff3 markers that rerere can't record, so it needs resolving again on every rebuild: take HEAD's whole file and add every (context, source) from MERGE_HEAD that it lacks, then check that nothing from either side is missing. `python -I tools/merge-ts.py app/languages/qml_zh_CN.ts app/languages/qml_zh_TW.ts` (run from the repo root during the merge) does exactly that. The menu panel files and the menu test take `feat/menu-tabs`'s side.
 - **The menu navigation test** used to click by pixel offset. It now finds rows by action; keep it that way.
 - **Agent worktrees:** create them by hand (`git worktree add .claude/worktrees/<n> <branch>`), plus a `libs` junction: `New-Item -ItemType Junction -Path <wt>\libs -Target E:\Code\moonlight-qt\libs`.
 

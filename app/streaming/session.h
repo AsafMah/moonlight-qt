@@ -21,6 +21,7 @@
 #include "video/overlaymenubutton.h"
 #include "backend/usbforwardingtunnel.h"
 #include "video/overlaytoast.h"
+#include "backend/supercmds.h"
 #ifndef STEAM_LINK
 #include "micstream.h"
 #endif
@@ -31,6 +32,7 @@ struct MountState;
 }
 
 class DualSenseHapticsRenderer;
+class HostCommandRunner;
 class QScreen;
 #ifdef Q_OS_DARWIN
 class MacQtEventPumpInputGuard;
@@ -247,6 +249,13 @@ private:
     void processQtOverlayEvents();
     void updateFileMappingMenuState();
     void updateRemoteUsbMenuState();
+    // Host actions: Send Keys and Host Commands (sessionhostactions.cpp)
+    void registerHostActionShortcuts();
+    void updateHostActionsMenuState();
+    void dispatchQtMenuPayloadAction(OverlayMenuPanel::MenuAction action, const QString& payload);
+    void sendHostKeys(const ShortcutBinding& binding);
+    void runHostCommand(const QString& commandId);
+    void openHostCommandsMenu();
     bool openFileMappingMountPath();
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
     void restoreCaptureAfterStylusReplayPanel();
@@ -444,6 +453,8 @@ private:
     OverlayMenuPanel* m_MenuPanel; // Qt-based overlay menu window
     OverlayMenuButton* m_MenuButton = nullptr; // Qt-based floating menu button
     OverlayToast* m_Toast;           // Qt-based toast notification
+    HostCommandRunner* m_HostCommandRunner = nullptr; // Foundation Sunshine super commands
+    QVector<SuperCmd> m_HostCommands;                 // as last shown in the overlay menu
 #ifdef Q_OS_DARWIN
     std::unique_ptr<MacQtEventPumpInputGuard> m_MacQtEventPumpInputGuard;
 #endif

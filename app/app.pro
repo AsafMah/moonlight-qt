@@ -259,6 +259,8 @@ SOURCES += \
     streaming/input/touchpad.cpp \
     streaming/input/reltouch.cpp \
     streaming/session.cpp \
+    streaming/sessionhostactions.cpp \
+    streaming/hostcommandrunner.cpp \
     streaming/filemappingclient.cpp \
     streaming/filemappingwebsocket.cpp \
     streaming/filemappingprotocoladapter.cpp \
@@ -271,6 +273,7 @@ SOURCES += \
     streaming/bandwidth.cpp \
     gui/computermodel.cpp \
     gui/shortcutmodel.cpp \
+    gui/keymacromodel.cpp \
     gui/appmodel.cpp \
     streaming/streamutils.cpp \
     backend/autoupdatechecker.cpp \
@@ -333,6 +336,7 @@ HEADERS += \
     streaming/input/gamepadsensorrate.h \
     streaming/input/keyboardstate.h \
     streaming/session.h \
+    streaming/hostcommandrunner.h \
     streaming/filemappingclient.h \
     streaming/filemappingwebsocket.h \
     streaming/filemappingprotocoladapter.h \
@@ -347,6 +351,7 @@ HEADERS += \
     streaming/audio/renderers/sdl.h \
     gui/computermodel.h \
     gui/shortcutmodel.h \
+    gui/keymacromodel.h \
     streaming/input/shortcuts.h \
     streaming/input/hostkeys.h \
     gui/appmodel.h \

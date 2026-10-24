@@ -93,7 +93,8 @@ void testFramePacer()
 
     pacer.configure(true, 120, 60);
     require(pacer.isDecimating(), "120 fps on 60 Hz decimates");
-    require(pattern(pacer, 8) == QStringLiteral("10101010"), "120 on 60 Hz presents every other frame");
+    require(pattern(pacer, 8) == QStringLiteral("10101010"),
+            "120 on 60 Hz presents every other frame");
 
     pacer.configure(true, 144, 60);
     const QString p144 = pattern(pacer, 24);
@@ -118,7 +119,8 @@ void testFramePacer()
     require(pattern(pacer, 10) == QStringLiteral("1111111111"), "every frame without frame pacing");
 
     pacer.configure(true, 120, 0);
-    require(pattern(pacer, 10) == QStringLiteral("1111111111"), "every frame on an unknown display");
+    require(pattern(pacer, 10) == QStringLiteral("1111111111"),
+            "every frame on an unknown display");
 }
 
 }

@@ -27,8 +27,8 @@ void record(const Entry& entry)
     settings.setValue(SER_PYROWAVE_HEIGHT, entry.height);
     settings.setValue(SER_PYROWAVE_FRAME_RATE, entry.frameRate);
     settings.setValue(SER_PYROWAVE_HDR_MODE, entry.hdrMode);
-    settings.setValue(SER_PYROWAVE_TIME, entry.time.isValid() ? entry.time
-                                                              : QDateTime::currentDateTimeUtc());
+    settings.setValue(SER_PYROWAVE_TIME,
+                      entry.time.isValid() ? entry.time : QDateTime::currentDateTimeUtc());
     settings.endGroup();
 }
 

@@ -1861,25 +1861,22 @@ bool Session::initialize(QQuickWindow* qtWindow)
         // H.264 is already the lowest priority codec, so we don't need to do
         // any probing for deprioritization for it here.
 
-        auto hevcDA = getDecoderAvailability(testWindow,
-                                             m_Preferences->videoDecoderSelection,
-                                             enableYUV444 ?
-                                                 (m_Preferences->enableHdr ? VIDEO_FORMAT_H265_REXT10_444 : VIDEO_FORMAT_H265_REXT8_444) :
-                                                 (m_Preferences->enableHdr ? VIDEO_FORMAT_H265_MAIN10 : VIDEO_FORMAT_H265),
-                                             m_StreamConfig.width,
-                                             m_StreamConfig.height,
-                                             m_StreamConfig.fps);
+        auto hevcDA = getDecoderAvailability(
+            testWindow, m_Preferences->videoDecoderSelection,
+            enableYUV444
+                ? (m_Preferences->enableHdr ? VIDEO_FORMAT_H265_REXT10_444
+                                            : VIDEO_FORMAT_H265_REXT8_444)
+                : (m_Preferences->enableHdr ? VIDEO_FORMAT_H265_MAIN10 : VIDEO_FORMAT_H265),
+            m_StreamConfig.width, m_StreamConfig.height, m_StreamConfig.fps);
         if (hevcDA == DecoderAvailability::None && m_Preferences->enableHdr) {
             // Remove all 10-bit HEVC profiles
             m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_H265 & VIDEO_FORMAT_MASK_10BIT);
 
             // Check if we have 10-bit AV1 support
-            auto av1DA = getDecoderAvailability(testWindow,
-                                                m_Preferences->videoDecoderSelection,
-                                                enableYUV444 ? VIDEO_FORMAT_AV1_HIGH10_444 : VIDEO_FORMAT_AV1_MAIN10,
-                                                m_StreamConfig.width,
-                                                m_StreamConfig.height,
-                                                m_StreamConfig.fps);
+            auto av1DA = getDecoderAvailability(
+                testWindow, m_Preferences->videoDecoderSelection,
+                enableYUV444 ? VIDEO_FORMAT_AV1_HIGH10_444 : VIDEO_FORMAT_AV1_MAIN10,
+                m_StreamConfig.width, m_StreamConfig.height, m_StreamConfig.fps);
             if (av1DA == DecoderAvailability::None) {
                 // Remove all 10-bit AV1 profiles
                 m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_AV1 & VIDEO_FORMAT_MASK_10BIT);
@@ -1887,12 +1884,10 @@ bool Session::initialize(QQuickWindow* qtWindow)
                 // There are no available 10-bit profiles, so reprobe for 8-bit HEVC
                 // and we'll proceed as normal for an SDR streaming scenario.
                 SDL_assert(!(m_SupportedVideoFormats & VIDEO_FORMAT_MASK_10BIT));
-                hevcDA = getDecoderAvailability(testWindow,
-                                                m_Preferences->videoDecoderSelection,
-                                                enableYUV444 ? VIDEO_FORMAT_H265_REXT8_444 : VIDEO_FORMAT_H265,
-                                                m_StreamConfig.width,
-                                                m_StreamConfig.height,
-                                                m_StreamConfig.fps);
+                hevcDA = getDecoderAvailability(
+                    testWindow, m_Preferences->videoDecoderSelection,
+                    enableYUV444 ? VIDEO_FORMAT_H265_REXT8_444 : VIDEO_FORMAT_H265,
+                    m_StreamConfig.width, m_StreamConfig.height, m_StreamConfig.fps);
             }
         }
 
@@ -1931,13 +1926,11 @@ bool Session::initialize(QQuickWindow* qtWindow)
 #endif
             ) {
             m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
-        }
-        else if (!m_Preferences->enableHdr &&
-                   getDecoderAvailability(testWindow,
-                                          m_Preferences->videoDecoderSelection,
-                                          enableYUV444 ? VIDEO_FORMAT_AV1_HIGH8_444 : VIDEO_FORMAT_AV1_MAIN8,
-                                          m_StreamConfig.width,
-                                          m_StreamConfig.height,
+        } else if (!m_Preferences->enableHdr &&
+                   getDecoderAvailability(testWindow, m_Preferences->videoDecoderSelection,
+                                          enableYUV444 ? VIDEO_FORMAT_AV1_HIGH8_444
+                                                       : VIDEO_FORMAT_AV1_MAIN8,
+                                          m_StreamConfig.width, m_StreamConfig.height,
                                           m_StreamConfig.fps) != DecoderAvailability::Hardware) {
             m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
         }
@@ -1983,8 +1976,7 @@ bool Session::initialize(QQuickWindow* qtWindow)
     // Mask off YUV 4:4:4 codecs if the option is not enabled
     if (!enableYUV444) {
         m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_YUV444);
-    }
-    else {
+    } else {
         // Deprioritize YUV 4:2:0 codecs if the user wants YUV 4:4:4
         //
         // NB: Since this happens first before deprioritizing HDR, we will
@@ -2195,8 +2187,7 @@ bool Session::validateLaunch(SDL_Window* testWindow)
         m_SupportedVideoFormats.removeByMask(
             VIDEO_FORMAT_MASK_10BIT &
             ~m_SupportedVideoFormats.maskByServerCodecModes(m_Computer->serverCodecModeSupport));
-    }
-    else if (m_Preferences->enableHdr) {
+    } else if (m_Preferences->enableHdr) {
         if (m_Preferences->videoCodecConfig == StreamingPreferences::VCC_FORCE_H264) {
             emitLaunchWarning(tr("HDR is not supported using the H.264 codec."));
             m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_10BIT);

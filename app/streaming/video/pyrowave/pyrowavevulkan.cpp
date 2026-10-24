@@ -548,9 +548,8 @@ bool PyrowaveVulkanRenderer::createDevice(PyrowaveFailure& failure)
                 VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
             // SDR planes PyroWave can't write are staged through host memory
             // and uploaded instead (see createPlanes()).
-            const bool stageable =
-                !m_Contract.isHdr() &&
-                (format.optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0;
+            const bool stageable = !m_Contract.isHdr() && (format.optimalTilingFeatures &
+                                                           VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0;
             if ((format.optimalTilingFeatures & sampled) != sampled ||
                 ((format.optimalTilingFeatures & writable) == 0 && !stageable)) {
                 missing.append(m_PlaneEncoding.sixteenBit

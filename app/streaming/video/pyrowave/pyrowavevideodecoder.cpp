@@ -356,8 +356,8 @@ bool PyrowaveVideoDecoder::initialize(PDECODER_PARAMETERS params)
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave pacing: %d FPS stream, %d Hz display, %s",
                 m_StreamFps, m_PacerDisplayFps,
                 m_FramePacer.isDecimating() ? "presenting an even share of frames"
-                : m_EnableFramePacing      ? "every frame"
-                                           : "frame pacing off");
+                : m_EnableFramePacing       ? "every frame"
+                                            : "frame pacing off");
 
     // preflight() refused anything else, so this can't happen.
     if (!PyrowaveColor::Contract(m_Contract.hdrMode, false).isValid()) {
@@ -800,8 +800,7 @@ void PyrowaveVideoDecoder::stringifyVideoStats(const VIDEO_STATS& stats, char* o
             "**%.2f**ms ",
             rttString,
             stats.totalFrames ? (float)stats.networkDroppedFrames / stats.totalFrames * 100 : 0.0f,
-            bandwidthString,
-            (double)stats.totalRenderTimeUs / 1000.0 / stats.renderedFrames,
+            bandwidthString, (double)stats.totalRenderTimeUs / 1000.0 / stats.renderedFrames,
             stats.decodedFrames ? (double)stats.totalDecodeTimeUs / 1000.0 / stats.decodedFrames
                                 : 0.0);
     }
@@ -817,9 +816,8 @@ void PyrowaveVideoDecoder::stringifyVideoStats(const VIDEO_STATS& stats, char* o
     if (stats.renderedFrames != 0 && Session::get() != nullptr && offset < length) {
         const StatsSnapshot snapshot =
             Session::get()->getStatsModel().snapshot(LiGetMicroseconds());
-        const int written =
-            VideoStatsBridge::formatOverlayLows(snapshot, stats, &stats == &m_GlobalVideoStats,
-                                                &output[offset], length - offset);
+        const int written = VideoStatsBridge::formatOverlayLows(
+            snapshot, stats, &stats == &m_GlobalVideoStats, &output[offset], length - offset);
         if (written > 0) {
             offset = SDL_min(length - 1, offset + written);
         }

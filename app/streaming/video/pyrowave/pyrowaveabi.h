@@ -245,7 +245,8 @@ PYROWAVE_ABI_SAME_OFFSET(pyrowave_decoder_create_info, fragment_path);
 
 static_assert(PyrowaveAbi::PYROWAVE_YCBCR_LIMITED == ::PYROWAVE_YCBCR_LIMITED, "enum differs");
 static_assert(PyrowaveAbi::PYROWAVE_TRANSFER_BT709 == ::PYROWAVE_TRANSFER_BT709, "enum differs");
-static_assert(PyrowaveAbi::PYROWAVE_CPU_BUFFER_FORMAT_YUV420P == ::PYROWAVE_CPU_BUFFER_FORMAT_YUV420P,
+static_assert(PyrowaveAbi::PYROWAVE_CPU_BUFFER_FORMAT_YUV420P ==
+                  ::PYROWAVE_CPU_BUFFER_FORMAT_YUV420P,
               "enum differs");
 
 #undef PYROWAVE_ABI_SAME_SIZE

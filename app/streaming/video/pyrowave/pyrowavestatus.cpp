@@ -90,8 +90,7 @@ void PyrowaveStatus::refreshHostStatus()
     m_LastPreflightOk = preflight.ok;
     m_LastPreflightText.clear();
     if (preflight.valid) {
-        const QString when =
-            QLocale().toString(preflight.time.toLocalTime(), QLocale::ShortFormat);
+        const QString when = QLocale().toString(preflight.time.toLocalTime(), QLocale::ShortFormat);
         const QString signal = preflight.hdrMode == 2   ? QStringLiteral("HLG")
                                : preflight.hdrMode == 1 ? QStringLiteral("HDR10")
                                                         : QStringLiteral("SDR");
@@ -107,8 +106,8 @@ void PyrowaveStatus::refreshHostStatus()
             m_LastPreflightText = tr("Last stream check (%1): failed on %2 (%3). %4")
                                       .arg(when, preflight.gpu, stream, preflight.reason);
         } else {
-            m_LastPreflightText = tr("Last stream check (%1): failed (%2). %3")
-                                      .arg(when, stream, preflight.reason);
+            m_LastPreflightText =
+                tr("Last stream check (%1): failed (%2). %3").arg(when, stream, preflight.reason);
         }
     }
 

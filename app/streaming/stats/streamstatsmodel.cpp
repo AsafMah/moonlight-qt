@@ -118,8 +118,8 @@ StatsSnapshot StreamStatsModel::snapshot(uint64_t nowUs) const
     snapshot.bitrateMbps = window.bitrateMbps;
     snapshot.videoPackets = window.videoPackets;
     snapshot.fecPackets = window.fecPackets;
-    snapshot.fecRecoveredPackets = window.fecRecoveredPackets;
-    snapshot.fecUnrecoverablePackets = window.fecUnrecoverablePackets;
+    snapshot.fecRecoveredFrames = window.fecRecoveredFrames;
+    snapshot.fecUnrecoverableFrames = window.fecUnrecoverableFrames;
 
     if (window.receivedFrames > 0) {
         snapshot.reassemblyMs =

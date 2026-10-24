@@ -60,11 +60,12 @@ struct StatsWindow
     // Cumulative RTP packet counters for the video stream (since stream start)
     uint32_t videoPackets = 0;
     uint32_t fecPackets = 0;
-    // Packets recovered by FEC, and packets FEC could not recover. -1 means
-    // the transport does not report it (moonlight-common-c currently counts
-    // these for audio only).
-    int64_t fecRecoveredPackets = -1;
-    int64_t fecUnrecoverablePackets = -1;
+    // Cumulative frames that were only complete after FEC repaired them, and
+    // partly received frames FEC could not repair. -1 means the transport
+    // does not report them (stock moonlight-common-c counts FEC results for
+    // audio only).
+    int64_t fecRecoveredFrames = -1;
+    int64_t fecUnrecoverableFrames = -1;
 };
 
 // Estimated glass-to-glass latency, split into the stages we can measure or
@@ -140,8 +141,8 @@ struct StatsSnapshot
     double bitrateMbps = std::nan("");
     uint32_t videoPackets = 0;
     uint32_t fecPackets = 0;
-    int64_t fecRecoveredPackets = -1;
-    int64_t fecUnrecoverablePackets = -1;
+    int64_t fecRecoveredFrames = -1;
+    int64_t fecUnrecoverableFrames = -1;
 
     // Per-stage averages over the last two windows
     double reassemblyMs = 0; // first to last packet of a frame

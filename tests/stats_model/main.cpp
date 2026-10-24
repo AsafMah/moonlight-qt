@@ -343,7 +343,7 @@ bool testModel(QTextStream& err)
                   QStringLiteral("session totals did not add up completed windows"), err);
     ok &= require(snapshot.sessionDurationUs == lastPresentUs - (startUs - 5000),
                   QStringLiteral("session duration is wrong"), err);
-    ok &= require(snapshot.fecRecoveredPackets == -1 && snapshot.fecUnrecoverablePackets == -1,
+    ok &= require(snapshot.fecRecoveredFrames == -1 && snapshot.fecUnrecoverableFrames == -1,
                   QStringLiteral("unreported FEC counters are not -1"), err);
 
     // Ten seconds later the recent window is empty, the session one is not

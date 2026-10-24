@@ -137,6 +137,9 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode
              QStringLiteral("tb-back")}) {
         m_MenuIcons.insert(name, QIcon(QStringLiteral(":/res/fluent/%1.svg").arg(name)));
     }
+    for (const QString& name : { QStringLiteral("cat-input"), QStringLiteral("cat-host") }) {
+        m_MenuIcons.insert(name, QIcon(QStringLiteral(":/res/fluent/%1.svg").arg(name)));
+    }
 
     // --- Animations ---
     m_OpacityAnim = new QPropertyAnimation(this, "opacity", this);
@@ -273,7 +276,12 @@ void OverlayMenuPanel::buildMenuLevels()
         m_StatsOverlayLevel >= 0 && m_CurrentLevel == m_StatsOverlayLevel;
     const bool inSessionStatsLevel =
         m_SessionStatsLevel >= 0 && m_CurrentLevel == m_SessionStatsLevel;
-
+    // Host action levels are appended after the fixed ones, so their index
+    // can change between builds; follow them by identity instead.
+    const MenuAction currentHostLevel = m_CurrentLevel == m_SendKeysLevel ? MenuAction::OpenSendKeys
+                                        : m_CurrentLevel == m_HostCommandsLevel
+                                            ? MenuAction::OpenHostCommands
+                                            : MenuAction::MenuActionMax;
     m_MenuLevels.clear();
 
     // === Level 0: Top-level categories ===
@@ -319,8 +327,17 @@ void OverlayMenuPanel::buildMenuLevels()
     // The target level is filled in once the session level exists
     top.items.push_back({ tr("Session"), QString(), MenuItemType::SubMenu,
                           MenuAction::OpenSessionStats, 0, true, false, false });
+    // Host actions. Target levels are filled in once those levels exist.
+    top.items.push_back({ tr("Send Keys"), QString(), MenuItemType::SubMenu,
+                          MenuAction::OpenSendKeys, 0, true, false, !m_HostCommandsSupported });
+    if (m_HostCommandsSupported) {
+        top.items.push_back(
+            { tr("Host Commands"),
+              m_HostCommands.empty() ? QString() : QString::number(m_HostCommands.size()),
+              MenuItemType::SubMenu, MenuAction::OpenHostCommands, 0, true, false, true });
+    }
     top.items.push_back({tr("Toggle Fullscreen"), QString(), MenuItemType::Action,
-                         MenuAction::ToggleFullScreen, 0, true, false, false});
+                     MenuAction::ToggleFullScreen, 0, true, false, false});
     top.items.push_back({tr("Microphone"),    QString(),  MenuItemType::Toggle,
                          MenuAction::ToggleMicrophone, 0, true, false, !m_HasGamepads}); // separator if no gamepad item follows
     // Only show Gamepad Mouse toggle when a gamepad is actually connected
@@ -464,6 +481,59 @@ void OverlayMenuPanel::buildMenuLevels()
             }
         }
         m_MenuLevels.push_back(std::move(usb));
+    }
+
+    // === Send Keys: special keys, then the user's key macros ===
+    MenuLevel sendKeys;
+    sendKeys.title = tr("Send Keys");
+    for (size_t i = 0; i < m_SpecialKeyItems.size(); i++) {
+        const SendKeyItem& key = m_SpecialKeyItems[i];
+        sendKeys.items.push_back(
+            { key.label, key.detail, MenuItemType::Action, MenuAction::SendHostKeys, 0, true, false,
+              i + 1 == m_SpecialKeyItems.size() && !m_KeyMacroItems.empty(), key.payload });
+    }
+    for (const SendKeyItem& key : m_KeyMacroItems) {
+        sendKeys.items.push_back({ key.label, key.detail, MenuItemType::Action,
+                                   MenuAction::SendHostKeys, 0, true, false, false, key.payload });
+    }
+    if (sendKeys.items.empty()) {
+        sendKeys.items.push_back({ tr("No keys"), QString(), MenuItemType::Action,
+                                   MenuAction::MenuActionMax, 0, false, false, false });
+    }
+    m_SendKeysLevel = static_cast<int>(m_MenuLevels.size());
+    m_MenuLevels.push_back(std::move(sendKeys));
+
+    // === Host Commands (Foundation Sunshine super commands) ===
+    m_HostCommandsLevel = -1;
+    if (m_HostCommandsSupported) {
+        MenuLevel hostCommands;
+        hostCommands.title = tr("Host Commands");
+        for (const HostCommandItem& command : m_HostCommands) {
+            hostCommands.items.push_back({ command.name, QString(), MenuItemType::Action,
+                                           MenuAction::RunHostCommand, 0, true, false, false,
+                                           command.id });
+        }
+        if (hostCommands.items.empty()) {
+            hostCommands.items.push_back(
+                { tr("No host commands"), tr("Set them up in Foundation Sunshine"),
+                  MenuItemType::Action, MenuAction::MenuActionMax, 0, false, false, false });
+        }
+        m_HostCommandsLevel = static_cast<int>(m_MenuLevels.size());
+        m_MenuLevels.push_back(std::move(hostCommands));
+    }
+
+    for (MenuItem& item : m_MenuLevels[0].items) {
+        if (item.action == MenuAction::OpenSendKeys) {
+            item.targetLevel = m_SendKeysLevel;
+        } else if (item.action == MenuAction::OpenHostCommands) {
+            item.targetLevel = m_HostCommandsLevel;
+        }
+    }
+
+    if (currentHostLevel == MenuAction::OpenSendKeys) {
+        m_CurrentLevel = m_SendKeysLevel;
+    } else if (currentHostLevel == MenuAction::OpenHostCommands) {
+        m_CurrentLevel = m_HostCommandsLevel >= 0 ? m_HostCommandsLevel : 0;
     }
 
     // === Performance overlay ===
@@ -886,6 +956,47 @@ void OverlayMenuPanel::updateRemoteUsbState(
     forceRepaint();
 }
 
+void OverlayMenuPanel::updateSendKeys(std::vector<SendKeyItem> specialKeys,
+                                      std::vector<SendKeyItem> macros)
+{
+    m_SpecialKeyItems = std::move(specialKeys);
+    m_KeyMacroItems = std::move(macros);
+    buildMenuLevels();
+    if (m_Visible) {
+        repositionWindow();
+    }
+    forceRepaint();
+}
+
+void OverlayMenuPanel::updateHostCommands(bool supported, std::vector<HostCommandItem> commands)
+{
+    m_HostCommandsSupported = supported;
+    m_HostCommands = std::move(commands);
+    buildMenuLevels();
+    if (m_Visible) {
+        repositionWindow();
+    }
+    forceRepaint();
+}
+
+bool OverlayMenuPanel::showHostCommandsLevel()
+{
+    if (!m_Visible || m_HostCommandsLevel < 0) {
+        return false;
+    }
+    navigateToLevel(m_HostCommandsLevel);
+    return true;
+}
+
+bool OverlayMenuPanel::showSendKeysLevel()
+{
+    if (!m_Visible || m_SendKeysLevel < 0) {
+        return false;
+    }
+    navigateToLevel(m_SendKeysLevel);
+    return true;
+}
+
 void OverlayMenuPanel::dispatchActionItem(const MenuItem& item)
 {
     // USB callbacks can synchronously rebuild the device list. Own the payload
@@ -902,6 +1013,13 @@ void OverlayMenuPanel::dispatchActionItem(const MenuItem& item)
         beginInteraction();
         if (m_RemoteUsbReleaseCallback) {
             m_RemoteUsbReleaseCallback();
+        }
+        return;
+    }
+    if (item.action == MenuAction::SendHostKeys || item.action == MenuAction::RunHostCommand) {
+        closeMenu();
+        if (m_PayloadActionCallback) {
+            m_PayloadActionCallback(item.action, payload);
         }
         return;
     }
@@ -1368,6 +1486,17 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
         }
     };
 
+    // Host action levels have no fixed index, so their rows match by action
+    auto itemIcon = [&iconForItem](const MenuItem& item) -> QString {
+        switch (item.action) {
+        case MenuAction::OpenSendKeys:
+            return QStringLiteral("cat-input");
+        case MenuAction::OpenHostCommands:
+            return QStringLiteral("cat-host");
+        default:
+            return iconForItem(item);
+        }
+    };
     // Icon column: only on top-level menu
     bool hasIcons = (m_CurrentLevel == 0);
     int iconW = hasIcons ? m_IconAreaWidth : 0;
@@ -1399,7 +1528,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
             const QString icon =
                 item.action == MenuAction::OpenStatsOverlay   ? QStringLiteral("cat-display")
                 : item.action == MenuAction::OpenSessionStats ? QStringLiteral("menu-bitrate")
-                                                              : iconForItem(item);
+                                                              : itemIcon(item);
             drawIcon(icon, QRect(textPad, itemY + (m_ItemHeight - 20) / 2, 20, 20),
                      item.enabled ? (i == m_HoveredIndex ? 1.0 : 0.85) : 0.4);
         }

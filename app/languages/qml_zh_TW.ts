@@ -1815,6 +1815,26 @@
         <source>No stats yet</source>
         <translation>尚無統計</translation>
     </message>
+    <message>
+        <source>Send Keys</source>
+        <translation>傳送按鍵</translation>
+    </message>
+    <message>
+        <source>Host Commands</source>
+        <translation>超級指令</translation>
+    </message>
+    <message>
+        <source>No keys</source>
+        <translation>沒有按鍵</translation>
+    </message>
+    <message>
+        <source>No host commands</source>
+        <translation>還沒有超級指令</translation>
+    </message>
+    <message>
+        <source>Set them up in Foundation Sunshine</source>
+        <translation>請在 Foundation Sunshine 中新增</translation>
+    </message>
 </context>
 <context>
     <name>PcView</name>
@@ -2948,6 +2968,30 @@
         <source>FEC frames</source>
         <translation>FEC 影格</translation>
     </message>
+    <message>
+        <source>Couldn&apos;t send the keys to the host</source>
+        <translation>無法向主機傳送按鍵</translation>
+    </message>
+    <message>
+        <source>Host command sent: %1</source>
+        <translation>已傳送超級指令：%1</translation>
+    </message>
+    <message>
+        <source>The host rejected the command: %1</source>
+        <translation>主機拒絕了指令：%1</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t run host command %1: %2</source>
+        <translation>無法執行超級指令 %1：%2</translation>
+    </message>
+    <message>
+        <source>Another host command is still running</source>
+        <translation>上一條超級指令仍在執行</translation>
+    </message>
+    <message>
+        <source>Host commands need a Foundation Sunshine host</source>
+        <translation>超級指令需要 Foundation Sunshine 主機</translation>
+    </message>
 </context>
 <context>
     <name>SettingsView</name>
@@ -3148,6 +3192,18 @@
     <message>
         <source>Move the performance overlay</source>
         <translation>移動效能浮層</translation>
+    </message>
+    <message>
+        <source>Send Ctrl+Alt+Del to the host</source>
+        <translation>向主機傳送 Ctrl+Alt+Del</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>主機</translation>
+    </message>
+    <message>
+        <source>Open the host commands menu</source>
+        <translation>開啟超級指令選單</translation>
     </message>
 </context>
 <context>
@@ -3842,6 +3898,96 @@
     <message>
         <source>Copied</source>
         <translation>已複製</translation>
+    </message>
+</context>
+<context>
+    <name>HostKeys</name>
+    <message>
+        <source>Start menu</source>
+        <translation>開始功能表</translation>
+    </message>
+    <message>
+        <source>Switch windows</source>
+        <translation>切換視窗</translation>
+    </message>
+    <message>
+        <source>Security options</source>
+        <translation>安全性選項</translation>
+    </message>
+    <message>
+        <source>Task Manager</source>
+        <translation>工作管理員</translation>
+    </message>
+    <message>
+        <source>Game Bar</source>
+        <translation>遊戲列</translation>
+    </message>
+    <message>
+        <source>Screenshot</source>
+        <translation>螢幕擷取</translation>
+    </message>
+    <message>
+        <source>On-screen keyboard</source>
+        <translation>螢幕小鍵盤</translation>
+    </message>
+</context>
+<context>
+    <name>KeyMacroSettingsCard</name>
+    <message>
+        <source>Key macros</source>
+        <translation>按鍵巨集</translation>
+    </message>
+    <message>
+        <source>Named key combinations for the Send Keys page of the in-stream menu, next to keys like Ctrl+Alt+Del and Win. Up to %1 macros.</source>
+        <translation>為串流選單的「傳送按鍵」頁新增命名組合鍵，與 Ctrl+Alt+Del、Win 等按鍵並列。最多 %1 個。</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>刪除</translation>
+    </message>
+    <message>
+        <source>Delete %1</source>
+        <translation>刪除 %1</translation>
+    </message>
+    <message>
+        <source>New macro</source>
+        <translation>新增巨集</translation>
+    </message>
+    <message>
+        <source>This key can&apos;t be sent to the host. Try another key.</source>
+        <translation>這個按鍵無法傳送到主機，請換一個。</translation>
+    </message>
+    <message>
+        <source>You have %1 macros, the most allowed. Delete one to add another.</source>
+        <translation>已有 %1 個巨集，達到上限。刪除一個後才能新增。</translation>
+    </message>
+    <message>
+        <source>Enter a name, click the key button and press the combination. Keys the system keeps for itself, like Alt+Tab, can&apos;t be recorded here.</source>
+        <translation>輸入名稱，點擊按鍵按鈕後按下組合鍵。Alt+Tab 等被系統佔用的組合鍵無法在此錄入。</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>名稱</translation>
+    </message>
+    <message>
+        <source>Macro name</source>
+        <translation>巨集名稱</translation>
+    </message>
+    <message>
+        <source>Press keys...</source>
+        <translation>請按下按鍵...</translation>
+    </message>
+    <message>
+        <source>Set keys</source>
+        <translation>設定按鍵</translation>
+    </message>
+    <message>
+        <source>Macro keys</source>
+        <translation>巨集按鍵</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>新增</translation>
     </message>
 </context>
 </TS>

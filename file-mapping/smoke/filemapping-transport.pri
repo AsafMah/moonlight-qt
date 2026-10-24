@@ -31,6 +31,7 @@ macx {
 SOURCES += \
     $$PWD/../../app/backend/identitymanager.cpp \
     $$PWD/../../app/backend/nvapp.cpp \
+    $$PWD/../../app/backend/supercmds.cpp \
     $$PWD/../../app/backend/nvaddress.cpp \
     $$PWD/../../app/backend/nvcomputer.cpp \
     $$PWD/../../app/backend/nvhttp.cpp \

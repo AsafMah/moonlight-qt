@@ -235,6 +235,10 @@ jobs:
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat overlay_event_wake_state overlay_event_wake_state
         if errorlevel 1 exit /b %ERRORLEVEL%
+        call scripts\run-test.bat super_cmds super_cmds
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        call scripts\run-test.bat host_keys host_keys
+        if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat overlay_button_native_wake overlay_button_native_wake
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat overlay_toast_event_state overlay_toast_event_state

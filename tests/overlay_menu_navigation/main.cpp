@@ -189,5 +189,60 @@ int main(int argc, char **argv)
     panel.dismissOnOutsideClick(QPoint(-100, -100));
     for (int i = 0; i < 40 && panel.isVisible(); i++) QTest::qWait(50);
     if (panel.isVisible()) qFatal("outside click after slider use failed to dismiss");
+
+    // --- Host actions: Send Keys and Foundation Sunshine host commands ---
+    OverlayMenuPanel::MenuAction payloadAction = OverlayMenuPanel::MenuAction::MenuActionMax;
+    QString payloadValue;
+    panel.setPayloadActionCallback(
+        [&](OverlayMenuPanel::MenuAction action, const QString &payload) {
+            payloadAction = action;
+            payloadValue = payload;
+        });
+    panel.updateSendKeys(
+        { { QStringLiteral("Start menu"), QStringLiteral("Win"), QStringLiteral("special:win") } },
+        { { QStringLiteral("Save all"), QStringLiteral("Ctrl+Shift+S"),
+            QStringLiteral("keys:ctrl+shift+S") } });
+    panel.updateHostCommands(false, {});
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    QTest::qWait(240);
+    if (panel.showHostCommandsLevel())
+        qFatal("host commands opened without host support");
+    const int topHeightWithoutCommands = panel.height();
+    // Open Send Keys directly, since other branches add root rows before it;
+    // its second row is the macro.
+    if (!panel.showSendKeysLevel())
+        qFatal("Send Keys level did not open");
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      QPoint(140, 8 + 32 + 4 + 1 * 38 + 19));
+    if (payloadAction != OverlayMenuPanel::MenuAction::SendHostKeys ||
+        payloadValue != QStringLiteral("keys:ctrl+shift+S"))
+        qFatal("macro row did not send its keys");
+    for (int i = 0; i < 40 && panel.isVisible(); i++)
+        QTest::qWait(50);
+    if (panel.isVisible())
+        qFatal("sending keys did not close the menu");
+
+    // A supporting host without commands gets the entry and a setup hint.
+    panel.updateHostCommands(true, {});
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    QTest::qWait(240);
+    if (panel.height() <= topHeightWithoutCommands)
+        qFatal("Host Commands entry missing");
+    if (!panel.showHostCommandsLevel())
+        qFatal("Host Commands level did not open");
+    payloadValue.clear();
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, QPoint(140, 8 + 32 + 4 + 19));
+    if (!payloadValue.isEmpty() || !panel.isMenuVisible())
+        qFatal("setup hint row was clickable");
+    // A refresh keeps the open level, and a command row reports its id.
+    panel.updateHostCommands(true, { { QStringLiteral("7"), QStringLiteral("Restart Steam") } });
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, QPoint(140, 8 + 32 + 4 + 19));
+    if (payloadAction != OverlayMenuPanel::MenuAction::RunHostCommand ||
+        payloadValue != QStringLiteral("7"))
+        qFatal("host command row did not dispatch its id");
+    for (int i = 0; i < 40 && panel.isVisible(); i++)
+        QTest::qWait(50);
+    if (panel.isVisible())
+        qFatal("running a host command did not close the menu");
     return 0;
 }

@@ -444,6 +444,11 @@ ShortcutAction makeAction(const char* id, const char* name, const char* group, c
                            { { true, ShortcutBinding::ModNone, ShortcutKeys::letter(key) } } };
 }
 
+// An action that is off until the user binds a key to it
+ShortcutAction makeUnboundAction(const char* id, const char* name, const char* group)
+{
+    return ShortcutAction{ QString::fromLatin1(id), name, group, {} };
+}
 // A hold action, unbound by default
 ShortcutAction makeHoldAction(const char* id, const char* name, const char* group)
 {
@@ -495,6 +500,12 @@ QVector<ShortcutAction> builtinActions()
         makeAction(ShortcutActions::PasteText,
                    QT_TRANSLATE_NOOP("Shortcuts", "Type clipboard text on the host"),
                    QT_TRANSLATE_NOOP("Shortcuts", "Input"), 'V'),
+        makeUnboundAction(ShortcutActions::SendCtrlAltDel,
+                          QT_TRANSLATE_NOOP("Shortcuts", "Send Ctrl+Alt+Del to the host"),
+                          QT_TRANSLATE_NOOP("Shortcuts", "Host")),
+        makeUnboundAction(ShortcutActions::OpenHostCommands,
+                          QT_TRANSLATE_NOOP("Shortcuts", "Open the host commands menu"),
+                          QT_TRANSLATE_NOOP("Shortcuts", "Host")),
         makeHoldAction(ShortcutActions::HoldReleaseMouse,
                        QT_TRANSLATE_NOOP("Shortcuts", "Hold to release mouse"),
                        QT_TRANSLATE_NOOP("Shortcuts", "Input")),

@@ -9,9 +9,13 @@ feat/host-actions
 feat/live-stream-settings
 # feat/menu-tabs merges M3/X2 itself and adapts them to the tab table, so it goes last
 feat/menu-tabs
+# V1: VRR presentation mode
+feat/vrr
 #
 # PR qiin2333/moonlight-qt#104 — pins common-c to AsafMah's fork until common-c #10/#13 land
 #asaf-104
 #
 # Track B (PyroWave); pyrowave-hdr contains pyrowave-decoder
 feat/pyrowave-hdr
+# PW-4; merges feat/stats-overlay and feat/vrr
+feat/pyrowave-stats

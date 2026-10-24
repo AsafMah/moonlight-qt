@@ -10,17 +10,17 @@ This is the state of the work on **AsafMah/moonlight-qt** (the user's fork of qi
 
 ### Done (all in `integration`, all on the fork)
 
-| Item | Branch(es) | What it does |
-|---|---|---|
-| S1 shortcuts | `up/shortcuts` → `feat/shortcuts` | A customizable shortcut registry. Bindings match by scancode (keysym first for letters and digits), with exact modifiers. Includes a settings card. |
-| O1+O2 stats overlay | `up/stats` → `feat/stats-overlay` | A typed `StreamStatsModel`/`StatsSnapshot` and a movable overlay window with presets (minimal/compact/detailed/custom). New metrics: lows, jitter, latency breakdown and FEC. |
-| X2 session summary | `up/session-summary` → `feat/session-summary` | An optional per-window CSV recorder, a summary card after each stream, and a Session level in the menu. |
-| M2 host actions | `feat/host-actions` | Foundation Sunshine Super Commands ("Host Commands"), a Send Keys level, and up to 12 custom key macros. |
-| M3 stream quality | `feat/live-stream-settings` | Changes resolution and FPS mid-session by reconnecting in place, and bitrate live. `Session::tryApplyStreamQualityLive()` is a placeholder for a live path once PR #104 and a supporting host exist. |
-| M1 tabbed menu | `feat/menu-tabs` | The in-stream menu, split into tabs: Quick, Display, Input, Host and Session. Rows are placed by `kTabAssignments`, levels are found by `openAction`, and it works with gamepad LB/RB, keyboard and mouse. It also merges M3 and X2 and adapts them to the tabs. |
-| PW-0/1 | `feat/pyrowave` | PyroWave runtime/build scripts, the settings panel and host capability detection. The runtime is skipped on macOS and Windows ARM64, because Granite has no SIMD code there. |
-| PW-2 | `feat/pyrowave-decoder` | PyroWave SDR decode and present, sharing one Vulkan device between libplacebo and PyroWave. |
-| PW-3 | `feat/pyrowave-hdr` | PyroWave HDR10 and HLG, with HDR metadata. |
+| Item                | Branch(es)                                    | What it does                                                                                                                                                                                                                                                     |
+| ------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1 shortcuts        | `up/shortcuts` → `feat/shortcuts`             | A customizable shortcut registry. Bindings match by scancode (keysym first for letters and digits), with exact modifiers. Includes a settings card.                                                                                                              |
+| O1+O2 stats overlay | `up/stats` → `feat/stats-overlay`             | A typed `StreamStatsModel`/`StatsSnapshot` and a movable overlay window with presets (minimal/compact/detailed/custom). New metrics: lows, jitter, latency breakdown and FEC.                                                                                    |
+| X2 session summary  | `up/session-summary` → `feat/session-summary` | An optional per-window CSV recorder, a summary card after each stream, and a Session level in the menu.                                                                                                                                                          |
+| M2 host actions     | `feat/host-actions`                           | Foundation Sunshine Super Commands ("Host Commands"), a Send Keys level, and up to 12 custom key macros.                                                                                                                                                         |
+| M3 stream quality   | `feat/live-stream-settings`                   | Changes resolution and FPS mid-session by reconnecting in place, and bitrate live. `Session::tryApplyStreamQualityLive()` is a placeholder for a live path once PR #104 and a supporting host exist.                                                             |
+| M1 tabbed menu      | `feat/menu-tabs`                              | The in-stream menu, split into tabs: Quick, Display, Input, Host and Session. Rows are placed by `kTabAssignments`, levels are found by `openAction`, and it works with gamepad LB/RB, keyboard and mouse. It also merges M3 and X2 and adapts them to the tabs. |
+| PW-0/1              | `feat/pyrowave`                               | PyroWave runtime/build scripts, the settings panel and host capability detection. The runtime is skipped on macOS and Windows ARM64, because Granite has no SIMD code there.                                                                                     |
+| PW-2                | `feat/pyrowave-decoder`                       | PyroWave SDR decode and present, sharing one Vulkan device between libplacebo and PyroWave.                                                                                                                                                                      |
+| PW-3                | `feat/pyrowave-hdr`                           | PyroWave HDR10 and HLG, with HDR metadata.                                                                                                                                                                                                                       |
 
 **PRs opened elsewhere** (at the user's request):
 - [qiin2333/moonlight-vplus#754](https://github.com/qiin2333/moonlight-vplus/pull/754): English strings for the Android client. It's small, because the app was already almost fully translated.
@@ -51,19 +51,20 @@ The hold-to-release state reaches the overlay tooltips through `isCaptureActive(
 
 **Still unverified:** all of it on a real host and on screen. The layouts were checked only by offscreen renders. The QML settings rows were only qmllinted.
 
+### Done 2026-10-24 (third round, parallel sessions)
+
+| Item | Branch | Notes |
+|---|---|---|
+| Detachable performance overlay | `feat/stats-overlay` | `statsoverlay/detached` (off by default, next stream). Own top-level window, always movable/resizable, opens on another monitor if there is one; position per display in `statsoverlay/displays/<key>/detached/pos`. |
+| PW-4 | `feat/pyrowave-stats` (from `feat/pyrowave-hdr`; merges `feat/stats-overlay` and `feat/vrr`) | Automatic fallback, greyed-out locks, common-c pinned to `feat/client-introspection` @ `dbb0adb` (FEC stats and the PyroWave host query are now on), stats into `StreamStatsModel`, triple buffering, frame pacing, SDR CPU staging (`PYROWAVE_CPU_STAGING=1` forces it), GPU + preflight on the settings page, PW-2 translations. Fallback toast kept as is (user). |
+| V1 VRR | `feat/vrr` (merges `feat/stats-overlay`) | `vrrpolicy.h` (pure, `tests/vrr_policy`): VRR turns V-Sync/pacing off and caps presents just below the refresh rate (144→138). Setting "Variable refresh rate", off by default; `--vrr`. Replaces the old `origin/vrr` / PR #10 approach. The overlay's Display cell shows "· VRR"; PyroWave applies the same cap. |
+
+`integration` @ `be1dce32` has all of this; it builds locally and passes all 31 CI unit tests. CI run [40124330390](https://github.com/AsafMah/moonlight-qt/actions/runs/40124330390) was started on it. Nothing of this round has run on a GPU, a VRR monitor or a host.
+
 ## 2. Next tasks, in order
 
-1–3 of the old list are done (above).
+1–5 of the old list and V1 VRR are done (above).
 
-4. **Detachable performance overlay:** its own top-level window that can move to another screen. The user asked for this "later", after 1–3. Exclusive fullscreen on the same monitor will cover it, so say so in the setting.
-5. **PW-4: PyroWave stats and capability page.**
-   - Frame pacing.
-   - Triple buffering after delayed presents.
-   - The SDR CPU-staging fallback.
-   - Share the stats formatter with the overlay.
-   - Translate PW-2's strings.
-   - Bump the common-c submodule to `feat/client-introspection`.
-   - Have the capability page show the chosen GPU and the preflight result.
 6. **A4: rebase PR qiin2333/moonlight-qt#104** (local `asaf-104`, which tracks `origin/feat/client-driven-resolution`). It's blocked on common-c #10/#13 and foundation-sunshine #729. Once that lands, wire M3's `tryApplyStreamQualityLive()` to `LiSendResolutionChangeRequest` when the host advertises `LI_FF_CLIENT_RESOLUTION_CHANGE`.
 7. **A smoke test on screen with the user:** the tabbed menu, the overlay, the stream-quality switch and the summary card.
 8. **Upstream PRs** from the `up/*` branches. Never open these without asking the user.

@@ -205,9 +205,9 @@ PyrowaveHostOffer PyrowaveVideoDecoder::hostOfferFromConnection(int negotiatedVi
         return PyrowaveHostOffer::Offered;
     }
 
-    // moonlight-common-c parses x-ss-pyrowave.* from DESCRIBE but doesn't
-    // expose the result yet. Once it provides this query (proposed name), the
-    // settings page learns about hosts even when PyroWave wasn't requested.
+    // The host's DESCRIBE offer, reported even when another codec was
+    // negotiated, so the settings page learns about hosts even when PyroWave
+    // wasn't requested. Older moonlight-common-c builds lack the query.
 #ifdef LI_PYROWAVE_HAS_HOST_CAPABILITIES_QUERY
     LI_PYROWAVE_CAPABILITIES hostCapabilities;
     if (LiGetHostPyrowaveCapabilities(&hostCapabilities)) {

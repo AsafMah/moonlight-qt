@@ -391,6 +391,12 @@ bool PyrowaveVulkanRenderer::initialize(const PyrowavePresentParams& params,
     return true;
 }
 
+QString PyrowaveVulkanRenderer::decoderDescription() const
+{
+    return m_FragmentPath ? QStringLiteral("PyroWave (Vulkan fragment)")
+                          : QStringLiteral("PyroWave (Vulkan compute)");
+}
+
 #define PYROWAVE_LOAD_INSTANCE_FN(member, name)                                                    \
     member = reinterpret_cast<PFN_##name>(getProcAddr(instance, #name));                           \
     if (member == nullptr) {                                                                       \

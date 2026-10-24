@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pyrowavecolor.h"
+#include "streaming/bandwidth.h"
 #include "streaming/video/decoder.h"
 #include "streaming/video/overlaymanager.h"
 
@@ -8,6 +9,7 @@
 #include <QString>
 
 #include <atomic>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -160,12 +162,21 @@ private:
 
     int processFrame(PDECODE_UNIT du);
     void accountReceivedFrame(PDECODE_UNIT du);
+    void publishStatsWindow(const VIDEO_STATS& recent, const VIDEO_STATS& completed);
     void stringifyVideoStats(const VIDEO_STATS& stats, char* output, int length) const;
 
     bool m_TestOnly;
     PyrowaveSessionContract m_Contract;
     int m_Width = 0;
     int m_Height = 0;
+    int m_StreamFps = 0;
+
+    // Wire-level video bitrate (with FEC), read once per stats window
+    BandwidthMeter m_BandwidthMeter;
+    double m_BandwidthMbps = std::nan("");
+    // Describe the current renderer for the stats model. Decode thread.
+    QString m_DecoderName;
+    QString m_RendererName;
 
     // Video stats windows, as FFmpegVideoDecoder keeps them
     VIDEO_STATS m_ActiveWndVideoStats = {};

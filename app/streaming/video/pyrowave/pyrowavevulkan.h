@@ -143,6 +143,9 @@ public:
 
     const std::string& deviceName() const { return m_DeviceName; }
 
+    // For the stats overlay, e.g. "PyroWave (Vulkan compute)". English.
+    QString decoderDescription() const;
+
 private:
     struct DeviceSetup;
     struct Plane

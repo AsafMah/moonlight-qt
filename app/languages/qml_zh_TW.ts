@@ -702,12 +702,12 @@
         <translation>自訂</translation>
     </message>
     <message>
-        <source>Overlay size</source>
-        <translation>浮層大小</translation>
+        <source>Overlay scale</source>
+        <translation>浮層縮放</translation>
     </message>
     <message>
-        <source>In a stream, choose Edit position in the overlay menu to drag the overlay and resize it with the mouse wheel.</source>
-        <translation>串流中在懸浮選單裡選擇「調整位置」，即可拖曳浮層並用滑鼠滾輪調整大小。</translation>
+        <source>In a stream, choose Edit position in the overlay menu to drag the overlay and zoom it with the mouse wheel.</source>
+        <translation>串流中在懸浮選單裡選擇「調整位置」，即可拖曳浮層並用滑鼠滾輪縮放。</translation>
     </message>
     <message>
         <source>Background opacity</source>
@@ -718,12 +718,28 @@
         <translation>已記住的位置</translation>
     </message>
     <message>
-        <source>The overlay remembers its position and preset for each display.</source>
-        <translation>浮層會為每台顯示器分別記住位置和預設。</translation>
+        <source>The overlay remembers its position, preset and size for each display.</source>
+        <translation>浮層會為每台顯示器分別記住位置、預設和尺寸。</translation>
     </message>
     <message>
         <source>Reset</source>
         <translation>重設</translation>
+    </message>
+    <message>
+        <source>Panel size</source>
+        <translation>面板尺寸</translation>
+    </message>
+    <message>
+        <source>In edit mode, drag the edges of the Detailed and Custom panels to resize them. Each display remembers its own size.</source>
+        <translation>在編輯模式下拖曳「詳細」與「自訂」面板的邊緣即可調整大小，每台顯示器分別記住尺寸。</translation>
+    </message>
+    <message>
+        <source>Current: %1</source>
+        <translation>目前：%1</translation>
+    </message>
+    <message>
+        <source>Reset size</source>
+        <translation>重設尺寸</translation>
     </message>
 </context>
 <context>
@@ -1859,8 +1875,52 @@
         <translation>未選擇任何指標</translation>
     </message>
     <message>
-        <source>Drag to move · Wheel to resize · Esc when done</source>
+        <source>Drag to move · Wheel to zoom · Esc when done</source>
         <translation>拖曳移動 · 滾輪縮放 · Esc 完成</translation>
+    </message>
+    <message>
+        <source>Lat</source>
+        <comment>Short form of the Latency label</comment>
+        <translation>延遲</translation>
+    </message>
+    <message>
+        <source>Rate</source>
+        <comment>Short form of the Bitrate label</comment>
+        <translation>位元率</translation>
+    </message>
+    <message>
+        <source>Jit</source>
+        <comment>Short form of the Jitter label</comment>
+        <translation>抖動</translation>
+    </message>
+    <message>
+        <source>Dec</source>
+        <comment>Short form of the Decode label</comment>
+        <translation>解碼</translation>
+    </message>
+    <message>
+        <source>Rend</source>
+        <comment>Short form of the Render label</comment>
+        <translation>繪製</translation>
+    </message>
+    <message>
+        <source>Drops</source>
+        <comment>Short form of the Pacer drops label</comment>
+        <translation>丟影格</translation>
+    </message>
+    <message>
+        <source>Disp</source>
+        <comment>Short form of the Display label</comment>
+        <translation>顯示</translation>
+    </message>
+    <message>
+        <source>Res</source>
+        <comment>Short form of the Stream (resolution) label</comment>
+        <translation>串流</translation>
+    </message>
+    <message>
+        <source>Drag to move · Drag the edges to resize · Wheel to zoom · Esc when done</source>
+        <translation>拖曳移動 · 拖曳邊緣調整大小 · 滾輪縮放 · Esc 完成</translation>
     </message>
 </context>
 <context>
@@ -3203,6 +3263,98 @@
         <source>Latency breakdown bar</source>
         <translation>延遲分解條</translation>
     </message>
+    <message>
+        <source>%1 on %2: %3 × %4</source>
+        <translation>%2 上的%1：%3 × %4</translation>
+    </message>
+    <message>
+        <source>Detailed</source>
+        <translation>詳細</translation>
+    </message>
+    <message>
+        <source>Custom</source>
+        <translation>自訂</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>預設</translation>
+    </message>
+    <message>
+        <source>The resolution, frame rate and codec the host is streaming.</source>
+        <translation>主機正在串流的解析度、影格率與編碼。</translation>
+    </message>
+    <message>
+        <source>Frames shown per second. It should match the stream&apos;s frame rate; lower means frames are lost or arrive late.</source>
+        <translation>每秒顯示的影格數。應與串流影格率一致；偏低代表有影格遺失或延遲到達。</translation>
+    </message>
+    <message>
+        <source>The frame rate of the slowest 1% of frames. Close to the FPS is smooth; much lower means stutter.</source>
+        <translation>最慢的 1% 影格對應的影格率。接近 FPS 代表流暢；明顯偏低代表卡頓。</translation>
+    </message>
+    <message>
+        <source>Estimated time from the host capturing a frame to it appearing here. Under 40 ms is good; over 80 ms feels sluggish.</source>
+        <translation>從主機擷取一個影格到它顯示在這裡的估算時間。低於 40 ms 為佳；超過 80 ms 會明顯遲滯。</translation>
+    </message>
+    <message>
+        <source>Video data received per second, and the bitrate the host was asked for. Higher gives a sharper picture, as long as the network keeps up.</source>
+        <translation>每秒收到的視訊資料量，以及向主機要求的位元率。網路跟得上時，越高畫面越清晰。</translation>
+    </message>
+    <message>
+        <source>Frames lost on the network. Above 0.25% shows as glitches; above 1% the network is struggling.</source>
+        <translation>網路上遺失的影格。超過 0.25% 會出現破圖；超過 1% 代表網路吃緊。</translation>
+    </message>
+    <message>
+        <source>Round trip time to the host, and how much it varies. Under 20 ms is good; over 50 ms adds noticeable input delay.</source>
+        <translation>到主機的往返時間及其波動。低於 20 ms 為佳；超過 50 ms 會帶來明顯的輸入延遲。</translation>
+    </message>
+    <message>
+        <source>How much the arrival time of video packets varies. Under 2 ms is good; more makes frame pacing uneven.</source>
+        <translation>視訊封包到達時間的波動程度。低於 2 ms 為佳；更高會讓影格節奏不均勻。</translation>
+    </message>
+    <message>
+        <source>Time the host spent capturing and encoding each frame. Lower is better.</source>
+        <translation>主機擷取並編碼每個影格所用的時間。越低越好。</translation>
+    </message>
+    <message>
+        <source>Time this computer takes to decode a frame. Under 5 ms is good; over 8 ms can limit the frame rate.</source>
+        <translation>本機解碼一個影格所需的時間。低於 5 ms 為佳；超過 8 ms 可能限制影格率。</translation>
+    </message>
+    <message>
+        <source>Time a decoded frame waits before it is shown. It should stay low; high values add latency.</source>
+        <translation>解碼後的影格等待顯示的時間。應保持很低；偏高會增加延遲。</translation>
+    </message>
+    <message>
+        <source>Time to draw a decoded frame on screen. Lower is better.</source>
+        <translation>將解碼後的影格繪製到螢幕的時間。越低越好。</translation>
+    </message>
+    <message>
+        <source>Share of packets that are error correction (parity), and the frames it recovered or could not recover. Lost frames mean the network drops more than FEC can repair.</source>
+        <translation>糾錯（冗餘）封包所佔比例，以及它恢復或未能恢復的影格數。出現遺失影格代表網路丟包超出 FEC 的修復能力。</translation>
+    </message>
+    <message>
+        <source>Whether the host adapts the bitrate to the network automatically.</source>
+        <translation>主機是否依網路自動調整位元率。</translation>
+    </message>
+    <message>
+        <source>Frames dropped to stay in step with the display. Above 1% shows as stutter.</source>
+        <translation>為與顯示器同步而丟棄的影格。超過 1% 會出現卡頓。</translation>
+    </message>
+    <message>
+        <source>Refresh rate of this display, and the stream&apos;s frame rate. A display slower than the stream has to drop frames.</source>
+        <translation>本顯示器的更新率以及串流影格率。顯示器比串流慢時必然丟影格。</translation>
+    </message>
+    <message>
+        <source>How long this stream has been running.</source>
+        <translation>本次串流已持續的時間。</translation>
+    </message>
+    <message>
+        <source>Time between recent frames. Bars above the dashed target line are late frames; tall spikes are visible hitches.</source>
+        <translation>最近各影格之間的間隔。高於虛線目標線的長條是延遲的影格；高聳的尖峰就是可見的卡頓。</translation>
+    </message>
+    <message>
+        <source>How the estimated latency splits between the host, the network, decoding, queueing and rendering.</source>
+        <translation>估算延遲在主機、網路、解碼、排隊與繪製之間的分佈。</translation>
+    </message>
 </context>
 <context>
     <name>StreamSegue</name>
@@ -3437,5 +3589,12 @@
     <message><source>Pipw image is unavailable</source><translation>Pipw 圖片無法使用</translation></message>
     <message><source>This background image is unavailable. Please try another image.</source><translation>這張背景圖片無法使用，請換一張再試。</translation></message>
     <message><source>Unable to load the background image. Please try another image.</source><translation>無法載入背景圖片，請換一張再試。</translation></message>
+</context>
+<context>
+    <name>OverlayStatsTooltip</name>
+    <message>
+        <source>Now: %1</source>
+        <translation>目前：%1</translation>
+    </message>
 </context>
 </TS>

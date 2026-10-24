@@ -155,12 +155,13 @@ NavigableDialog {
                 model: dialog.rows
 
                 delegate: Row {
+                    id: summaryRow
                     required property var modelData
                     spacing: Theme.spaceLg
 
                     Text {
                         width: 130
-                        text: modelData.label
+                        text: summaryRow.modelData.label
                         color: Theme.textDim
                         font.family: Theme.fontSans
                         font.pointSize: Theme.fontBody
@@ -169,7 +170,7 @@ NavigableDialog {
 
                     Text {
                         width: 400
-                        text: modelData.value
+                        text: summaryRow.modelData.value
                         color: Theme.text
                         font.family: Theme.fontMono
                         font.pointSize: Theme.fontBody

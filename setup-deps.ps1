@@ -38,7 +38,10 @@ foreach ($AssetName in $Assets) {
 # Build the PyroWave runtime next to the prebuilt DLLs so build-arch.bat
 # deploys it (and its PDB) with them.
 foreach ($Arch in @('x64', 'arm64')) {
-    & (Join-Path $PSScriptRoot 'scripts\build-pyrowave.ps1') -Arch $Arch -Mode $PyroWave `
+    # Granite's math library has no MSVC ARM64 SIMD path yet ("Implement me."
+    # in simd.hpp), so arm64 builds ship without PyroWave, which hides it.
+    $Mode = if ($Arch -eq 'arm64') { 'Skip' } else { $PyroWave }
+    & (Join-Path $PSScriptRoot 'scripts\build-pyrowave.ps1') -Arch $Arch -Mode $Mode `
         -OutDir (Join-Path $TargetDir "lib\$Arch")
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE

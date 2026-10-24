@@ -1346,9 +1346,10 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamQualityLevel() const
         StreamQuality::fpsPresets(m_StreamQuality.displayHz, m_StreamQuality.fps);
     for (int i = 0; i < frameRates.size(); i++) {
         const StreamQuality::FpsPreset& preset = frameRates[i];
-        const QString note = preset.current   ? tr("Current")
-                             : preset.display ? tr("Display", "FPS preset at the display refresh rate")
-                                              : QString();
+        const QString note = preset.current ? tr("Current")
+                             : preset.display
+                                 ? tr("Display", "FPS preset at the display refresh rate")
+                                 : QString();
         level.items.push_back({ tr("%1 FPS").arg(preset.fps),
                                 detailText(preset.fps == m_PendingStreamFps, note),
                                 MenuItemType::Action, MenuAction::SelectStreamFps, 0, true, false,

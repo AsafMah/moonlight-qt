@@ -460,7 +460,8 @@ int main(int argc, char **argv)
         ++sessionPolls;
         return std::vector<std::pair<QString, QString>>{
             { QStringLiteral("Duration"), QString::number(sessionPolls) },
-            { QStringLiteral("Average FPS"), QStringLiteral("60") } };
+            { QStringLiteral("Average FPS"), QStringLiteral("60") }
+        };
     });
     panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
     QTest::qWait(240);

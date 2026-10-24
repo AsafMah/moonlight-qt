@@ -39,9 +39,9 @@
  *   Sub-levels:  Bitrate (scrubber + presets), Menu Position, USB Devices
  *                (when enabled), Performance Overlay, Send Keys, Host Commands
  *                (Foundation Sunshine only), Stream Quality (resolution / FPS
- *                presets). A sub-level records the action of the entry that
- *                opens it (MenuLevel::openAction) and is looked up by it; no
- *                level has a fixed index.
+ *                presets), Session (live totals). A sub-level records the
+ *                action of the entry that opens it (MenuLevel::openAction)
+ *                and is looked up by it; no level has a fixed index.
  *
  * Navigation: mouse (tabs, rows, back/close), gamepad (LB/RB tabs, D-pad
  * move, A select, B back/close) and keyboard (handleNavigationKey()).
@@ -432,6 +432,8 @@ private:
     bool isTabRootLevel(int level) const;
     int tabRootLevel() const; // root of m_CurrentTab, or the first visible tab
     int levelForOpenAction(MenuAction action) const; // -1 when absent
+    // Points the level's SubMenu rows at the levels of their Open* actions
+    void linkSubMenuRows(MenuLevel& level) const;
     MenuItem* findRootItem(MenuAction action);
     void showTabLevel(int level, int direction); // direction: slide, 0 for none
     int contentTop() const { return m_TitleHeight + m_TabBarHeight + m_Padding; }
@@ -461,7 +463,8 @@ private:
     StatsOverlay::Preset m_StatsOverlayPreset = StatsOverlay::Preset::Off;
     bool m_StatsOverlayEditable = true;
 
-    // Session level: appended and looked up like the overlay level
+    // Session level (live totals), found by MenuAction::OpenSessionStats on
+    // every build. Its rows are refreshed while it is shown.
     void refreshSessionStats();
     int m_SessionStatsLevel = -1;
     SessionStatsProvider m_SessionStatsProvider;
@@ -505,7 +508,7 @@ private:
     StreamQualityCallback m_StreamQualityCallback;
 
     // Stream Quality level: running state, the pending choice, and the level
-    // index in m_MenuLevels (-1 before the first build).
+    // index in m_MenuLevels, refreshed on every build from levelForOpenAction().
     StreamQualityState m_StreamQuality;
     QSize m_PendingStreamResolution;
     int m_PendingStreamFps = 0;

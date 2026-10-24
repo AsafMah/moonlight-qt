@@ -1701,6 +1701,7 @@
     </message>
     <message>
         <source>Display</source>
+        <comment>FPS preset at the display refresh rate</comment>
         <translation>顯示器</translation>
     </message>
     <message>

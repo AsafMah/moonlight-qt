@@ -5,6 +5,7 @@
 #include <QKeyEvent>
 #include <QWheelEvent>
 #include <QTest>
+#include <optional>
 
 // Native preview of the production panel, with simulated USB status changes.
 class MenuPreview : public QRasterWindow {
@@ -298,10 +299,12 @@ int main(int argc, char **argv)
     // --- Tabs: assignment table, hiding, switching by gamepad/keyboard/mouse ---
     if (OverlayMenuPanel::tabForAction(MenuAction::ToggleStatsOverlay) != MenuTab::Quick ||
         OverlayMenuPanel::tabForAction(MenuAction::Quit) != MenuTab::Quick ||
+        OverlayMenuPanel::tabForAction(MenuAction::OpenStreamQuality) != MenuTab::Display ||
         OverlayMenuPanel::tabForAction(MenuAction::OpenStatsOverlay) != MenuTab::Display ||
         OverlayMenuPanel::tabForAction(MenuAction::OpenBitrate) != MenuTab::Display ||
         OverlayMenuPanel::tabForAction(MenuAction::OpenSendKeys) != MenuTab::Input ||
         OverlayMenuPanel::tabForAction(MenuAction::OpenHostCommands) != MenuTab::Host ||
+        OverlayMenuPanel::tabForAction(MenuAction::OpenSessionStats) != MenuTab::Session ||
         OverlayMenuPanel::tabForAction(MenuAction::SetBitrate) != MenuTab::Quick)
         qFatal("tab assignment table changed unexpectedly");
     int actionCount = 0;
@@ -312,24 +315,25 @@ int main(int argc, char **argv)
     });
     panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
     QTest::qWait(240);
-    // Session has no entries in this build, so it is hidden.
+    // Every tab has entries; Session holds the live totals entry.
     const std::vector<MenuTab> expectedTabs{ MenuTab::Quick, MenuTab::Display, MenuTab::Input,
-                                             MenuTab::Host };
+                                             MenuTab::Host, MenuTab::Session };
     if (panel.visibleTabs() != expectedTabs)
         qFatal("unexpected visible tabs");
-    if (!panel.tabGeometry(MenuTab::Session).isEmpty())
-        qFatal("empty Session tab is drawn");
-    if (panel.showTab(MenuTab::Session))
-        qFatal("empty Session tab opened");
+    if (panel.tabGeometry(MenuTab::Session).isEmpty())
+        qFatal("Session tab is not drawn");
     if (panel.currentTab() != MenuTab::Host)
         qFatal("last tab not remembered after an action");
     const int tabHeight = panel.height();
     // LB/RB step through the visible tabs and wrap at both ends.
     panel.gamepadSwitchTab(1);
+    if (panel.currentTab() != MenuTab::Session || !panel.isAtTabRoot())
+        qFatal("RB did not switch to the Session tab");
+    panel.gamepadSwitchTab(1);
     if (panel.currentTab() != MenuTab::Quick || !panel.isAtTabRoot())
         qFatal("RB did not wrap");
     panel.gamepadSwitchTab(-1);
-    if (panel.currentTab() != MenuTab::Host)
+    if (panel.currentTab() != MenuTab::Session)
         qFatal("LB did not wrap");
     if (panel.height() != tabHeight)
         qFatal("switching tabs resized the panel");
@@ -337,13 +341,13 @@ int main(int argc, char **argv)
     if (!panel.handleNavigationKey(Qt::Key_Tab) || panel.currentTab() != MenuTab::Quick)
         qFatal("Tab did not switch to the next tab");
     panel.handleNavigationKey(Qt::Key_Tab, Qt::ShiftModifier);
-    if (panel.currentTab() != MenuTab::Host)
+    if (panel.currentTab() != MenuTab::Session)
         qFatal("Shift+Tab did not switch back");
     panel.handleNavigationKey(Qt::Key_PageDown);
     if (panel.currentTab() != MenuTab::Quick)
         qFatal("PageDown did not switch tabs");
     panel.handleNavigationKey(Qt::Key_PageUp);
-    if (panel.currentTab() != MenuTab::Host)
+    if (panel.currentTab() != MenuTab::Session)
         qFatal("PageUp did not switch tabs");
     // D-pad / arrow left/right on a tab root switches tabs.
     panel.gamepadMoveHorizontal(1);
@@ -405,5 +409,96 @@ int main(int argc, char **argv)
     waitClosed(panel);
     if (panel.isVisible())
         qFatal("Escape at a tab root did not close the menu");
+
+    // --- Stream Quality: level found by action, pending choice, apply ---
+    std::optional<OverlayMenuPanel::StreamQualityRequest> qualityRequest;
+    panel.setStreamQualityCallback(
+        [&](const OverlayMenuPanel::StreamQualityRequest &request) { qualityRequest = request; });
+    OverlayMenuPanel::StreamQualityState qualityState;
+    qualityState.resolution = QSize(1920, 1080);
+    qualityState.fps = 60;
+    panel.updateStreamQualityState(qualityState);
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    QTest::qWait(240);
+    if (!panel.showTab(MenuTab::Display))
+        qFatal("Display tab missing");
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      rowCenter(panel, rowOf(panel, MenuAction::OpenStreamQuality)));
+    if (panel.isAtTabRoot() || panel.currentTab() != MenuTab::Display)
+        qFatal("Stream Quality level did not open under Display");
+    // Switch stays disabled until the choice differs from the running stream.
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      rowCenter(panel, rowOf(panel, MenuAction::ApplyStreamQuality)));
+    if (qualityRequest || !panel.isMenuVisible())
+        qFatal("unchanged stream quality was applied");
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      rowCenter(panel, rowOf(panel, MenuAction::SelectStreamResolution,
+                                             QStringLiteral("2560x1440"))));
+    if (qualityRequest || !panel.isMenuVisible() || panel.isAtTabRoot())
+        qFatal("picking a resolution closed the menu or left the level");
+    // The Bitrate row links to the Bitrate level, also after the pick above
+    // rebuilt the level.
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      rowCenter(panel, rowOf(panel, MenuAction::OpenBitrate)));
+    if (panel.rowOfAction(MenuAction::SetBitrate, QStringLiteral("10000")) < 0)
+        qFatal("Stream Quality's Bitrate row did not open the Bitrate level");
+    // The pending choice survives leaving the level.
+    if (!panel.showLevel(MenuAction::OpenStreamQuality))
+        qFatal("Stream Quality level missing");
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      rowCenter(panel, rowOf(panel, MenuAction::ApplyStreamQuality)));
+    if (!qualityRequest || qualityRequest->resolution != QSize(2560, 1440) ||
+        qualityRequest->fps != 60 || qualityRequest->saveAsDefault)
+        qFatal("stream quality switch did not report 1440p60");
+    waitClosed(panel);
+    if (panel.isVisible())
+        qFatal("applying stream quality did not close the menu");
+
+    // --- Session: entry in the Session tab, rows refreshed while shown ---
+    int sessionPolls = 0;
+    panel.setSessionStatsProvider([&]() {
+        ++sessionPolls;
+        return std::vector<std::pair<QString, QString>>{
+            { QStringLiteral("Duration"), QString::number(sessionPolls) },
+            { QStringLiteral("Average FPS"), QStringLiteral("60") } };
+    });
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    QTest::qWait(240);
+    if (!panel.showTab(MenuTab::Session))
+        qFatal("Session tab missing");
+    const int pollsBeforeOpen = sessionPolls;
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      rowCenter(panel, rowOf(panel, MenuAction::OpenSessionStats)));
+    if (panel.isAtTabRoot() || panel.currentTab() != MenuTab::Session)
+        qFatal("Session level did not open from its tab");
+    if (sessionPolls <= pollsBeforeOpen)
+        qFatal("opening the Session level did not refresh it");
+    // Read-only rows: clicking one neither closes the menu nor leaves the level.
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, rowCenter(panel, 0));
+    if (!panel.isMenuVisible() || panel.isAtTabRoot())
+        qFatal("a Session row was clickable");
+    const int pollsWhileOpen = sessionPolls;
+    QTest::qWait(1300);
+    if (sessionPolls <= pollsWhileOpen)
+        qFatal("the Session level was not refreshed while shown");
+    // A rebuild (e.g. a USB refresh) keeps the level open and refreshing.
+    panel.updateRemoteUsbState(true, OverlayMenuPanel::RemoteUsbState::Available, devices,
+                               QString(), QStringLiteral("Ready"));
+    if (panel.isAtTabRoot() || panel.rowOfAction(MenuAction::OpenSessionStats) != 0)
+        qFatal("a rebuild left the Session level");
+    const int pollsAfterRebuild = sessionPolls;
+    QTest::qWait(1300);
+    if (sessionPolls <= pollsAfterRebuild)
+        qFatal("the Session level stopped refreshing after a rebuild");
+    // Leaving the level stops the refresh.
+    panel.gamepadBack();
+    if (!panel.isAtTabRoot() || panel.currentTab() != MenuTab::Session)
+        qFatal("back did not return to the Session tab");
+    const int pollsAfterBack = sessionPolls;
+    QTest::qWait(1300);
+    if (sessionPolls != pollsAfterBack)
+        qFatal("the Session level kept refreshing after it was left");
+    panel.closeMenu();
+    waitClosed(panel);
     return 0;
 }

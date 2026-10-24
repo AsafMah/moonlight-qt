@@ -107,8 +107,8 @@ struct TabAssignment
 // - Entries appear in their tab in the order of this table (lines of other
 //   tabs in between don't matter).
 // - An entry missing from the table lands at the end of the Quick tab.
-// - A tab with no entries (e.g. Session in release builds today, or Host
-//   without host features) is hidden, so a tab needs no other registration.
+// - A tab with no entries (e.g. Host without host features) is hidden, so a
+//   tab needs no other registration.
 // Sub-level rows (presets, keys, commands, devices) are not listed: they live
 // in their sub-level, which opens from the listed Open* entry.
 constexpr TabAssignment kTabAssignments[] = {
@@ -121,6 +121,7 @@ constexpr TabAssignment kTabAssignments[] = {
     { MenuAction::Quit, MenuTab::Quick },
     { MenuAction::QuitAndExit, MenuTab::Quick },
     // Display: what the stream looks like
+    { MenuAction::OpenStreamQuality, MenuTab::Display },
     { MenuAction::OpenStatsOverlay, MenuTab::Display },
     { MenuAction::OpenBitrate, MenuTab::Display },
     { MenuAction::OpenMenuPosition, MenuTab::Display },
@@ -135,7 +136,8 @@ constexpr TabAssignment kTabAssignments[] = {
     // Host: features the host offers
     { MenuAction::OpenHostCommands, MenuTab::Host },
     { MenuAction::ShowHostFiles, MenuTab::Host },
-// Session: the running session
+    // Session: the running session
+    { MenuAction::OpenSessionStats, MenuTab::Session },
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
     { MenuAction::OpenStylusReplayPanel, MenuTab::Session },
 #endif
@@ -396,6 +398,18 @@ int OverlayMenuPanel::levelForOpenAction(MenuAction action) const
     return -1;
 }
 
+void OverlayMenuPanel::linkSubMenuRows(MenuLevel& level) const
+{
+    for (MenuItem& item : level.items) {
+        if (item.type == MenuItemType::SubMenu) {
+            const int target = levelForOpenAction(item.action);
+            if (target >= 0) {
+                item.targetLevel = target;
+            }
+        }
+    }
+}
+
 OverlayMenuPanel::MenuItem* OverlayMenuPanel::findRootItem(MenuAction action)
 {
     for (int level : m_TabLevels) {
@@ -431,13 +445,6 @@ void OverlayMenuPanel::buildMenuLevels()
         m_CurrentLevel >= 0 && m_CurrentLevel < static_cast<int>(m_MenuLevels.size())
             ? m_MenuLevels[m_CurrentLevel].openAction
             : MenuAction::MenuActionMax;
-
-    // The Stream Quality level is appended after the fixed ones, so its index
-    // can change between builds; follow it by identity.
-    const bool onStreamQualityLevel =
-        m_StreamQualityLevel >= 0 && m_CurrentLevel == m_StreamQualityLevel;
-    const bool inSessionStatsLevel =
-        m_SessionStatsLevel >= 0 && m_CurrentLevel == m_SessionStatsLevel;
 
     m_MenuLevels.clear();
     m_TabLevels.clear();
@@ -476,6 +483,14 @@ void OverlayMenuPanel::buildMenuLevels()
     entries.push_back({ tr("Quit Moonlight"), shortcutDetail(MenuAction::QuitAndExit),
                         MenuItemType::Action, MenuAction::QuitAndExit, 0, true, false, false });
     // Display. SubMenu target levels are filled in once the levels exist.
+    entries.push_back({ tr("Stream Quality"),
+                        m_StreamQuality.fps > 0
+                            ? tr("%1 · %2 FPS")
+                                  .arg(StreamQuality::resolutionName(m_StreamQuality.resolution))
+                                  .arg(m_StreamQuality.fps)
+                            : QString(),
+                        MenuItemType::SubMenu, MenuAction::OpenStreamQuality, 0, true, false,
+                        false });
     entries.push_back({ tr("Performance Overlay"), QString(), MenuItemType::SubMenu,
                         MenuAction::OpenStatsOverlay, 0, true, false, false });
     entries.push_back({ tr("Bitrate"), QString(), MenuItemType::SubMenu, MenuAction::OpenBitrate, 0,
@@ -520,6 +535,8 @@ void OverlayMenuPanel::buildMenuLevels()
                             m_FileMappingState == FileMappingState::Open,
                         false });
     // Session
+    entries.push_back({ tr("Session"), QString(), MenuItemType::SubMenu,
+                        MenuAction::OpenSessionStats, 0, true, false, false });
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
     entries.push_back({ tr("Function Tests"), tr("Developer"), MenuItemType::Action,
                         MenuAction::OpenStylusReplayPanel, 0, true, false, false });
@@ -700,49 +717,27 @@ void OverlayMenuPanel::buildMenuLevels()
     }
 
     // === Stream Quality (resolution / FPS for this session) ===
-    m_StreamQualityLevel = static_cast<int>(m_MenuLevels.size());
     m_MenuLevels.push_back(buildStreamQualityLevel());
-    for (MenuItem& item : m_MenuLevels[0].items) {
-        if (item.action == MenuAction::OpenStreamQuality) {
-            item.targetLevel = m_StreamQualityLevel;
-        }
-    }
-    if (onStreamQualityLevel) {
-        m_CurrentLevel = m_StreamQualityLevel;
-    }
 
-    // === Session (live totals) ===
+    // === Session (live totals; rows filled by refreshSessionStats()) ===
     MenuLevel session;
     session.title = tr("Session");
-    m_SessionStatsLevel = static_cast<int>(m_MenuLevels.size());
+    session.openAction = MenuAction::OpenSessionStats;
     m_MenuLevels.push_back(std::move(session));
-    for (MenuItem& item : m_MenuLevels[0].items) {
-        if (item.action == MenuAction::OpenSessionStats) {
-            item.targetLevel = m_SessionStatsLevel;
-        }
-    }
-    if (inSessionStatsLevel) {
-        m_CurrentLevel = m_SessionStatsLevel;
-    }
-    refreshSessionStats();
 
     // Point SubMenu rows at their levels by the Open* action they carry. This
     // covers tab entries and rows inside a sub-level that link to another
-    // one (e.g. a Bitrate row tagged MenuAction::OpenBitrate).
+    // one (e.g. the Bitrate row of Stream Quality, tagged MenuAction::OpenBitrate).
     for (MenuLevel& level : m_MenuLevels) {
-        for (MenuItem& item : level.items) {
-            if (item.type == MenuItemType::SubMenu) {
-                const int target = levelForOpenAction(item.action);
-                if (target >= 0) {
-                    item.targetLevel = target;
-                }
-            }
-        }
+        linkSubMenuRows(level);
     }
     m_StatsOverlayLevel = levelForOpenAction(MenuAction::OpenStatsOverlay);
     m_SendKeysLevel = levelForOpenAction(MenuAction::OpenSendKeys);
     m_HostCommandsLevel = levelForOpenAction(MenuAction::OpenHostCommands);
+    m_StreamQualityLevel = levelForOpenAction(MenuAction::OpenStreamQuality);
+    m_SessionStatsLevel = levelForOpenAction(MenuAction::OpenSessionStats);
     applyStatsOverlayState();
+    refreshSessionStats();
 
     // Stay in the open sub-level if it still exists, else in the tab
     const int reopenedLevel = levelForOpenAction(openLevelAction);
@@ -830,7 +825,7 @@ void OverlayMenuPanel::refreshBitrateDetails()
     // The Stream Quality level links to the Bitrate level and shows its value.
     if (m_StreamQualityLevel >= 0 && m_StreamQualityLevel < (int)m_MenuLevels.size()) {
         for (auto& item : m_MenuLevels[m_StreamQualityLevel].items) {
-            if (item.type == MenuItemType::SubMenu && item.targetLevel == 2) {
+            if (item.type == MenuItemType::SubMenu && item.action == MenuAction::OpenBitrate) {
                 item.detail = formatBitrateKbps(m_BitrateKbps);
             }
         }
@@ -1320,6 +1315,7 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamQualityLevel() const
 
     MenuLevel level;
     level.title = tr("Stream Quality");
+    level.openAction = MenuAction::OpenStreamQuality;
 
     const bool known = m_StreamQuality.resolution.isValid() && m_StreamQuality.fps > 0;
     const bool changed = known && (m_PendingStreamResolution != m_StreamQuality.resolution ||
@@ -1351,7 +1347,7 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamQualityLevel() const
     for (int i = 0; i < frameRates.size(); i++) {
         const StreamQuality::FpsPreset& preset = frameRates[i];
         const QString note = preset.current   ? tr("Current")
-                             : preset.display ? tr("Display")
+                             : preset.display ? tr("Display", "FPS preset at the display refresh rate")
                                               : QString();
         level.items.push_back({ tr("%1 FPS").arg(preset.fps),
                                 detailText(preset.fps == m_PendingStreamFps, note),
@@ -1361,7 +1357,7 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamQualityLevel() const
 
     // Bitrate changes apply to the running stream, so they reuse the Bitrate level.
     level.items.push_back({ tr("Bitrate"), formatBitrateKbps(m_BitrateKbps), MenuItemType::SubMenu,
-                            MenuAction::MenuActionMax, 2, true, false, false });
+                            MenuAction::OpenBitrate, 0, true, false, false });
     level.items.push_back(
         { tr("Save as Default"),
           known ? summary(m_PendingStreamResolution, m_PendingStreamFps) : QString(),
@@ -1399,7 +1395,9 @@ bool OverlayMenuPanel::handleStreamQualityItem(const MenuItem& item)
         }
         beginInteraction();
         if (m_StreamQualityLevel >= 0 && m_StreamQualityLevel < (int)m_MenuLevels.size()) {
+            // The rebuilt level's Bitrate row must point at its level again
             m_MenuLevels[m_StreamQualityLevel] = buildStreamQualityLevel();
+            linkSubMenuRows(m_MenuLevels[m_StreamQualityLevel]);
         }
         forceRepaint();
         return true;
@@ -1952,9 +1950,12 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
             return QStringLiteral("menu-position");
         case MenuAction::OpenRemoteUsbDevices:
             return QStringLiteral("cat-peripherals");
+        case MenuAction::OpenStreamQuality:
         case MenuAction::OpenStatsOverlay:
         case MenuAction::ToggleFullScreen:
             return QStringLiteral("cat-display");
+        case MenuAction::OpenSessionStats:
+            return QStringLiteral("menu-bitrate");
         case MenuAction::ToggleStatsOverlay:
             return QStringLiteral("tb-network");
         case MenuAction::OpenSendKeys:

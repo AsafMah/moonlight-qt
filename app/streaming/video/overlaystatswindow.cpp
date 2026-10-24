@@ -1,7 +1,8 @@
 #include "overlaystatswindow.h"
-#include "uifont.h"
+#include "overlaystatsfonts.h"
 
 #include <QCoreApplication>
+#include <QCursor>
 #include <QFontMetrics>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -11,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 using namespace StatsOverlay;
 
@@ -35,14 +37,12 @@ const QColor kStageHost(0x8A, 0x9B, 0xFF);
 const QColor kStageRender(0xD6, 0x8C, 0xFF);
 
 const int kShadowOffset = 4;
-const int kAccentBar = 3;
-const int kPad = 8;
-const int kCellPadX = 10;
-const int kLabelGap = 3;
-const int kPanelWidth = 300;
-const int kGraphHeight = 56;
-const int kBarHeight = 8;
-const int kSectionGap = 8;
+const int kAccentBar = PanelSpacing::AccentBar;
+const int kPad = PanelSpacing::Pad;
+const int kCellPadX = PanelSpacing::CellPadX;
+const int kLabelGap = PanelSpacing::LabelGap;
+// Width of the band along the edges that resizes in edit mode, in window pixels
+const int kResizeMargin = 6;
 
 QColor gradeColor(Grade grade)
 {
@@ -95,21 +95,10 @@ OverlayStatsWindow::OverlayStatsWindow(QWindow* parent, OverlayWindowMode window
     fmt.setAlphaBufferSize(8);
     setFormat(fmt);
 
-    // Fixed pixel sizes for the same reason as OverlayToast: point sizes go
-    // through the platform font DPI, which differs from Qt's UI scale on Linux
-    m_LabelFont.setFamilies(UiFont::familyChain(QStringLiteral("DM Mono")));
-    m_LabelFont.setPixelSize(10);
-    m_LabelFont.setCapitalization(QFont::AllUppercase);
-    m_LabelFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
-
-    m_ValueFont.setFamilies(UiFont::familyChain(QStringLiteral("Manrope")));
-    m_ValueFont.setPixelSize(14);
-    m_ValueFont.setWeight(QFont::DemiBold);
-    m_ValueFont.setStyleHint(QFont::SansSerif);
-
-    m_BigFont = m_ValueFont;
-    m_BigFont.setPixelSize(30);
-    m_BigFont.setWeight(QFont::Bold);
+    const OverlayFonts fonts = overlayFonts();
+    m_LabelFont = fonts.label;
+    m_ValueFont = fonts.value;
+    m_BigFont = fonts.big;
 
     m_Metrics = defaultCustomMetrics();
 }
@@ -148,6 +137,10 @@ void OverlayStatsWindow::setEditing(bool editing)
 
     m_Editing = editing;
     m_Dragging = false;
+    m_ResizeEdges = 0;
+    if (!editing) {
+        unsetCursor();
+    }
 
     // Input transparency is a window flag, which some platforms only apply
     // when the native window is recreated, so hide around the change.
@@ -189,6 +182,7 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
     const StatsSnapshot& s = m_Snapshot;
     const Thresholds& t = thresholds();
     Cell cell;
+    cell.metric = metric;
 
     if (!s.valid) {
         cell.value = dash();
@@ -197,6 +191,7 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
     switch (metric) {
     case Metric::Resolution:
         cell.label = tr("Stream");
+        cell.shortLabel = tr("Res", "Short form of the Stream (resolution) label");
         if (s.valid) {
             cell.value = QStringLiteral("%1x%2@%3 %4")
                              .arg(s.width)
@@ -219,6 +214,7 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         break;
     case Metric::Latency:
         cell.label = tr("Latency");
+        cell.shortLabel = tr("Lat", "Short form of the Latency label");
         if (s.valid) {
             cell.value = QStringLiteral("~") + milliseconds(s.latency.totalMs(), 0);
             cell.grade = gradeAbove(s.latency.totalMs(), t.latencyWarnMs, t.latencyBadMs);
@@ -226,6 +222,7 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         break;
     case Metric::Bitrate:
         cell.label = tr("Bitrate");
+        cell.shortLabel = tr("Rate", "Short form of the Bitrate label");
         if (s.valid) {
             cell.value = number(s.bitrateMbps, 1);
             if (m_Extras.targetBitrateKbps > 0) {
@@ -255,6 +252,7 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         break;
     case Metric::Jitter:
         cell.label = tr("Jitter");
+        cell.shortLabel = tr("Jit", "Short form of the Jitter label");
         if (s.valid) {
             cell.value = milliseconds(s.jitterMs, 2);
             cell.grade = gradeAbove(s.jitterMs, t.jitterWarnMs, t.jitterBadMs);
@@ -268,6 +266,7 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         break;
     case Metric::Decode:
         cell.label = tr("Decode");
+        cell.shortLabel = tr("Dec", "Short form of the Decode label");
         if (s.valid) {
             cell.value = milliseconds(s.latency.decodeMs);
             cell.grade = gradeAbove(s.latency.decodeMs, t.decodeWarnMs, t.decodeBadMs);
@@ -281,6 +280,7 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         break;
     case Metric::Render:
         cell.label = tr("Render");
+        cell.shortLabel = tr("Rend", "Short form of the Render label");
         if (s.valid) {
             cell.value = milliseconds(s.latency.renderMs);
         }
@@ -308,6 +308,7 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         break;
     case Metric::PacerDrops:
         cell.label = tr("Pacer drops");
+        cell.shortLabel = tr("Drops", "Short form of the Pacer drops label");
         if (s.valid) {
             cell.value = number(s.pacerDropPercent, 1) + QStringLiteral("%");
             cell.grade =
@@ -316,6 +317,7 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         break;
     case Metric::DisplayHz:
         cell.label = tr("Display");
+        cell.shortLabel = tr("Disp", "Short form of the Display label");
         if (m_Extras.displayHz > 0) {
             cell.value = QStringLiteral("%1 Hz").arg(number(m_Extras.displayHz, 0));
             if (s.targetFps > 0) {
@@ -404,6 +406,9 @@ QSize OverlayStatsWindow::layoutMinimal(QPainter* painter) const
             painter->setPen(kTextDim);
             painter->drawText(QRect(x + valueWidth + kLabelGap, 0, labelWidth, height),
                               Qt::AlignLeft | Qt::AlignVCenter, cell.label);
+            m_HitRegions.append({ cell.metric,
+                                  QRect(x, 0, valueWidth + kLabelGap + labelWidth, height),
+                                  cell.value });
         }
         x += valueWidth + kLabelGap + labelWidth;
     }
@@ -439,6 +444,7 @@ QSize OverlayStatsWindow::layoutCompact(QPainter* painter) const
             painter->drawText(QRect(x + kCellPadX, kPad + labelMetrics.height() + kLabelGap, width,
                                     valueMetrics.height()),
                               Qt::AlignLeft | Qt::AlignVCenter, cell.value);
+            m_HitRegions.append({ cell.metric, QRect(x, 0, width, height), cell.value });
         }
         x += width;
     }
@@ -446,87 +452,180 @@ QSize OverlayStatsWindow::layoutCompact(QPainter* painter) const
     return QSize(x, height);
 }
 
-int OverlayStatsWindow::paintPanelHeader(QPainter* painter, int y, int width) const
+PanelContent OverlayStatsWindow::panelContent(QVector<Cell>& cells) const
 {
-    const QFontMetrics bigMetrics(m_BigFont);
-    const QFontMetrics labelMetrics(m_LabelFont);
-    const int left = kAccentBar + kPad;
-    const int lineHeight = labelMetrics.height() + 2;
-    const int height = std::max(bigMetrics.height(), lineHeight * 3);
+    PanelContent content;
 
-    if (painter == nullptr) {
-        return height;
+    if (m_Preset == Preset::Detailed) {
+        content.header = true;
+        const Cell fps = cellFor(Metric::Fps);
+        content.fpsValue = fps.value;
+        content.fpsLabel = fps.label;
+
+        const Cell low = cellFor(Metric::OnePercentLow);
+        QString lows = low.label + QStringLiteral(" ") + low.value;
+        if (m_Snapshot.frameTimes.samples > 0) {
+            lows += QStringLiteral("  ") + tr("0.1% low") + QStringLiteral(" ") +
+                    number(m_Snapshot.frameTimes.pointOnePercentLowFps, 0);
+        }
+        QString pipeline = m_Snapshot.decoder;
+        if (!m_Snapshot.renderer.isEmpty()) {
+            pipeline += QStringLiteral(" · ") + m_Snapshot.renderer;
+        }
+        content.headerLines = { lows, cellFor(Metric::Resolution).value, pipeline };
     }
 
-    const Cell fps = cellFor(Metric::Fps);
-    const int fpsWidth = bigMetrics.horizontalAdvance(fps.value);
-    painter->setFont(m_BigFont);
-    painter->setPen(gradeColor(fps.grade));
-    painter->drawText(QRect(left, y, fpsWidth, height), Qt::AlignLeft | Qt::AlignVCenter,
-                      fps.value);
-
-    painter->setFont(m_LabelFont);
-    painter->setPen(kTextDim);
-    const int fpsLabelX = left + fpsWidth + kLabelGap;
-    const int fpsLabelWidth = labelMetrics.horizontalAdvance(fps.label);
-    painter->drawText(QRect(fpsLabelX, y, fpsLabelWidth, height - 6),
-                      Qt::AlignLeft | Qt::AlignBottom, fps.label);
-
-    // Three lines to the right of the big number
-    const int textX = fpsLabelX + fpsLabelWidth + kCellPadX;
-    const int textWidth = width - textX - kPad;
-    const int top = y + (height - lineHeight * 3) / 2;
-
-    const Cell low = cellFor(Metric::OnePercentLow);
-    QString lows = low.label + QStringLiteral(" ") + low.value;
-    if (m_Snapshot.frameTimes.samples > 0) {
-        lows += QStringLiteral("  ") + tr("0.1% low") + QStringLiteral(" ") +
-                number(m_Snapshot.frameTimes.pointOnePercentLowFps, 0);
+    cells = cellsFor(panelMetrics());
+    for (const Cell& cell : cells) {
+        content.cells.append({ cell.metric, cell.label, cell.shortLabel, cell.value });
     }
-    painter->setPen(gradeColor(low.grade));
-    painter->drawText(QRect(textX, top, textWidth, lineHeight), Qt::AlignLeft | Qt::AlignVCenter,
-                      labelMetrics.elidedText(lows, Qt::ElideRight, textWidth));
 
-    painter->setPen(kText);
-    painter->drawText(
-        QRect(textX, top + lineHeight, textWidth, lineHeight), Qt::AlignLeft | Qt::AlignVCenter,
-        labelMetrics.elidedText(cellFor(Metric::Resolution).value, Qt::ElideRight, textWidth));
-
-    QString pipeline = m_Snapshot.decoder;
-    if (!m_Snapshot.renderer.isEmpty()) {
-        pipeline += QStringLiteral(" · ") + m_Snapshot.renderer;
+    if (panelHas(Metric::FrameTimeGraph)) {
+        content.graph = true;
+        content.graphTitle = tr("Frame time");
+        const FrameTimeSummary& summary = m_Snapshot.frameTimes;
+        if (summary.samples > 0) {
+            content.graphStats = tr("avg %1 · p99 %2 ms")
+                                     .arg(number(summary.averageMs, 1), number(summary.p99Ms, 1));
+        }
     }
-    painter->setPen(kTextFaint);
-    painter->drawText(QRect(textX, top + lineHeight * 2, textWidth, lineHeight),
-                      Qt::AlignLeft | Qt::AlignVCenter,
-                      labelMetrics.elidedText(pipeline, Qt::ElideRight, textWidth));
 
-    return height;
+    if (panelHas(Metric::LatencyBar)) {
+        const LatencyBreakdown& latency = m_Snapshot.latency;
+        content.latencyBar = true;
+        content.latencyTitle = tr("Estimated latency");
+        content.latencyValue =
+            m_Snapshot.valid ? QStringLiteral("~") + milliseconds(latency.totalMs()) : dash();
+        if (latency.hasHost) {
+            content.legend.append(tr("Host") + QStringLiteral(" ") + number(latency.hostMs, 1));
+        }
+        if (latency.hasNetwork) {
+            content.legend.append(tr("Network") + QStringLiteral(" ") +
+                                  number(latency.networkMs, 1));
+        }
+        content.legend.append(tr("Decode") + QStringLiteral(" ") + number(latency.decodeMs, 1));
+        content.legend.append(tr("Queue") + QStringLiteral(" ") + number(latency.queueMs, 1));
+        content.legend.append(tr("Render") + QStringLiteral(" ") + number(latency.renderMs, 1));
+    }
+
+    content.emptyText = tr("No metrics selected");
+    return content;
 }
 
-int OverlayStatsWindow::paintFrameTimeGraph(QPainter* painter, int y, int width) const
+QSize OverlayStatsWindow::panelBodySize() const
+{
+    QVector<Cell> cells;
+    const PanelContent content = panelContent(cells);
+    const FontTextMeasurer measurer(overlayFonts());
+    const QSize minimum = minimumPanelSize(content, measurer);
+    QSize maximum(MaxPanelWidth, MaxPanelHeight);
+    if (m_MaximumBodySize.isValid()) {
+        maximum = maximum.boundedTo(m_MaximumBodySize);
+    }
+
+    if (m_BodySize.isValid()) {
+        return clampPanelSize(m_BodySize, minimum, maximum);
+    }
+
+    // Default width, as tall as the content
+    const int width = std::clamp(defaultPanelWidth(m_Preset), minimum.width(),
+                                 std::max(minimum.width(), maximum.width()));
+    return layoutPanel(content, QSize(width, 0), measurer).size;
+}
+
+void OverlayStatsWindow::paintPanel(QPainter* painter, const PanelLayout& layout,
+                                    const PanelContent& content, const QVector<Cell>& cells) const
 {
     const QFontMetrics labelMetrics(m_LabelFont);
-    const int height = labelMetrics.height() + kLabelGap + kGraphHeight;
-    if (painter == nullptr) {
-        return height;
+    const QFontMetrics valueMetrics(m_ValueFont);
+
+    // Header: big frame rate and detail lines
+    if (layout.fpsValueRect.isValid()) {
+        const Cell fps = cellFor(Metric::Fps);
+        painter->setFont(m_BigFont);
+        painter->setPen(gradeColor(fps.grade));
+        painter->drawText(layout.fpsValueRect, Qt::AlignLeft | Qt::AlignVCenter, fps.value);
+        painter->setFont(m_LabelFont);
+        painter->setPen(kTextDim);
+        painter->drawText(layout.fpsLabelRect, Qt::AlignLeft | Qt::AlignBottom, fps.label);
+        m_HitRegions.append(
+            { Metric::Fps, layout.fpsValueRect.united(layout.fpsLabelRect), fps.value });
+
+        // The lines are 1% low, the stream, and the decoder (no tooltip)
+        const Cell details[] = { cellFor(Metric::OnePercentLow), cellFor(Metric::Resolution) };
+        const QColor colors[] = { gradeColor(details[0].grade), kText, kTextFaint };
+        for (int i = 0; i < layout.headerLineRects.size() && i < content.headerLines.size(); i++) {
+            const QRect& rect = layout.headerLineRects[i];
+            painter->setPen(colors[std::min(i, 2)]);
+            painter->drawText(
+                rect, Qt::AlignLeft | Qt::AlignVCenter,
+                labelMetrics.elidedText(content.headerLines[i], Qt::ElideRight, rect.width()));
+            if (i < int(std::size(details))) {
+                m_HitRegions.append({ details[i].metric, rect, details[i].value });
+            }
+        }
     }
 
-    const int left = kAccentBar + kPad;
-    const int graphWidth = width - left - kPad;
-    const FrameTimeSummary& summary = m_Snapshot.frameTimes;
+    // Grid
+    for (const PlacedCell& placed : layout.cells) {
+        painter->setFont(m_LabelFont);
+        painter->setPen(kTextFaint);
+        if (placed.index < 0) {
+            painter->drawText(placed.labelRect, Qt::AlignLeft | Qt::AlignVCenter, layout.moreText);
+            continue;
+        }
 
-    painter->setFont(m_LabelFont);
-    painter->setPen(kTextFaint);
-    painter->drawText(QRect(left, y, graphWidth, labelMetrics.height()),
-                      Qt::AlignLeft | Qt::AlignVCenter, tr("Frame time"));
-    if (summary.samples > 0) {
+        const Cell& cell = cells[placed.index];
+        const QString& label = placed.shortLabel ? cell.shortLabel : cell.label;
+        painter->drawText(placed.labelRect, Qt::AlignLeft | Qt::AlignVCenter,
+                          labelMetrics.elidedText(label, Qt::ElideRight, placed.labelRect.width()));
+
+        painter->setFont(m_ValueFont);
+        painter->setPen(gradeColor(cell.grade));
+        const Qt::Alignment valueAlignment = layout.style == CellStyle::Inline
+                                                 ? Qt::AlignRight | Qt::AlignVCenter
+                                                 : Qt::AlignLeft | Qt::AlignVCenter;
         painter->drawText(
-            QRect(left, y, graphWidth, labelMetrics.height()), Qt::AlignRight | Qt::AlignVCenter,
-            tr("avg %1 · p99 %2 ms").arg(number(summary.averageMs, 1), number(summary.p99Ms, 1)));
+            placed.valueRect, valueAlignment,
+            valueMetrics.elidedText(cell.value, Qt::ElideRight, placed.valueRect.width()));
+        m_HitRegions.append({ cell.metric, placed.rect, cell.value });
     }
 
-    const QRect area(left, y + labelMetrics.height() + kLabelGap, graphWidth, kGraphHeight);
+    if (layout.graphShown) {
+        painter->setFont(m_LabelFont);
+        painter->setPen(kTextFaint);
+        painter->drawText(layout.graphTitleRect, Qt::AlignLeft | Qt::AlignVCenter,
+                          content.graphTitle);
+        const bool statsOnOwnLine = layout.graphStatsRect.top() != layout.graphTitleRect.top();
+        painter->drawText(layout.graphStatsRect,
+                          (statsOnOwnLine ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter,
+                          labelMetrics.elidedText(content.graphStats, Qt::ElideRight,
+                                                  layout.graphStatsRect.width()));
+        paintFrameTimeGraph(painter, layout.graphRect);
+        m_HitRegions.append({ Metric::FrameTimeGraph,
+                              layout.graphTitleRect.united(layout.graphRect), content.graphStats });
+    }
+
+    if (layout.latencyShown) {
+        paintLatencyBar(painter, layout, content);
+        m_HitRegions.append(
+            { Metric::LatencyBar,
+              layout.latencyTitleRect.united(layout.barRect)
+                  .united(layout.legendTextRects.isEmpty() ? QRect()
+                                                           : layout.legendTextRects.last()),
+              content.latencyValue });
+    }
+
+    if (layout.emptyRect.isValid()) {
+        painter->setFont(m_LabelFont);
+        painter->setPen(kTextDim);
+        painter->drawText(layout.emptyRect, Qt::AlignLeft | Qt::AlignVCenter, content.emptyText);
+    }
+}
+
+void OverlayStatsWindow::paintFrameTimeGraph(QPainter* painter, const QRect& area) const
+{
+    const FrameTimeSummary& summary = m_Snapshot.frameTimes;
     painter->fillRect(area, kSurface2);
 
     const std::vector<float>& samples = m_Snapshot.frameTimeHistoryMs;
@@ -563,57 +662,30 @@ int OverlayStatsWindow::paintFrameTimeGraph(QPainter* painter, int y, int width)
     QPen targetPen(kTextDim, 1, Qt::DashLine);
     painter->setPen(targetPen);
     painter->drawLine(area.left(), targetY, area.right(), targetY);
-
-    return height;
 }
 
-int OverlayStatsWindow::paintLatencyBar(QPainter* painter, int y, int width) const
+void OverlayStatsWindow::paintLatencyBar(QPainter* painter, const PanelLayout& layout,
+                                         const PanelContent& content) const
 {
     const QFontMetrics labelMetrics(m_LabelFont);
-    const int left = kAccentBar + kPad;
-    const int barWidth = width - left - kPad;
     const LatencyBreakdown& latency = m_Snapshot.latency;
 
+    // Same order as the legend built in panelContent()
     struct Stage
     {
-        QString name;
         double ms;
         QColor color;
     };
     QVector<Stage> stages;
     if (latency.hasHost) {
-        stages.append({ tr("Host"), latency.hostMs, kStageHost });
+        stages.append({ latency.hostMs, kStageHost });
     }
     if (latency.hasNetwork) {
-        stages.append({ tr("Network"), latency.networkMs, kAccent });
+        stages.append({ latency.networkMs, kAccent });
     }
-    stages.append({ tr("Decode"), latency.decodeMs, kAcid });
-    stages.append({ tr("Queue"), latency.queueMs, kWarn });
-    stages.append({ tr("Render"), latency.renderMs, kStageRender });
-
-    // Legend entries flow into as many lines as they need
-    const int swatch = 6;
-    int legendLines = 1;
-    int legendX = 0;
-    QVector<QPoint> legendPositions;
-    QVector<QString> legendTexts;
-    for (const Stage& stage : stages) {
-        const QString text = stage.name + QStringLiteral(" ") + number(stage.ms, 1);
-        const int entryWidth = swatch + 4 + labelMetrics.horizontalAdvance(text);
-        if (legendX > 0 && legendX + entryWidth > barWidth) {
-            legendLines++;
-            legendX = 0;
-        }
-        legendPositions.append(QPoint(legendX, legendLines - 1));
-        legendTexts.append(text);
-        legendX += entryWidth + kCellPadX;
-    }
-
-    const int lineHeight = labelMetrics.height();
-    const int height = lineHeight + kLabelGap + kBarHeight + kLabelGap + lineHeight * legendLines;
-    if (painter == nullptr) {
-        return height;
-    }
+    stages.append({ latency.decodeMs, kAcid });
+    stages.append({ latency.queueMs, kWarn });
+    stages.append({ latency.renderMs, kStageRender });
 
     const Grade totalGrade =
         m_Snapshot.valid
@@ -621,14 +693,15 @@ int OverlayStatsWindow::paintLatencyBar(QPainter* painter, int y, int width) con
             : Grade::Neutral;
     painter->setFont(m_LabelFont);
     painter->setPen(kTextFaint);
-    painter->drawText(QRect(left, y, barWidth, lineHeight), Qt::AlignLeft | Qt::AlignVCenter,
-                      tr("Estimated latency"));
+    painter->drawText(layout.latencyTitleRect, Qt::AlignLeft | Qt::AlignVCenter,
+                      content.latencyTitle);
     painter->setPen(gradeColor(totalGrade));
-    painter->drawText(QRect(left, y, barWidth, lineHeight), Qt::AlignRight | Qt::AlignVCenter,
-                      m_Snapshot.valid ? QStringLiteral("~") + milliseconds(latency.totalMs())
-                                       : dash());
+    const bool valueOnOwnLine = layout.latencyValueRect.top() != layout.latencyTitleRect.top();
+    painter->drawText(layout.latencyValueRect,
+                      (valueOnOwnLine ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter,
+                      content.latencyValue);
 
-    const QRect bar(left, y + lineHeight + kLabelGap, barWidth, kBarHeight);
+    const QRect& bar = layout.barRect;
     painter->fillRect(bar, kSurface2);
     const double total = latency.totalMs();
     if (total > 0) {
@@ -643,118 +716,50 @@ int OverlayStatsWindow::paintLatencyBar(QPainter* painter, int y, int width) con
         }
     }
 
-    const int legendTop = bar.bottom() + 1 + kLabelGap;
-    for (int i = 0; i < stages.size(); i++) {
-        const int x = left + legendPositions[i].x();
-        const int lineY = legendTop + legendPositions[i].y() * lineHeight;
-        painter->fillRect(QRect(x, lineY + (lineHeight - swatch) / 2, swatch, swatch),
-                          stages[i].color);
+    for (int i = 0; i < layout.legendTextRects.size() && i < stages.size(); i++) {
+        painter->fillRect(layout.legendSwatchRects[i], stages[i].color);
         painter->setPen(kTextDim);
-        painter->drawText(QRect(x + swatch + 4, lineY, barWidth, lineHeight),
-                          Qt::AlignLeft | Qt::AlignVCenter, legendTexts[i]);
+        const QRect& rect = layout.legendTextRects[i];
+        painter->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter,
+                          labelMetrics.elidedText(content.legend[i], Qt::ElideRight, rect.width()));
     }
-
-    return height;
 }
 
-int OverlayStatsWindow::paintGrid(QPainter* painter, int y, int width,
-                                  const QVector<Cell>& cells) const
+QString OverlayStatsWindow::editHintText() const
+{
+    return isResizable()
+               ? tr("Drag to move · Drag the edges to resize · Wheel to zoom · Esc when done")
+               : tr("Drag to move · Wheel to zoom · Esc when done");
+}
+
+int OverlayStatsWindow::editHintHeight(int width) const
 {
     const QFontMetrics labelMetrics(m_LabelFont);
-    const QFontMetrics valueMetrics(m_ValueFont);
-    const int rowHeight = std::max(labelMetrics.height(), valueMetrics.height()) + 2;
-    const int rows = (cells.size() + 1) / 2;
-    const int height = rows * rowHeight;
-    if (painter == nullptr) {
-        return height;
-    }
-
-    const int left = kAccentBar + kPad;
-    const int columnGap = kCellPadX;
-    const int columnWidth = (width - left - kPad - columnGap) / 2;
-
-    for (int i = 0; i < cells.size(); i++) {
-        const int column = i % 2;
-        const int row = i / 2;
-        const QRect rect(left + column * (columnWidth + columnGap), y + row * rowHeight,
-                         columnWidth, rowHeight);
-        const Cell& cell = cells[i];
-
-        painter->setFont(m_LabelFont);
-        painter->setPen(kTextFaint);
-        const int labelWidth =
-            std::min(labelMetrics.horizontalAdvance(cell.label), columnWidth / 2);
-        painter->drawText(QRect(rect.left(), rect.top(), labelWidth, rect.height()),
-                          Qt::AlignLeft | Qt::AlignVCenter,
-                          labelMetrics.elidedText(cell.label, Qt::ElideRight, labelWidth));
-
-        painter->setFont(m_ValueFont);
-        painter->setPen(gradeColor(cell.grade));
-        const int valueWidth = rect.width() - labelWidth - kLabelGap * 2;
-        painter->drawText(QRect(rect.right() - valueWidth, rect.top(), valueWidth, rect.height()),
-                          Qt::AlignRight | Qt::AlignVCenter,
-                          valueMetrics.elidedText(cell.value, Qt::ElideLeft, valueWidth));
-    }
-
-    return height;
+    const int textWidth = std::max(width - kAccentBar - kPad * 2, 1);
+    const QRect text = labelMetrics.boundingRect(QRect(0, 0, textWidth, 10000),
+                                                 Qt::TextWordWrap | Qt::AlignLeft, editHintText());
+    return text.height() + kPad;
 }
 
-QSize OverlayStatsWindow::layoutPanel(QPainter* painter) const
+void OverlayStatsWindow::paintEditHint(QPainter* painter, int y, int width) const
 {
-    const int width = kPanelWidth;
-    int y = kPad;
-    bool empty = true;
-
-    auto section = [&](int height) {
-        y += height + kSectionGap;
-        empty = false;
-    };
-
-    if (m_Preset == Preset::Detailed) {
-        section(paintPanelHeader(painter, y, width));
-    }
-
-    const QVector<Cell> cells = cellsFor(panelMetrics());
-    if (!cells.isEmpty()) {
-        section(paintGrid(painter, y, width, cells));
-    }
-
-    if (panelHas(Metric::FrameTimeGraph)) {
-        section(paintFrameTimeGraph(painter, y, width));
-    }
-    if (panelHas(Metric::LatencyBar)) {
-        section(paintLatencyBar(painter, y, width));
-    }
-
-    if (empty) {
-        const QFontMetrics labelMetrics(m_LabelFont);
-        if (painter != nullptr) {
-            painter->setFont(m_LabelFont);
-            painter->setPen(kTextDim);
-            painter->drawText(
-                QRect(kAccentBar + kPad, y, width - kAccentBar - kPad * 2, labelMetrics.height()),
-                Qt::AlignLeft | Qt::AlignVCenter, tr("No metrics selected"));
-        }
-        y += labelMetrics.height() + kSectionGap;
-    }
-
-    // The last section's gap becomes the bottom padding
-    return QSize(width, y - kSectionGap + kPad);
+    const int height = editHintHeight(width);
+    painter->fillRect(QRect(kAccentBar, y, width - kAccentBar, height), kSurface2);
+    painter->setFont(m_LabelFont);
+    painter->setPen(kAccent);
+    painter->drawText(QRect(kAccentBar + kPad, y, width - kAccentBar - kPad * 2, height),
+                      Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap, editHintText());
 }
 
-int OverlayStatsWindow::paintEditHint(QPainter* painter, int y, int width) const
+void OverlayStatsWindow::paintResizeGrip(QPainter* painter, const QSize& body) const
 {
-    const QFontMetrics labelMetrics(m_LabelFont);
-    const int height = labelMetrics.height() + kPad;
-    if (painter != nullptr) {
-        painter->fillRect(QRect(kAccentBar, y, width - kAccentBar, height), kSurface2);
-        painter->setFont(m_LabelFont);
-        painter->setPen(kAccent);
-        painter->drawText(QRect(kAccentBar + kPad, y, width - kAccentBar - kPad * 2, height),
-                          Qt::AlignLeft | Qt::AlignVCenter,
-                          tr("Drag to move · Wheel to resize · Esc when done"));
+    // Three short diagonals in the bottom-right corner
+    painter->setPen(QPen(kAccent, 1));
+    const int right = body.width() - 3;
+    const int bottom = body.height() - 3;
+    for (int i = 1; i <= 3; i++) {
+        painter->drawLine(right - i * 3, bottom, right, bottom - i * 3);
     }
-    return height;
 }
 
 QSize OverlayStatsWindow::layoutBody(QPainter* painter) const
@@ -765,9 +770,20 @@ QSize OverlayStatsWindow::layoutBody(QPainter* painter) const
         content = layoutMinimal(painter);
         break;
     case Preset::Detailed:
-    case Preset::Custom:
-        content = layoutPanel(painter);
+    case Preset::Custom: {
+        content = panelBodySize();
+        if (painter != nullptr) {
+            QVector<Cell> cells;
+            const PanelContent panel = panelContent(cells);
+            const PanelLayout layout =
+                layoutPanel(panel, content, FontTextMeasurer(overlayFonts()));
+            painter->save();
+            painter->setClipRect(QRect(QPoint(), content));
+            paintPanel(painter, layout, panel, cells);
+            painter->restore();
+        }
         break;
+    }
     case Preset::Compact:
     case Preset::Off:
     default:
@@ -779,17 +795,26 @@ QSize OverlayStatsWindow::layoutBody(QPainter* painter) const
         return content;
     }
 
-    const QFontMetrics labelMetrics(m_LabelFont);
-    const int hintWidth =
-        kAccentBar + kPad * 2 +
-        labelMetrics.horizontalAdvance(tr("Drag to move · Wheel to resize · Esc when done"));
-    const int width = std::max(content.width(), hintWidth);
-    const int hintHeight = paintEditHint(painter, content.height(), width);
-    return QSize(width, content.height() + hintHeight);
+    // Auto-sized presets widen to the one-line hint; resizable panels wrap it
+    int width = content.width();
+    if (!isResizable()) {
+        const QFontMetrics labelMetrics(m_LabelFont);
+        width = std::max(width, kAccentBar + kPad * 2 +
+                                    labelMetrics.horizontalAdvance(editHintText()) + 1);
+    }
+    if (painter != nullptr) {
+        if (isResizable()) {
+            paintResizeGrip(painter, content);
+        }
+        paintEditHint(painter, content.height(), width);
+    }
+    return QSize(width, content.height() + editHintHeight(width));
 }
 
 void OverlayStatsWindow::paintOverlay(QPainter& painter)
 {
+    m_HitRegions.clear();
+
     painter.setCompositionMode(QPainter::CompositionMode_Source);
     painter.fillRect(QRect(QPoint(), size()), Qt::transparent);
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
@@ -818,7 +843,8 @@ void OverlayStatsWindow::paintOverlay(QPainter& painter)
     } else if (m_BodyAlignment.testFlag(Qt::AlignVCenter)) {
         dy = spareHeight / 2;
     }
-    painter.translate(std::floor(std::max(dx, 0.0)), std::floor(std::max(dy, 0.0)));
+    m_BodyOffset = QPointF(std::floor(std::max(dx, 0.0)), std::floor(std::max(dy, 0.0)));
+    painter.translate(m_BodyOffset);
     const qreal opacity = m_OpacityPercent / 100.0;
 
     QColor shadow = kShadow;
@@ -834,6 +860,19 @@ void OverlayStatsWindow::paintOverlay(QPainter& painter)
     painter.fillRect(QRect(0, 0, kAccentBar, body.height()), kAccent);
 
     layoutBody(&painter);
+}
+
+std::optional<OverlayStatsWindow::TooltipInfo>
+OverlayStatsWindow::tooltipAt(const QPoint& windowPoint) const
+{
+    const QPointF bodyPoint = QPointF(windowPoint) / scale() - m_BodyOffset;
+    const QPoint point = bodyPoint.toPoint();
+    for (const HitRegion& region : m_HitRegions) {
+        if (region.rect.contains(point)) {
+            return TooltipInfo{ region.metric, region.value };
+        }
+    }
+    return std::nullopt;
 }
 
 // ---------------------------------------------------------------------------
@@ -853,6 +892,97 @@ QPoint OverlayStatsWindow::eventPosition(QMouseEvent* event) const
     return OverlayWindowPolicy::usesParentCoordinates(m_WindowMode) ? position() + local : global;
 }
 
+QPoint OverlayStatsWindow::localPosition(QMouseEvent* event) const
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return event->position().toPoint();
+#else
+    return event->pos();
+#endif
+}
+
+int OverlayStatsWindow::edgesAt(const QPoint& local) const
+{
+    if (!m_Editing || !isResizable()) {
+        return 0;
+    }
+
+    // The body, without the shadow and the edit hint below it
+    const QSize body = panelBodySize();
+    const QRectF rect(m_BodyOffset * scale(), QSizeF(body) * scale());
+    const QRectF band = rect.adjusted(-kResizeMargin, -kResizeMargin, kResizeMargin, kResizeMargin);
+    if (!band.contains(local)) {
+        return 0;
+    }
+
+    int edges = 0;
+    if (local.x() < rect.left() + kResizeMargin) {
+        edges |= EdgeLeft;
+    } else if (local.x() > rect.right() - kResizeMargin) {
+        edges |= EdgeRight;
+    }
+    if (local.y() < rect.top() + kResizeMargin) {
+        edges |= EdgeTop;
+    } else if (local.y() > rect.bottom() - kResizeMargin &&
+               local.y() <= rect.bottom() + kResizeMargin) {
+        edges |= EdgeBottom;
+    }
+    return edges;
+}
+
+void OverlayStatsWindow::updateEdgeCursor(int edges)
+{
+    if (!m_Editing) {
+        unsetCursor();
+        return;
+    }
+
+    const bool horizontal = edges & (EdgeLeft | EdgeRight);
+    const bool vertical = edges & (EdgeTop | EdgeBottom);
+    Qt::CursorShape shape = Qt::SizeAllCursor;
+    if (horizontal && vertical) {
+        // Falling diagonal for the top-left and bottom-right corners
+        const bool falling = bool(edges & EdgeLeft) == bool(edges & EdgeTop);
+        shape = falling ? Qt::SizeFDiagCursor : Qt::SizeBDiagCursor;
+    } else if (horizontal) {
+        shape = Qt::SizeHorCursor;
+    } else if (vertical) {
+        shape = Qt::SizeVerCursor;
+    }
+    setCursor(QCursor(shape));
+}
+
+void OverlayStatsWindow::resizeTo(const QPoint& pointer)
+{
+    const QPointF delta = QPointF(pointer - m_PressPosition) / scale();
+    QSize body = m_PressBodySize;
+    if (m_ResizeEdges & EdgeRight) {
+        body.rwidth() += qRound(delta.x());
+    } else if (m_ResizeEdges & EdgeLeft) {
+        body.rwidth() -= qRound(delta.x());
+    }
+    if (m_ResizeEdges & EdgeBottom) {
+        body.rheight() += qRound(delta.y());
+    } else if (m_ResizeEdges & EdgeTop) {
+        body.rheight() -= qRound(delta.y());
+    }
+
+    m_BodySize = body;
+    m_BodySize = panelBodySize(); // clamped
+
+    // The dragged edges move; the opposite ones stay put
+    const QSize windowSize = preferredSize();
+    QPoint topLeft = m_PressGeometry.topLeft();
+    if (m_ResizeEdges & EdgeLeft) {
+        topLeft.setX(m_PressGeometry.x() + m_PressGeometry.width() - windowSize.width());
+    }
+    if (m_ResizeEdges & EdgeTop) {
+        topLeft.setY(m_PressGeometry.y() + m_PressGeometry.height() - windowSize.height());
+    }
+    setGeometry(QRect(topLeft, windowSize));
+    repaintNow();
+}
+
 void OverlayStatsWindow::mousePressEvent(QMouseEvent* event)
 {
     if (!m_Editing) {
@@ -861,9 +991,19 @@ void OverlayStatsWindow::mousePressEvent(QMouseEvent* event)
     }
 
     if (event->button() == Qt::LeftButton) {
-        m_Dragging = true;
         m_PressPosition = eventPosition(event);
         m_PressWindowPos = position();
+        m_ResizeEdges = edgesAt(localPosition(event));
+        if (m_ResizeEdges != 0) {
+            // Start from exactly the painted size, without the slack the
+            // controller may have left around the body
+            m_PressBodySize = panelBodySize();
+            m_BodyAlignment = Qt::AlignLeft | Qt::AlignTop;
+            m_PressGeometry =
+                QRect(position() + (m_BodyOffset * scale()).toPoint(), preferredSize());
+        } else {
+            m_Dragging = true;
+        }
     } else if (event->button() == Qt::RightButton && m_EndEditingCallback) {
         m_EndEditingCallback();
     }
@@ -872,8 +1012,19 @@ void OverlayStatsWindow::mousePressEvent(QMouseEvent* event)
 
 void OverlayStatsWindow::mouseMoveEvent(QMouseEvent* event)
 {
+    if (m_ResizeEdges != 0) {
+        resizeTo(eventPosition(event));
+        event->accept();
+        return;
+    }
+
     if (!m_Dragging) {
-        event->ignore();
+        if (m_Editing) {
+            updateEdgeCursor(edgesAt(localPosition(event)));
+            event->accept();
+        } else {
+            event->ignore();
+        }
         return;
     }
 
@@ -883,14 +1034,21 @@ void OverlayStatsWindow::mouseMoveEvent(QMouseEvent* event)
 
 void OverlayStatsWindow::mouseReleaseEvent(QMouseEvent* event)
 {
-    if (!m_Dragging || event->button() != Qt::LeftButton) {
+    if (event->button() != Qt::LeftButton || (!m_Dragging && m_ResizeEdges == 0)) {
         event->ignore();
         return;
     }
 
-    m_Dragging = false;
-    if (m_DragFinishedCallback) {
-        m_DragFinishedCallback(geometry().center());
+    if (m_ResizeEdges != 0) {
+        m_ResizeEdges = 0;
+        if (m_ResizeFinishedCallback) {
+            m_ResizeFinishedCallback(geometry().center(), m_BodySize);
+        }
+    } else {
+        m_Dragging = false;
+        if (m_DragFinishedCallback) {
+            m_DragFinishedCallback(geometry().center());
+        }
     }
     event->accept();
 }

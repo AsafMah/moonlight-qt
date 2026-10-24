@@ -4,6 +4,8 @@
 #include "session.h"
 #include "streaming/video/overlaystatscontroller.h"
 
+#include <QCursor>
+
 void Session::setupStatsOverlayShortcuts()
 {
     ShortcutDispatcher& dispatcher = m_InputHandler->getShortcutDispatcher();
@@ -64,6 +66,22 @@ void Session::createStatsOverlay(OverlayWindowMode windowMode)
         }
     });
 
+    // Tooltips follow the pointer whenever the stream does not have it. The
+    // overlay menu owns a free pointer while it is open.
+    m_StatsOverlay->setPointerProvider([this]() -> std::optional<QPoint> {
+        if (m_InputHandler->isCaptureActive() || (m_MenuPanel && m_MenuPanel->isMenuVisible())) {
+            return std::nullopt;
+        }
+        if (m_WaylandStreamWindow != nullptr) {
+            // Native Wayland children use parent-local coordinates, and Qt
+            // cannot read the global pointer position there
+            int x = 0;
+            int y = 0;
+            SDL_GetMouseState(&x, &y);
+            return qtOverlayPositionForSdlPoint(x, y);
+        }
+        return QCursor::pos();
+    });
     m_StatsOverlay->setParentGeometryProvider([this] { return qtOverlayParentGeometry(); });
     m_StatsOverlay->syncWithStreamWindow(isStreamingWindowVisible());
 }

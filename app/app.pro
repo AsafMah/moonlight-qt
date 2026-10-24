@@ -287,7 +287,9 @@ SOURCES += \
     streaming/video/overlaymenubutton.cpp \
     streaming/video/overlaytoast.cpp \
     streaming/video/overlaystatspreset.cpp \
+    streaming/video/overlaystatslayout.cpp \
     streaming/video/overlaystatswindow.cpp \
+    streaming/video/overlaystatstooltip.cpp \
     streaming/video/overlaystatscontroller.cpp \
     streaming/sessionstatsoverlay.cpp \
     settings/statsoverlaysettings.cpp \
@@ -378,7 +380,10 @@ HEADERS += \
     streaming/video/overlaytoasteventstate.h \
     streaming/video/overlaytoast.h \
     streaming/video/overlaystatspreset.h \
+    streaming/video/overlaystatslayout.h \
+    streaming/video/overlaystatsfonts.h \
     streaming/video/overlaystatswindow.h \
+    streaming/video/overlaystatstooltip.h \
     streaming/video/overlaystatscontroller.h \
     settings/statsoverlaysettings.h \
     backend/systemproperties.h \

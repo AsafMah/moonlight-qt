@@ -1,17 +1,15 @@
-QT += core
-QT -= gui
+QT += core gui
 CONFIG += c++17 console
 CONFIG -= app_bundle
 
 TARGET = stats_overlay_layout
 TEMPLATE = app
 
-INCLUDEPATH += \
-    $$PWD/../../app
+INCLUDEPATH +=     $$PWD/../../app
 
-SOURCES += \
-    main.cpp \
-    ../../app/streaming/video/overlaystatspreset.cpp
+# The real font test loads the fonts bundled with the app
+DEFINES += SOURCE_DIR=\\\"$$PWD\\\"
 
-HEADERS += \
-    ../../app/streaming/video/overlaystatspreset.h
+SOURCES +=     main.cpp     panel_layout_tests.cpp     ../../app/streaming/video/overlaystatspreset.cpp     ../../app/streaming/video/overlaystatslayout.cpp
+
+HEADERS +=     panel_layout_tests.h     ../../app/streaming/video/overlaystatspreset.h     ../../app/streaming/video/overlaystatslayout.h     ../../app/streaming/video/overlaystatsfonts.h

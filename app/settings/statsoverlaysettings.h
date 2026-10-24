@@ -30,6 +30,7 @@ class StatsOverlaySettings : public QObject
     Q_PROPERTY(int maxScalePercent READ maxScalePercent CONSTANT)
     Q_PROPERTY(int minOpacityPercent READ minOpacityPercent CONSTANT)
     Q_PROPERTY(int maxOpacityPercent READ maxOpacityPercent CONSTANT)
+    Q_PROPERTY(QString sizeSummary READ sizeSummary NOTIFY sizesChanged)
 
 public:
     // Mirrors StatsOverlay::Preset for QML
@@ -77,8 +78,15 @@ public:
     Q_INVOKABLE bool isMetricEnabled(const QString& id) const;
     Q_INVOKABLE void setMetricEnabled(const QString& id, bool enabled);
 
-    // Forgets every remembered per-display position and preset
+    // Forgets every remembered per-display position, preset and size
     Q_INVOKABLE void resetPlacements();
+
+    // Forgets only the sizes the panel presets were resized to
+    Q_INVOKABLE void resetSizes();
+
+    // The remembered panel sizes, one per line, for the settings page;
+    // "Default" when there are none
+    QString sizeSummary() const;
 
     // Re-reads everything, for a page that may have missed in-stream changes
     Q_INVOKABLE void reload();
@@ -88,12 +96,22 @@ public:
     void setDisplayAnchor(const QString& displayKey, StatsOverlay::Anchor anchor);
     void setDisplayPreset(const QString& displayKey, StatsOverlay::Preset preset);
 
+    // Size of a resizable preset's panel at 100% scale, or an invalid size
+    // when it was never resized on this display
+    QSize displaySize(const QString& displayKey, StatsOverlay::Preset preset) const;
+    void setDisplaySize(const QString& displayKey, StatsOverlay::Preset preset, const QSize& size);
+
     // Translated name of a metric for the settings page
     static QString metricName(StatsOverlay::Metric metric);
+
+    // What a metric means and what good or bad values look like, for the
+    // overlay's hover tooltips
+    static QString metricDescription(StatsOverlay::Metric metric);
 
 signals:
     void presetChanged();
     void scalePercentChanged();
     void opacityPercentChanged();
     void metricsChanged();
+    void sizesChanged();
 };

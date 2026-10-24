@@ -169,8 +169,8 @@ Column {
         SettingsRow {
             id: statsOverlayScaleRow
             applicable: statsOverlayCard.overlayOn
-            title: qsTr("Overlay size")
-            description: qsTr("In a stream, choose Edit position in the overlay menu to drag the overlay and resize it with the mouse wheel.")
+            title: qsTr("Overlay scale")
+            description: qsTr("In a stream, choose Edit position in the overlay menu to drag the overlay and zoom it with the mouse wheel.")
 
             Row {
                 width: Math.min(360, Math.max(220, statsOverlayScaleRow.width - Theme.spaceMd * 2))
@@ -259,10 +259,23 @@ Column {
             }
         }
 
+        // 详细/自定义面板可在编辑模式下拖边缘改尺寸，按显示器记住
+        SettingsRow {
+            applicable: statsOverlayCard.overlayOn
+            title: qsTr("Panel size")
+            description: qsTr("In edit mode, drag the edges of the Detailed and Custom panels to resize them. Each display remembers its own size.") +
+                         "\n" + qsTr("Current: %1").arg(StatsOverlaySettings.sizeSummary)
+
+            HardButton {
+                text: qsTr("Reset size")
+                onClicked: StatsOverlaySettings.resetSizes()
+            }
+        }
+
         SettingsRow {
             applicable: statsOverlayCard.overlayOn
             title: qsTr("Remembered positions")
-            description: qsTr("The overlay remembers its position and preset for each display.")
+            description: qsTr("The overlay remembers its position, preset and size for each display.")
 
             HardButton {
                 text: qsTr("Reset")

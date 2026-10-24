@@ -1,6 +1,7 @@
+#include "panel_layout_tests.h"
 #include "streaming/video/overlaystatspreset.h"
 
-#include <QCoreApplication>
+#include <QGuiApplication>
 #include <QTextStream>
 
 using namespace StatsOverlay;
@@ -150,7 +151,12 @@ bool testPlacement(QTextStream& err)
 
 int main(int argc, char* argv[])
 {
-    QCoreApplication app(argc, argv);
+    // The panel layout tests measure real fonts, which need a GUI application
+    // but no display
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    }
+    QGuiApplication app(argc, argv);
     QTextStream out(stdout);
     QTextStream err(stderr);
 
@@ -159,6 +165,7 @@ int main(int argc, char* argv[])
     ok &= testMetricLists(err);
     ok &= testGrades(err);
     ok &= testPlacement(err);
+    ok &= runPanelLayoutTests(err);
 
     out << (ok ? "PASS" : "FAILED") << '\n';
     return ok ? 0 : 1;

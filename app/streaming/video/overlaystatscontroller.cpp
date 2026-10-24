@@ -1,5 +1,6 @@
 #include "overlaystatscontroller.h"
 #include "overlaymanager.h"
+#include "overlaystatstooltip.h"
 #include "streaming/stats/streamstatsmodel.h"
 
 #include <Limelight.h>
@@ -14,6 +15,13 @@
 using namespace StatsOverlay;
 
 namespace {
+
+// Hover this long before a tooltip shows
+const qint64 kTooltipDelayMs = 400;
+// How often the pointer is polled while it is free
+const int kHoverPollMs = 50;
+// Tooltip offset from the pointer, in logical pixels
+const QPoint kTooltipOffset(14, 20);
 
 Qt::Alignment alignmentFor(Anchor anchor)
 {
@@ -59,7 +67,11 @@ OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayM
         m_Window->setDragFinishedCallback([this](const QPoint& center) { onDragFinished(center); });
         m_Window->setWheelCallback(
             [this](int steps, bool adjustOpacity) { onWheel(steps, adjustOpacity); });
+        m_Window->setResizeFinishedCallback([this](const QPoint& center, const QSize& bodySize) {
+            onResizeFinished(center, bodySize);
+        });
         m_Window->setEndEditingCallback([this] { endEditing(); });
+        m_Tooltip = new OverlayStatsTooltip(parent, windowMode);
         applyStyle();
     }
 
@@ -68,6 +80,11 @@ OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayM
 
 OverlayStatsController::~OverlayStatsController()
 {
+    if (m_Tooltip != nullptr) {
+        m_Tooltip->hide();
+        delete m_Tooltip;
+        m_Tooltip = nullptr;
+    }
     if (m_Window != nullptr) {
         m_Window->hide();
         delete m_Window;
@@ -197,11 +214,16 @@ void OverlayStatsController::syncWithStreamWindow(bool streamVisible)
 void OverlayStatsController::tick()
 {
     if (m_Window == nullptr || !m_Window->isVisible() || m_Window->isDragging()) {
+        hideTooltip();
         return;
     }
 
     if (m_RefreshDue || m_Clock.elapsed() >= m_NextRefreshMs) {
         refreshNow();
+    }
+    if (m_Clock.elapsed() >= m_NextHoverCheckMs) {
+        m_NextHoverCheckMs = m_Clock.elapsed() + kHoverPollMs;
+        updateTooltip();
     }
 }
 
@@ -213,7 +235,11 @@ int OverlayStatsController::nextEventDelayMs() const
     if (m_RefreshDue) {
         return 0;
     }
-    return static_cast<int>(std::max<qint64>(m_NextRefreshMs - m_Clock.elapsed(), 0));
+    qint64 delay = m_NextRefreshMs - m_Clock.elapsed();
+    if (pointerIsFree()) {
+        delay = std::min(delay, m_NextHoverCheckMs - m_Clock.elapsed());
+    }
+    return static_cast<int>(std::max<qint64>(delay, 0));
 }
 
 bool OverlayStatsController::needsEventProcessing() const
@@ -224,7 +250,8 @@ bool OverlayStatsController::needsEventProcessing() const
 
     // Dragging needs every mouse event; a fresh window needs its expose event
     // before repaintNow() can draw into it
-    return m_Editing || !m_Window->isExposed();
+    return m_Editing || !m_Window->isExposed() ||
+           (m_Tooltip != nullptr && m_Tooltip->isVisible() && !m_Tooltip->isExposed());
 }
 
 bool OverlayStatsController::windowShouldShow() const
@@ -244,6 +271,7 @@ void OverlayStatsController::applyVisibility()
     m_OverlayManager.setOverlayState(Overlay::OverlayDebug, false);
 
     if (!windowShouldShow() || !m_ParentGeometryProvider) {
+        hideTooltip();
         if (m_Window->isVisible()) {
             m_Window->hide();
         }
@@ -289,6 +317,11 @@ void OverlayStatsController::refreshNow()
 
     m_RefreshDue = !m_Window->isExposed();
     m_NextRefreshMs = m_Clock.elapsed() + refreshIntervalMs();
+
+    // Keep a shown tooltip's value current
+    if (m_Tooltip != nullptr && m_Tooltip->isVisible()) {
+        updateTooltip();
+    }
 }
 
 void OverlayStatsController::updateDisplay()
@@ -341,6 +374,11 @@ void OverlayStatsController::reposition()
         return;
     }
 
+    // A panel can grow up to the stream's size, less the margins
+    m_Window->setMaximumBodySize(
+        QSize(int((parentRect.width() - EdgeMargin * 2) * 100.0 / m_Settings.scalePercent()),
+              int((parentRect.height() - EdgeMargin * 2) * 100.0 / m_Settings.scalePercent())));
+
     // Numbers change width every refresh. Growing only keeps the window from
     // twitching; applyStyle() resets it when the layout really changes.
     m_WindowSize = m_WindowSize.expandedTo(m_Window->preferredSize());
@@ -372,7 +410,12 @@ void OverlayStatsController::applyStyle()
     m_Window->setMetrics(m_Metrics);
     m_Window->setScalePercent(m_Settings.scalePercent());
     m_Window->setOpacityPercent(m_Settings.opacityPercent());
+    m_Window->setBodySize(m_DisplayKey.isEmpty() ? QSize()
+                                                 : m_Settings.displaySize(m_DisplayKey, m_Preset));
     m_Window->setBodyAlignment(alignmentFor(m_Anchor));
+    if (m_Tooltip != nullptr) {
+        m_Tooltip->setScalePercent(m_Settings.scalePercent());
+    }
     m_WindowSize = QSize();
     scheduleRefresh();
 }
@@ -391,6 +434,16 @@ void OverlayStatsController::onDragFinished(const QPoint& center)
     refreshNow();
 }
 
+void OverlayStatsController::onResizeFinished(const QPoint& center, const QSize& bodySize)
+{
+    if (!m_DisplayKey.isEmpty()) {
+        m_Settings.setDisplaySize(m_DisplayKey, m_Preset, bodySize);
+    }
+    // Resizing from the left or top edge moves the window, so it may now be
+    // nearer another anchor
+    onDragFinished(center);
+}
+
 void OverlayStatsController::onWheel(int steps, bool adjustOpacity)
 {
     if (adjustOpacity) {
@@ -400,4 +453,80 @@ void OverlayStatsController::onWheel(int steps, bool adjustOpacity)
     }
     applyStyle();
     refreshNow();
+}
+
+bool OverlayStatsController::pointerIsFree() const
+{
+    return m_PointerProvider && m_PointerProvider().has_value();
+}
+
+void OverlayStatsController::hideTooltip()
+{
+    m_HoverMetric.reset();
+    if (m_Tooltip != nullptr && m_Tooltip->isVisible()) {
+        m_Tooltip->hide();
+    }
+}
+
+void OverlayStatsController::updateTooltip()
+{
+    if (m_Tooltip == nullptr || m_Window == nullptr || !m_ParentGeometryProvider) {
+        return;
+    }
+
+    const std::optional<QPoint> pointer =
+        m_PointerProvider ? m_PointerProvider() : std::optional<QPoint>();
+    const QRect windowRect = m_Window->geometry();
+    if (!pointer || !windowRect.contains(*pointer)) {
+        hideTooltip();
+        return;
+    }
+
+    const std::optional<OverlayStatsWindow::TooltipInfo> info =
+        m_Window->tooltipAt(*pointer - windowRect.topLeft());
+    if (!info) {
+        hideTooltip();
+        return;
+    }
+
+    const qint64 now = m_Clock.elapsed();
+    if (m_HoverMetric != info->metric) {
+        // A new metric: wait for the pointer to rest on it
+        hideTooltip();
+        m_HoverMetric = info->metric;
+        m_HoverSinceMs = now;
+        return;
+    }
+    if (now - m_HoverSinceMs < kTooltipDelayMs) {
+        return;
+    }
+
+    m_Tooltip->setContent(info->metric, info->value);
+    const QSize size = m_Tooltip->preferredSize();
+
+    // Below and right of the pointer, flipped to stay inside the stream
+    const QRect parentRect = m_ParentGeometryProvider();
+    QPoint topLeft = *pointer + kTooltipOffset;
+    if (topLeft.x() + size.width() > parentRect.right()) {
+        topLeft.setX(pointer->x() - kTooltipOffset.x() - size.width());
+    }
+    if (topLeft.y() + size.height() > parentRect.bottom()) {
+        topLeft.setY(pointer->y() - kTooltipOffset.y() - size.height());
+    }
+    topLeft.setX(std::max(topLeft.x(), parentRect.left()));
+    topLeft.setY(std::max(topLeft.y(), parentRect.top()));
+
+    if (!OverlayWindowPolicy::usesParentCoordinates(m_WindowMode) &&
+        m_Window->screen() != nullptr && m_Tooltip->screen() != m_Window->screen()) {
+        m_Tooltip->setScreen(m_Window->screen());
+    }
+    const QRect target(topLeft, size);
+    if (m_Tooltip->geometry() != target) {
+        m_Tooltip->setGeometry(target);
+    }
+    if (!m_Tooltip->isVisible()) {
+        m_Tooltip->show();
+        m_Tooltip->raise();
+    }
+    m_Tooltip->repaintNow();
 }

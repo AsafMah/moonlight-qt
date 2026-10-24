@@ -263,6 +263,56 @@ Anchor nearestAnchor(const QRect& parent, const QPoint& point)
     return static_cast<Anchor>(row * 3 + column);
 }
 
+namespace {
+
+// rect moved to lie inside area; its top-left wins when it is too big
+QPoint fitInto(const QRect& rect, const QRect& area)
+{
+    int x = std::min(rect.x(), area.x() + area.width() - rect.width());
+    int y = std::min(rect.y(), area.y() + area.height() - rect.height());
+    x = std::max(x, area.x());
+    y = std::max(y, area.y());
+    return QPoint(x, y);
+}
+
+} // namespace
+
+QPoint detachedWindowPosition(const std::optional<QPoint>& saved, const QSize& size,
+                              const QVector<QRect>& screens, const QRect& streamScreen, int margin)
+{
+    if (saved) {
+        const QRect rect(*saved, size);
+        QRect best;
+        QRect bestOverlap;
+        for (const QRect& screen : screens) {
+            const QRect overlap = rect.intersected(screen);
+            if (qint64(overlap.width()) * overlap.height() >
+                qint64(bestOverlap.width()) * bestOverlap.height()) {
+                best = screen;
+                bestOverlap = overlap;
+            }
+        }
+        if (bestOverlap.width() >= std::min(size.width(), DetachedMinVisible) &&
+            bestOverlap.height() >= std::min(size.height(), DetachedMinVisible) &&
+            !bestOverlap.isEmpty()) {
+            return fitInto(rect, best);
+        }
+    }
+
+    QRect area = streamScreen;
+    for (const QRect& screen : screens) {
+        if (!screen.isEmpty() && !screen.intersects(streamScreen)) {
+            area = screen;
+            break;
+        }
+    }
+    if (area.isEmpty() && !screens.isEmpty()) {
+        area = screens.first();
+    }
+    const QPoint position = area.topLeft() + QPoint(margin, margin);
+    return area.isEmpty() ? position : fitInto(QRect(position, size), area);
+}
+
 QString displayKey(const QString& screenName)
 {
     QString key;

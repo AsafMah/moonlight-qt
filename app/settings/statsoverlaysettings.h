@@ -3,8 +3,11 @@
 #include "streaming/video/overlaystatspreset.h"
 
 #include <QObject>
+#include <QPoint>
 #include <QStringList>
 #include <QVariantList>
+
+#include <optional>
 
 // Persistent settings of the performance overlay window, shared by the
 // settings page (as the StatsOverlaySettings QML singleton) and the overlay
@@ -31,6 +34,7 @@ class StatsOverlaySettings : public QObject
     Q_PROPERTY(int minOpacityPercent READ minOpacityPercent CONSTANT)
     Q_PROPERTY(int maxOpacityPercent READ maxOpacityPercent CONSTANT)
     Q_PROPERTY(QString sizeSummary READ sizeSummary NOTIFY sizesChanged)
+    Q_PROPERTY(bool detached READ detached WRITE setDetached NOTIFY detachedChanged)
 
 public:
     // Mirrors StatsOverlay::Preset for QML
@@ -65,6 +69,11 @@ public:
 
     int opacityPercent() const;
     void setOpacityPercent(int percent);
+
+    // The overlay is a top-level window of its own rather than placed on
+    // the stream. Read when a stream starts.
+    bool detached() const;
+    void setDetached(bool detached);
 
     QStringList metrics() const;
     QVector<StatsOverlay::Metric> metricList() const;
@@ -101,6 +110,11 @@ public:
     QSize displaySize(const QString& displayKey, StatsOverlay::Preset preset) const;
     void setDisplaySize(const QString& displayKey, StatsOverlay::Preset preset, const QSize& size);
 
+    // Top-left corner of the detached window, in global coordinates, for a
+    // stream on this display; nothing when it was never moved
+    std::optional<QPoint> detachedPosition(const QString& displayKey) const;
+    void setDetachedPosition(const QString& displayKey, const QPoint& position);
+
     // Translated name of a metric for the settings page
     static QString metricName(StatsOverlay::Metric metric);
 
@@ -114,4 +128,5 @@ signals:
     void opacityPercentChanged();
     void metricsChanged();
     void sizesChanged();
+    void detachedChanged();
 };

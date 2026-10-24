@@ -14,6 +14,7 @@
 class QMouseEvent;
 class QWheelEvent;
 class QKeyEvent;
+class QMoveEvent;
 
 /**
  * OverlayStatsWindow - the performance overlay, drawn from a StatsSnapshot
@@ -25,7 +26,8 @@ class QKeyEvent;
  * the mouse wheel and, for the panel presets, resized by its edges and corners.
  *
  * Layout and painting only depend on the window's own size, never on the
- * stream window, so the overlay can later move to a window of its own.
+ * stream window. A standalone (detached) overlay is an ordinary top-level
+ * window that always takes the mouse; see setStandalone().
  */
 class OverlayStatsWindow : public OverlayRasterWindow
 {
@@ -52,6 +54,7 @@ public:
     using ResizeFinishedCallback = std::function<void(const QPoint& center, const QSize& bodySize)>;
     using WheelCallback = std::function<void(int steps, bool adjustOpacity)>;
     using EndEditingCallback = std::function<void()>;
+    using MovedCallback = std::function<void(const QPoint& topLeft)>;
 
     explicit OverlayStatsWindow(QWindow* parent = nullptr,
                                 OverlayWindowMode windowMode = OverlayWindowMode::Detached);
@@ -73,7 +76,17 @@ public:
     // only grows the window while numbers change width, to avoid jitter)
     void setBodyAlignment(Qt::Alignment alignment) { m_BodyAlignment = alignment; }
 
+    // A top-level window of its own, apart from the stream: never
+    // click-through, so it can be dragged (to another screen too), resized by
+    // its edges and zoomed with the wheel at any time. Call before showing.
+    void setStandalone(bool standalone);
+    bool isStandalone() const { return m_Standalone; }
+
+    // The pointer, in window coordinates, while it is over a standalone window
+    std::optional<QPoint> hoverPosition() const { return m_HoverPosition; }
+
     // Edit mode accepts mouse input; otherwise the window is click-through
+    // (unless it is standalone)
     void setEditing(bool editing);
     bool isEditing() const { return m_Editing; }
     // Moving or resizing with the mouse
@@ -101,6 +114,8 @@ public:
     }
     void setWheelCallback(WheelCallback cb) { m_WheelCallback = std::move(cb); }
     void setEndEditingCallback(EndEditingCallback cb) { m_EndEditingCallback = std::move(cb); }
+    // Called whenever the window moves, however it was moved
+    void setMovedCallback(MovedCallback cb) { m_MovedCallback = std::move(cb); }
 
 protected:
     void paintOverlay(QPainter& painter) override;
@@ -110,6 +125,8 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void moveEvent(QMoveEvent* event) override;
+    bool event(QEvent* event) override;
 
 private:
     struct Cell
@@ -160,6 +177,8 @@ private:
     void paintEditHint(QPainter* painter, int y, int width) const;
     void paintResizeGrip(QPainter* painter, const QSize& body) const;
 
+    // Takes mouse input: edit mode, or always when standalone
+    bool isInteractive() const { return m_Editing || m_Standalone; }
     qreal scale() const { return m_ScalePercent / 100.0; }
     QPoint eventPosition(QMouseEvent* event) const;
     QPoint localPosition(QMouseEvent* event) const;
@@ -179,6 +198,8 @@ private:
     Qt::Alignment m_BodyAlignment = Qt::AlignLeft | Qt::AlignTop;
 
     bool m_Editing = false;
+    bool m_Standalone = false;
+    std::optional<QPoint> m_HoverPosition;
     bool m_Dragging = false;
     int m_ResizeEdges = 0;   // edges being dragged, 0 when not resizing
     QPoint m_PressPosition;  // pointer, in parent coordinates
@@ -199,4 +220,5 @@ private:
     ResizeFinishedCallback m_ResizeFinishedCallback;
     WheelCallback m_WheelCallback;
     EndEditingCallback m_EndEditingCallback;
+    MovedCallback m_MovedCallback;
 };

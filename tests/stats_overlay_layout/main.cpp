@@ -147,6 +147,66 @@ bool testPlacement(QTextStream& err)
 
     return ok;
 }
+
+bool testDetachedPlacement(QTextStream& err)
+{
+    bool ok = true;
+    const QSize size(360, 400);
+    const int margin = 16;
+    // The stream on the left screen, a second screen to its right, and a
+    // third one above it
+    const QRect left(0, 0, 1920, 1040);
+    const QRect right(1920, 0, 2560, 1400);
+    const QRect top(0, -1080, 1920, 1080);
+    const QVector<QRect> screens = { left, right, top };
+
+    // Never moved: the first screen that is not the stream's
+    ok &= require(detachedWindowPosition(std::nullopt, size, screens, left, margin) ==
+                      QPoint(1920 + margin, margin),
+                  QStringLiteral("detached default is not on another screen"), err);
+    ok &= require(detachedWindowPosition(std::nullopt, size, screens, right, margin) ==
+                      QPoint(margin, margin),
+                  QStringLiteral("detached default skips the stream's screen"), err);
+    // A single screen: the stream's own
+    ok &= require(detachedWindowPosition(std::nullopt, size, { left }, left, margin) ==
+                      QPoint(margin, margin),
+                  QStringLiteral("detached default on a single screen"), err);
+    ok &= require(detachedWindowPosition(std::nullopt, size, {}, QRect(), margin) ==
+                      QPoint(margin, margin),
+                  QStringLiteral("detached default without screens"), err);
+
+    // A remembered position on a screen is kept as is
+    ok &= require(detachedWindowPosition(QPoint(3000, 500), size, screens, left, margin) ==
+                      QPoint(3000, 500),
+                  QStringLiteral("remembered position was not kept"), err);
+    ok &= require(detachedWindowPosition(QPoint(100, -900), size, screens, left, margin) ==
+                      QPoint(100, -900),
+                  QStringLiteral("position above the stream was not kept"), err);
+
+    // Partly off the edge: moved fully onto the screen it overlaps most
+    ok &= require(detachedWindowPosition(QPoint(4300, 1200), size, screens, left, margin) ==
+                      QPoint(1920 + 2560 - 360, 1400 - 400),
+                  QStringLiteral("partly visible window was not moved on screen"), err);
+    // Straddling two screens: onto the one with more of it
+    ok &= require(detachedWindowPosition(QPoint(1800, 100), size, screens, left, margin) ==
+                      QPoint(1920, 100),
+                  QStringLiteral("straddling window went to the wrong screen"), err);
+
+    // Too little left on any screen (a screen was unplugged): the default
+    ok &= require(detachedWindowPosition(QPoint(4460, 100), size, screens, left, margin) ==
+                      QPoint(1920 + margin, margin),
+                  QStringLiteral("barely visible window was kept"), err);
+    ok &= require(detachedWindowPosition(QPoint(3000, 500), size, { left }, left, margin) ==
+                      QPoint(margin, margin),
+                  QStringLiteral("window on an unplugged screen was kept"), err);
+
+    // Bigger than the screen: its top-left stays on it
+    ok &= require(detachedWindowPosition(QPoint(10, 10), QSize(2500, 1200), { left }, left,
+                                         margin) == QPoint(0, 0),
+                  QStringLiteral("oversized window was not pinned to the top-left"), err);
+
+    return ok;
+}
 } // namespace
 
 int main(int argc, char* argv[])
@@ -165,6 +225,7 @@ int main(int argc, char* argv[])
     ok &= testMetricLists(err);
     ok &= testGrades(err);
     ok &= testPlacement(err);
+    ok &= testDetachedPlacement(err);
     ok &= runPanelLayoutTests(err);
 
     out << (ok ? "PASS" : "FAILED") << '\n';

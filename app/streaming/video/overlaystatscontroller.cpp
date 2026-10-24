@@ -22,6 +22,8 @@ const qint64 kTooltipDelayMs = 400;
 const int kHoverPollMs = 50;
 // Tooltip offset from the pointer, in logical pixels
 const QPoint kTooltipOffset(14, 20);
+// A moved detached window is saved once it has been still this long
+const qint64 kDetachedSaveDelayMs = 500;
 
 Qt::Alignment alignmentFor(Anchor anchor)
 {
@@ -58,12 +60,21 @@ OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayM
                                                StreamStatsModel& model, QWindow* parent,
                                                OverlayWindowMode windowMode, bool initiallyVisible)
     : m_OverlayManager(overlayManager), m_Model(model), m_Parent(parent), m_WindowMode(windowMode),
-      m_Visible(initiallyVisible), m_Preset(m_Settings.presetValue())
+      m_Detached(m_Settings.detached()), m_Visible(initiallyVisible),
+      m_Preset(m_Settings.presetValue())
 {
     m_Clock.start();
 
     if (compositorWindowSupported()) {
-        m_Window = new OverlayStatsWindow(parent, windowMode);
+        if (m_Detached) {
+            m_Window = new OverlayStatsWindow(nullptr, OverlayWindowMode::Detached);
+            m_Window->setStandalone(true);
+            m_Window->setMovedCallback([this](const QPoint& topLeft) { onDetachedMoved(topLeft); });
+            m_DetachedPositionKnown =
+                !QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
+        } else {
+            m_Window = new OverlayStatsWindow(parent, windowMode);
+        }
         m_Window->setDragFinishedCallback([this](const QPoint& center) { onDragFinished(center); });
         m_Window->setWheelCallback(
             [this](int steps, bool adjustOpacity) { onWheel(steps, adjustOpacity); });
@@ -71,7 +82,14 @@ OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayM
             onResizeFinished(center, bodySize);
         });
         m_Window->setEndEditingCallback([this] { endEditing(); });
-        m_Tooltip = new OverlayStatsTooltip(parent, windowMode);
+        // On Wayland the tooltip is a child of the window it hovers over, in
+        // that window's coordinates
+        QWindow* tooltipParent = parent;
+        if (m_Detached) {
+            tooltipParent =
+                OverlayWindowPolicy::usesParentCoordinates(windowMode) ? m_Window : nullptr;
+        }
+        m_Tooltip = new OverlayStatsTooltip(tooltipParent, windowMode);
         applyStyle();
     }
 
@@ -80,6 +98,9 @@ OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayM
 
 OverlayStatsController::~OverlayStatsController()
 {
+    if (m_DetachedSaveDue) {
+        saveDetachedPosition();
+    }
     if (m_Tooltip != nullptr) {
         m_Tooltip->hide();
         delete m_Tooltip;
@@ -213,6 +234,11 @@ void OverlayStatsController::syncWithStreamWindow(bool streamVisible)
 
 void OverlayStatsController::tick()
 {
+    if (m_DetachedSaveDue && (m_Window == nullptr || !m_Window->isDragging()) &&
+        m_Clock.elapsed() - m_DetachedMovedAtMs >= kDetachedSaveDelayMs) {
+        saveDetachedPosition();
+    }
+
     if (m_Window == nullptr || !m_Window->isVisible() || m_Window->isDragging()) {
         hideTooltip();
         return;
@@ -249,9 +275,11 @@ bool OverlayStatsController::needsEventProcessing() const
     }
 
     // Dragging needs every mouse event; a fresh window needs its expose event
-    // before repaintNow() can draw into it
+    // before repaintNow() can draw into it. A detached window takes the mouse
+    // whenever the stream does not have it.
     return m_Editing || !m_Window->isExposed() ||
-           (m_Tooltip != nullptr && m_Tooltip->isVisible() && !m_Tooltip->isExposed());
+           (m_Tooltip != nullptr && m_Tooltip->isVisible() && !m_Tooltip->isExposed()) ||
+           (m_Detached && (m_Window->isDragging() || pointerIsFree()));
 }
 
 bool OverlayStatsController::windowShouldShow() const
@@ -331,6 +359,11 @@ void OverlayStatsController::updateDisplay()
         return;
     }
 
+    // A move still waiting to be saved belongs to the previous display
+    if (m_DetachedSaveDue) {
+        saveDetachedPosition();
+    }
+
     m_DisplayKey = key;
     const StatsOverlaySettings::DisplayState state = m_Settings.displayState(key);
     m_Anchor = state.hasAnchor ? state.anchor : Anchor::TopLeft;
@@ -338,7 +371,7 @@ void OverlayStatsController::updateDisplay()
     applyStyle();
 }
 
-QString OverlayStatsController::currentDisplayKey() const
+QScreen* OverlayStatsController::streamScreen() const
 {
     QScreen* screen = nullptr;
     if (OverlayWindowPolicy::usesParentCoordinates(m_WindowMode) && m_Parent != nullptr) {
@@ -352,15 +385,23 @@ QString OverlayStatsController::currentDisplayKey() const
     if (screen == nullptr) {
         screen = QGuiApplication::primaryScreen();
     }
+    return screen;
+}
+
+QString OverlayStatsController::currentDisplayKey() const
+{
+    QScreen* screen = streamScreen();
     return displayKey(screen != nullptr ? screen->name() : QString());
 }
 
 double OverlayStatsController::currentDisplayHz() const
 {
-    if (m_Window != nullptr && m_Window->screen() != nullptr) {
-        return m_Window->screen()->refreshRate();
+    // A detached window may be on another screen than the stream
+    QScreen* screen = m_Detached ? streamScreen() : nullptr;
+    if (screen == nullptr && m_Window != nullptr) {
+        screen = m_Window->screen();
     }
-    return 0;
+    return screen != nullptr ? screen->refreshRate() : 0;
 }
 
 void OverlayStatsController::reposition()
@@ -371,6 +412,11 @@ void OverlayStatsController::reposition()
 
     const QRect parentRect = m_ParentGeometryProvider();
     if (!parentRect.isValid()) {
+        return;
+    }
+
+    if (m_Detached) {
+        repositionDetached(parentRect);
         return;
     }
 
@@ -399,6 +445,78 @@ void OverlayStatsController::reposition()
     }
 }
 
+void OverlayStatsController::repositionDetached(const QRect& parentRect)
+{
+    QScreen* windowScreen = m_DetachedPlaced ? m_Window->screen() : nullptr;
+    if (windowScreen == nullptr) {
+        windowScreen = streamScreen();
+    }
+
+    // A panel can grow up to the size of the screen it is on
+    if (windowScreen != nullptr) {
+        const QRect area = windowScreen->availableGeometry();
+        m_Window->setMaximumBodySize(
+            QSize(int((area.width() - EdgeMargin * 2) * 100.0 / m_Settings.scalePercent()),
+                  int((area.height() - EdgeMargin * 2) * 100.0 / m_Settings.scalePercent())));
+    }
+
+    m_WindowSize = m_WindowSize.expandedTo(m_Window->preferredSize());
+
+    if (m_DetachedPlaced) {
+        // The user owns the position from here on; only the size follows the
+        // content. Resizing keeps the top-left corner.
+        if (m_Window->size() != m_WindowSize) {
+            m_Window->resize(m_WindowSize);
+        }
+        return;
+    }
+
+    QVector<QRect> screens;
+    for (QScreen* screen : QGuiApplication::screens()) {
+        screens.append(screen->availableGeometry());
+    }
+    QScreen* stream = streamScreen();
+    QRect streamRect = stream != nullptr ? stream->availableGeometry() : QRect();
+    if (OverlayWindowPolicy::usesParentCoordinates(m_WindowMode)) {
+        // Wayland places the window itself; only the size matters
+        streamRect = QRect(QPoint(), parentRect.size());
+    }
+
+    std::optional<QPoint> saved;
+    if (m_DetachedPositionKnown && !m_DisplayKey.isEmpty()) {
+        saved = m_Settings.detachedPosition(m_DisplayKey);
+    }
+    m_DetachedPos = detachedWindowPosition(saved, m_WindowSize, screens, streamRect, EdgeMargin);
+    const QRect target(m_DetachedPos, m_WindowSize);
+
+    // Pick the screen first, so the window gets that screen's scale
+    QScreen* targetScreen = QGuiApplication::screenAt(target.center());
+    if (targetScreen != nullptr && m_Window->screen() != targetScreen) {
+        m_Window->setScreen(targetScreen);
+    }
+    m_Window->setGeometry(target);
+    m_DetachedPlaced = true;
+}
+
+void OverlayStatsController::onDetachedMoved(const QPoint& topLeft)
+{
+    if (!m_DetachedPlaced || topLeft == m_DetachedPos) {
+        return;
+    }
+
+    m_DetachedPos = topLeft;
+    m_DetachedSaveDue = m_DetachedPositionKnown;
+    m_DetachedMovedAtMs = m_Clock.elapsed();
+}
+
+void OverlayStatsController::saveDetachedPosition()
+{
+    m_DetachedSaveDue = false;
+    if (m_DetachedPositionKnown && !m_DisplayKey.isEmpty()) {
+        m_Settings.setDetachedPosition(m_DisplayKey, m_DetachedPos);
+    }
+}
+
 void OverlayStatsController::applyStyle()
 {
     if (m_Window == nullptr) {
@@ -412,7 +530,7 @@ void OverlayStatsController::applyStyle()
     m_Window->setOpacityPercent(m_Settings.opacityPercent());
     m_Window->setBodySize(m_DisplayKey.isEmpty() ? QSize()
                                                  : m_Settings.displaySize(m_DisplayKey, m_Preset));
-    m_Window->setBodyAlignment(alignmentFor(m_Anchor));
+    m_Window->setBodyAlignment(m_Detached ? Qt::AlignLeft | Qt::AlignTop : alignmentFor(m_Anchor));
     if (m_Tooltip != nullptr) {
         m_Tooltip->setScalePercent(m_Settings.scalePercent());
     }
@@ -422,6 +540,16 @@ void OverlayStatsController::applyStyle()
 
 void OverlayStatsController::onDragFinished(const QPoint& center)
 {
+    if (m_Detached) {
+        // Not anchored: the window stays where it was dropped
+        if (m_DetachedSaveDue) {
+            saveDetachedPosition();
+        }
+        applyStyle();
+        refreshNow();
+        return;
+    }
+
     if (!m_ParentGeometryProvider) {
         return;
     }
@@ -474,9 +602,30 @@ void OverlayStatsController::updateTooltip()
         return;
     }
 
-    const std::optional<QPoint> pointer =
-        m_PointerProvider ? m_PointerProvider() : std::optional<QPoint>();
-    const QRect windowRect = m_Window->geometry();
+    // pointer, windowRect and bounds are all in the tooltip's coordinates
+    std::optional<QPoint> pointer;
+    QRect windowRect = m_Window->geometry();
+    QRect bounds;
+    if (m_Detached) {
+        // The window tracks the pointer itself; the stream's pointer
+        // coordinates do not cover it
+        const std::optional<QPoint> hover =
+            pointerIsFree() ? m_Window->hoverPosition() : std::optional<QPoint>();
+        if (OverlayWindowPolicy::usesParentCoordinates(m_WindowMode)) {
+            windowRect = QRect(QPoint(), m_Window->size());
+            bounds = windowRect;
+        } else if (m_Window->screen() != nullptr) {
+            bounds = m_Window->screen()->availableGeometry();
+        } else {
+            bounds = windowRect;
+        }
+        if (hover) {
+            pointer = windowRect.topLeft() + *hover;
+        }
+    } else {
+        pointer = m_PointerProvider ? m_PointerProvider() : std::optional<QPoint>();
+        bounds = m_ParentGeometryProvider();
+    }
     if (!pointer || !windowRect.contains(*pointer)) {
         hideTooltip();
         return;
@@ -504,17 +653,17 @@ void OverlayStatsController::updateTooltip()
     m_Tooltip->setContent(info->metric, info->value);
     const QSize size = m_Tooltip->preferredSize();
 
-    // Below and right of the pointer, flipped to stay inside the stream
-    const QRect parentRect = m_ParentGeometryProvider();
+    // Below and right of the pointer, flipped to stay inside the stream (or
+    // the detached window's screen)
     QPoint topLeft = *pointer + kTooltipOffset;
-    if (topLeft.x() + size.width() > parentRect.right()) {
+    if (topLeft.x() + size.width() > bounds.right()) {
         topLeft.setX(pointer->x() - kTooltipOffset.x() - size.width());
     }
-    if (topLeft.y() + size.height() > parentRect.bottom()) {
+    if (topLeft.y() + size.height() > bounds.bottom()) {
         topLeft.setY(pointer->y() - kTooltipOffset.y() - size.height());
     }
-    topLeft.setX(std::max(topLeft.x(), parentRect.left()));
-    topLeft.setY(std::max(topLeft.y(), parentRect.top()));
+    topLeft.setX(std::max(topLeft.x(), bounds.left()));
+    topLeft.setY(std::max(topLeft.y(), bounds.top()));
 
     if (!OverlayWindowPolicy::usesParentCoordinates(m_WindowMode) &&
         m_Window->screen() != nullptr && m_Tooltip->screen() != m_Window->screen()) {

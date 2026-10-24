@@ -6,6 +6,7 @@
 #include <QFontMetrics>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QMoveEvent>
 #include <QPainter>
 #include <QSurfaceFormat>
 #include <QWheelEvent>
@@ -129,6 +130,20 @@ void OverlayStatsWindow::setOpacityPercent(int percent)
     m_OpacityPercent = clampOpacityPercent(percent);
 }
 
+void OverlayStatsWindow::setStandalone(bool standalone)
+{
+    m_Standalone = standalone;
+    if (standalone) {
+        // An ordinary window, so it can sit on any screen and shows in the
+        // taskbar, but clicking it never takes focus from the stream
+        setFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
+                 Qt::WindowDoesNotAcceptFocus);
+        setTitle(tr("Moonlight performance overlay"));
+    } else {
+        setFlags(OverlayWindowPolicy::flags(m_WindowMode, !m_Editing));
+    }
+}
+
 void OverlayStatsWindow::setEditing(bool editing)
 {
     if (m_Editing == editing) {
@@ -140,6 +155,10 @@ void OverlayStatsWindow::setEditing(bool editing)
     m_ResizeEdges = 0;
     if (!editing) {
         unsetCursor();
+    }
+    if (m_Standalone) {
+        // Always takes input, so the flags stay as they are
+        return;
     }
 
     // Input transparency is a window flag, which some platforms only apply
@@ -904,7 +923,7 @@ QPoint OverlayStatsWindow::localPosition(QMouseEvent* event) const
 
 int OverlayStatsWindow::edgesAt(const QPoint& local) const
 {
-    if (!m_Editing || !isResizable()) {
+    if (!isInteractive() || !isResizable()) {
         return 0;
     }
 
@@ -933,7 +952,7 @@ int OverlayStatsWindow::edgesAt(const QPoint& local) const
 
 void OverlayStatsWindow::updateEdgeCursor(int edges)
 {
-    if (!m_Editing) {
+    if (!isInteractive()) {
         unsetCursor();
         return;
     }
@@ -986,7 +1005,7 @@ void OverlayStatsWindow::resizeTo(const QPoint& pointer)
 
 void OverlayStatsWindow::mousePressEvent(QMouseEvent* event)
 {
-    if (!m_Editing) {
+    if (!isInteractive()) {
         event->ignore();
         return;
     }
@@ -1003,9 +1022,17 @@ void OverlayStatsWindow::mousePressEvent(QMouseEvent* event)
             m_PressGeometry =
                 QRect(position() + (m_BodyOffset * scale()).toPoint(), preferredSize());
         } else {
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+            // Lets the window manager move it, which also works on Wayland,
+            // where a window cannot place itself
+            if (m_Standalone && startSystemMove()) {
+                event->accept();
+                return;
+            }
+#endif
             m_Dragging = true;
         }
-    } else if (event->button() == Qt::RightButton && m_EndEditingCallback) {
+    } else if (event->button() == Qt::RightButton && m_Editing && m_EndEditingCallback) {
         m_EndEditingCallback();
     }
     event->accept();
@@ -1013,6 +1040,10 @@ void OverlayStatsWindow::mousePressEvent(QMouseEvent* event)
 
 void OverlayStatsWindow::mouseMoveEvent(QMouseEvent* event)
 {
+    if (m_Standalone) {
+        m_HoverPosition = localPosition(event);
+    }
+
     if (m_ResizeEdges != 0) {
         resizeTo(eventPosition(event));
         event->accept();
@@ -1020,7 +1051,7 @@ void OverlayStatsWindow::mouseMoveEvent(QMouseEvent* event)
     }
 
     if (!m_Dragging) {
-        if (m_Editing) {
+        if (isInteractive()) {
             updateEdgeCursor(edgesAt(localPosition(event)));
             event->accept();
         } else {
@@ -1066,7 +1097,7 @@ void OverlayStatsWindow::mouseDoubleClickEvent(QMouseEvent* event)
 
 void OverlayStatsWindow::wheelEvent(QWheelEvent* event)
 {
-    if (!m_Editing || !m_WheelCallback) {
+    if (!isInteractive() || !m_WheelCallback) {
         event->ignore();
         return;
     }
@@ -1086,4 +1117,20 @@ void OverlayStatsWindow::keyPressEvent(QKeyEvent* event)
         return;
     }
     event->ignore();
+}
+
+void OverlayStatsWindow::moveEvent(QMoveEvent* event)
+{
+    OverlayRasterWindow::moveEvent(event);
+    if (m_MovedCallback) {
+        m_MovedCallback(position());
+    }
+}
+
+bool OverlayStatsWindow::event(QEvent* event)
+{
+    if (event->type() == QEvent::Leave || event->type() == QEvent::Hide) {
+        m_HoverPosition.reset();
+    }
+    return OverlayRasterWindow::event(event);
 }

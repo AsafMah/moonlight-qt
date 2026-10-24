@@ -4329,6 +4329,13 @@ bool Session::startConnectionAsync()
                                                                          false);
     }
 
+    // moonlight-common-c fills in missing callbacks in place, so a previous
+    // connection on this session left a fake submitDecodeUnit behind. A pull
+    // renderer must start without one, or LiStartConnection() rejects it.
+    if (m_VideoCallbacks.capabilities & CAPABILITY_PULL_RENDERER) {
+        m_VideoCallbacks.submitDecodeUnit = nullptr;
+    }
+
     int err = LiStartConnection(&preparedHostInfo.info, &m_StreamConfig, &k_ConnCallbacks,
                                 &m_VideoCallbacks, &m_AudioCallbacks,
                                 NULL, 0, NULL, 0);

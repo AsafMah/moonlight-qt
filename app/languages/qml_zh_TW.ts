@@ -4318,16 +4318,16 @@
         <translation>%1：主機支援情況未知</translation>
     </message>
     <message>
-        <source>On its last connection (%1), %2 didn&apos;t offer PyroWave. The host needs Foundation Sunshine with PyroWave enabled; until then, streams use H.264.</source>
-        <translation>上次連線（%1）時，%2 未提供 PyroWave。主機需要使用已啟用 PyroWave 的 Foundation Sunshine；在此之前，串流將使用 H.264。</translation>
+        <source>On its last connection (%1), %2 didn&apos;t offer PyroWave. The host needs Foundation Sunshine with PyroWave enabled; until then, streams use the codec Automatic picks.</source>
+        <translation>上次連線（%1）時，%2 未提供 PyroWave。主機需要使用已啟用 PyroWave 的 Foundation Sunshine；在此之前，串流將使用「自動」選擇的編解碼器。</translation>
     </message>
     <message>
         <source>%1 offered PyroWave on its last connection (%2).</source>
         <translation>%1 在上次連線（%2）時提供了 PyroWave。</translation>
     </message>
     <message>
-        <source>Host support is checked when a stream starts. If the host doesn&apos;t offer PyroWave, the stream uses H.264 and says so.</source>
-        <translation>開始串流時會檢查主機是否支援。若主機未提供 PyroWave，串流將改用 H.264 並顯示提示。</translation>
+        <source>Host support is checked when a stream starts. If the host doesn&apos;t offer PyroWave, the stream uses the codec Automatic picks and says so.</source>
+        <translation>開始串流時會檢查主機是否支援。若主機未提供 PyroWave，串流將改用「自動」選擇的編解碼器並顯示提示。</translation>
     </message>
     <message>
         <source>Checking GPU...</source>
@@ -4378,24 +4378,24 @@
         <translation>YUV 4:4:4：關閉</translation>
     </message>
     <message>
-        <source>The PyroWave stream contract covers 4:2:0 only, and its H.264 fallback streams 4:2:0 too. Your saved setting is kept.</source>
-        <translation>PyroWave 串流協定僅支援 4:2:0，改用的 H.264 串流同樣使用 4:2:0。已儲存的設定會保留。</translation>
+        <source>The PyroWave stream contract covers 4:2:0 only, and its fallback codec streams 4:2:0 too. Your saved setting is kept.</source>
+        <translation>PyroWave 串流協定僅支援 4:2:0，改用的編解碼器同樣使用 4:2:0。已儲存的設定會保留。</translation>
     </message>
     <message>
         <source>Video AI-Enhancement: not used</source>
         <translation>視訊 AI 增強：不使用</translation>
     </message>
     <message>
-        <source>It runs inside the D3D11 renderer, which PyroWave doesn&apos;t use. Your saved setting is kept and still applies to other codecs, including an H.264 fallback.</source>
-        <translation>此功能在 D3D11 轉譯器中執行，而 PyroWave 不使用該轉譯器。已儲存的設定會保留，並繼續套用於其他編解碼器（包括改用的 H.264）。</translation>
+        <source>It runs inside the D3D11 renderer, which PyroWave doesn&apos;t use. Your saved setting is kept and still applies to other codecs, including the fallback codec.</source>
+        <translation>此功能在 D3D11 轉譯器中執行，而 PyroWave 不使用該轉譯器。已儲存的設定會保留，並繼續套用於其他編解碼器（包括改用的編解碼器）。</translation>
     </message>
     <message>
         <source>Hardware or software decoding: not used</source>
         <translation>硬體或軟體解碼：不使用</translation>
     </message>
     <message>
-        <source>PyroWave always decodes on the GPU with Vulkan. Your saved setting is kept and still applies to other codecs, including an H.264 fallback.</source>
-        <translation>PyroWave 一律透過 Vulkan 在 GPU 上解碼。已儲存的設定會保留，並繼續套用於其他編解碼器（包括改用的 H.264）。</translation>
+        <source>PyroWave always decodes on the GPU with Vulkan. Your saved setting is kept and still applies to other codecs, including the fallback codec.</source>
+        <translation>PyroWave 一律透過 Vulkan 在 GPU 上解碼。已儲存的設定會保留，並繼續套用於其他編解碼器（包括改用的編解碼器）。</translation>
     </message>
     <message>
         <source>Run capability check</source>
@@ -4467,6 +4467,38 @@ Choose another video codec in Settings to stream.</source>
         <source>This PC can&apos;t show PyroWave in HDR: %1 Turn off HDR in Settings to stream with PyroWave in SDR.</source>
         <translation>此電腦無法以 HDR 顯示 PyroWave：%1 請在設定中關閉 HDR，以 SDR 使用 PyroWave 串流。</translation>
     </message>
+    <message>
+        <source>This build has no Vulkan renderer, which PyroWave needs.</source>
+        <translation>此版本沒有 PyroWave 所需的 Vulkan 轉譯器。</translation>
+    </message>
+    <message>
+        <source>setting up the decoder</source>
+        <translation>設定解碼器</translation>
+    </message>
+    <message>
+        <source>decoding</source>
+        <translation>解碼</translation>
+    </message>
+    <message>
+        <source>GPU synchronization</source>
+        <translation>GPU 同步</translation>
+    </message>
+    <message>
+        <source>checking the color format</source>
+        <translation>檢查色彩格式</translation>
+    </message>
+    <message>
+        <source>presenting frames</source>
+        <translation>呈現畫面</translation>
+    </message>
+    <message>
+        <source>The PyroWave stream stopped after %1 failures in a row while %2: %3
+
+Choose another video codec in Settings if this keeps happening.</source>
+        <translation>PyroWave 串流在%2時連續失敗 %1 次，已停止：%3
+
+若此問題持續發生，請在設定中選擇其他視訊編解碼器。</translation>
+    </message>
 </context>
 <context>
     <name>PyrowaveVulkanRenderer</name>
@@ -4509,6 +4541,106 @@ Choose another video codec in Settings to stream.</source>
     <message>
         <source>limited</source>
         <translation>有限</translation>
+    </message>
+    <message>
+        <source>The Vulkan loader on this PC is incomplete.</source>
+        <translation>此電腦上的 Vulkan 載入器不完整。</translation>
+    </message>
+    <message>
+        <source>No Vulkan GPU was found.</source>
+        <translation>找不到支援 Vulkan 的 GPU。</translation>
+    </message>
+    <message>
+        <source>a hardware GPU (this is a software renderer)</source>
+        <translation>硬體 GPU（這是軟體轉譯器）</translation>
+    </message>
+    <message>
+        <source>presentation to windows (VK_KHR_swapchain)</source>
+        <translation>向視窗呈現畫面（VK_KHR_swapchain）</translation>
+    </message>
+    <message>
+        <source>a graphics and compute queue that can draw to the stream window</source>
+        <translation>可繪製到串流視窗的圖形與運算佇列</translation>
+    </message>
+    <message>
+        <source>8-bit plane images that can be written and sampled</source>
+        <translation>可寫入與取樣的 8 位元平面影像</translation>
+    </message>
+    <message>
+        <source>%1 is missing the Vulkan feature %2.</source>
+        <translation>%1 缺少 Vulkan 功能 %2。</translation>
+    </message>
+    <message>
+        <source>%1 couldn&apos;t create a Vulkan device (VkResult %2).</source>
+        <translation>%1 無法建立 Vulkan 裝置（VkResult %2）。</translation>
+    </message>
+    <message>
+        <source>The Vulkan driver for %1 is incomplete.</source>
+        <translation>%1 的 Vulkan 驅動程式不完整。</translation>
+    </message>
+    <message>
+        <source>libplacebo couldn&apos;t use the Vulkan device on %1.</source>
+        <translation>libplacebo 無法使用 %1 上的 Vulkan 裝置。</translation>
+    </message>
+    <message>
+        <source>PyroWave couldn&apos;t use the Vulkan device on %1 (error %2).</source>
+        <translation>PyroWave 無法使用 %1 上的 Vulkan 裝置（錯誤 %2）。</translation>
+    </message>
+    <message>
+        <source>PyroWave couldn&apos;t select the graphics queue (error %1).</source>
+        <translation>PyroWave 無法選擇圖形佇列（錯誤 %1）。</translation>
+    </message>
+    <message>
+        <source>PyroWave couldn&apos;t create a %1x%2 decoder (error %3).</source>
+        <translation>PyroWave 無法建立 %1x%2 的解碼器（錯誤 %3）。</translation>
+    </message>
+    <message>
+        <source>%1 can&apos;t write 8-bit plane images the way PyroWave needs.</source>
+        <translation>%1 無法依 PyroWave 的需求寫入 8 位元平面影像。</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t allocate the %1x%2 video planes on the GPU.</source>
+        <translation>無法在 GPU 上配置 %1x%2 的視訊平面。</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t create the GPU synchronization objects.</source>
+        <translation>無法建立 GPU 同步物件。</translation>
+    </message>
+    <message>
+        <source>PyroWave couldn&apos;t decode a frame (error %1).</source>
+        <translation>PyroWave 無法解碼一個畫面（錯誤 %1）。</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t upload a decoded frame to the GPU.</source>
+        <translation>無法將解碼後的畫面上傳到 GPU。</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t create a swapchain for the stream window.</source>
+        <translation>無法為串流視窗建立交換鏈。</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t create the video renderer.</source>
+        <translation>無法建立視訊轉譯器。</translation>
+    </message>
+    <message>
+        <source>The host sent a PyroWave frame without color information.</source>
+        <translation>主機傳送的 PyroWave 畫面缺少色彩資訊。</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t hand the video planes to the PyroWave decoder.</source>
+        <translation>無法將視訊平面交給 PyroWave 解碼器。</translation>
+    </message>
+    <message>
+        <source>The GPU stopped responding.</source>
+        <translation>GPU 已停止回應。</translation>
+    </message>
+    <message>
+        <source>The PyroWave decoder rejected a frame.</source>
+        <translation>PyroWave 解碼器拒絕了一個畫面。</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t show a frame in the stream window.</source>
+        <translation>無法在串流視窗中顯示畫面。</translation>
     </message>
 </context>
 <context>
@@ -4657,12 +4789,67 @@ Choose another video codec in Settings to stream.</source>
         <source>This check only reads device properties. Starting a stream still checks the window, image formats, resolution and HDR on the GPU that will be used.</source>
         <translation>此檢測僅讀取裝置屬性。開始串流時仍會在實際使用的 GPU 上檢查視窗、影像格式、解析度與 HDR。</translation>
     </message>
+    <message>
+        <source>a hardware GPU (this is a software renderer)</source>
+        <translation>硬體 GPU（這是軟體轉譯器）</translation>
+    </message>
+    <message>
+        <source>Streams will use %1, which meets the basic requirements.</source>
+        <translation>串流將使用 %1，它符合基本需求。</translation>
+    </message>
+    <message>
+        <source>Streams will use this GPU.</source>
+        <translation>串流將使用此 GPU。</translation>
+    </message>
 </context>
 <context>
     <name>PyrowaveStatus</name>
     <message>
         <source>Checking Vulkan capabilities...</source>
         <translation>正在檢測 Vulkan 能力...</translation>
+    </message>
+    <message>
+        <source>%1x%2 at %3 FPS, %4</source>
+        <translation>%1x%2，%3 FPS，%4</translation>
+    </message>
+    <message>
+        <source>Last stream check (%1): passed on %2 with %3 decoding (%4).</source>
+        <translation>上次串流檢查（%1）：已在 %2 上通過，使用 %3 解碼（%4）。</translation>
+    </message>
+    <message>
+        <source>Last stream check (%1): failed on %2 (%3). %4</source>
+        <translation>上次串流檢查（%1）：在 %2 上失敗（%3）。%4</translation>
+    </message>
+    <message>
+        <source>Last stream check (%1): failed (%2). %3</source>
+        <translation>上次串流檢查（%1）：失敗（%2）。%3</translation>
+    </message>
+</context>
+<context>
+    <name>PyrowaveVulkanInstance</name>
+    <message>
+        <source>Vulkan isn&apos;t available for the stream window.</source>
+        <translation>串流視窗無法使用 Vulkan。</translation>
+    </message>
+    <message>
+        <source>The Vulkan loader on this PC supports Vulkan %1, but PyroWave needs Vulkan 1.3. Updating the graphics driver may help.</source>
+        <translation>此電腦上的 Vulkan 載入器支援 Vulkan %1，但 PyroWave 需要 Vulkan 1.3。更新顯示卡驅動程式可能會有幫助。</translation>
+    </message>
+    <message>
+        <source>The stream window can&apos;t be used with Vulkan.</source>
+        <translation>串流視窗無法搭配 Vulkan 使用。</translation>
+    </message>
+    <message>
+        <source>The Vulkan loader on this PC is incomplete.</source>
+        <translation>此電腦上的 Vulkan 載入器不完整。</translation>
+    </message>
+    <message>
+        <source>Vulkan couldn&apos;t start (VkResult %1).</source>
+        <translation>Vulkan 無法啟動（VkResult %1）。</translation>
+    </message>
+    <message>
+        <source>Vulkan can&apos;t draw to the stream window.</source>
+        <translation>Vulkan 無法繪製到串流視窗。</translation>
     </message>
 </context>
 </TS>

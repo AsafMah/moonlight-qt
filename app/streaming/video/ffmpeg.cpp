@@ -4,7 +4,6 @@
 #include "utils.h"
 #include "streaming/session.h"
 #include "streaming/stats/videostatsbridge.h"
-#include "streaming/stats/statsmath.h"
 
 #include <cmath>
 
@@ -1041,15 +1040,8 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS &stats, char *output, i
     if (stats.renderedFrames != 0 && Session::get() != nullptr) {
         const StatsSnapshot snapshot =
             Session::get()->getStatsModel().snapshot(LiGetMicroseconds());
-        const FrameTimeSummary& lows =
-            &stats == &m_GlobalVideoStats ? snapshot.sessionFrameTimes : snapshot.frameTimes;
-        const LatencyBreakdown latency =
-            StatsMath::estimateLatency(VideoStatsBridge::toStatsWindow(stats));
-        ret = snprintf(&output[offset], length - offset,
-                       "\n {18}1%% Low **%.1f** · 0.1%% Low **%.1f** {16}|  {18}"
-                       "Jitter **%.2f**ms {16}|  {18}Latency ~**%.1f**ms ",
-                       lows.onePercentLowFps, lows.pointOnePercentLowFps, snapshot.jitterMs,
-                       latency.totalMs());
+        ret = VideoStatsBridge::formatOverlayLows(snapshot, stats, &stats == &m_GlobalVideoStats,
+                                                  &output[offset], length - offset);
         if (ret < 0 || ret >= length - offset) {
             SDL_assert(false);
             return;

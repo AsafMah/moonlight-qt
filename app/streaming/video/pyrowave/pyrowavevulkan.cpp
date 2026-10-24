@@ -387,8 +387,24 @@ bool PyrowaveVulkanRenderer::initialize(const PyrowavePresentParams& params,
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                 "PyroWave renderer ready on '%s' (%dx%d, %s, %s range, %s path)",
                 m_DeviceName.c_str(), m_Params.width, m_Params.height, m_Contract.signalName(),
-                m_Params.fullRange ? "full" : "limited", m_FragmentPath ? "fragment" : "compute");
+                m_Params.fullRange ? "full" : "limited",
+                m_CpuStaging     ? "CPU staging"
+                : m_FragmentPath ? "fragment"
+                                 : "compute");
     return true;
+}
+
+QString PyrowaveVulkanRenderer::decodePathName() const
+{
+    if (m_CpuStaging) {
+        return QStringLiteral("CPU staging");
+    }
+    return m_FragmentPath ? QStringLiteral("Vulkan fragment") : QStringLiteral("Vulkan compute");
+}
+
+QString PyrowaveVulkanRenderer::decoderDescription() const
+{
+    return QStringLiteral("PyroWave (%1)").arg(decodePathName());
 }
 
 #define PYROWAVE_LOAD_INSTANCE_FN(member, name)                                                    \
@@ -420,6 +436,8 @@ bool PyrowaveVulkanRenderer::loadEntryPoints(PyrowaveFailure& failure)
         runtime.entryPoint<PFN_pyrowave_decoder_decode_is_ready>(EntryPoint::DecoderDecodeIsReady);
     m_PwDecodeGpu = runtime.entryPoint<PFN_pyrowave_decoder_decode_gpu_buffer>(
         EntryPoint::DecoderDecodeGpuBuffer);
+    m_PwDecodeCpu = runtime.entryPoint<PFN_pyrowave_decoder_decode_cpu_buffer_synchronous>(
+        EntryPoint::DecoderDecodeCpuBufferSynchronous);
     m_PwGetColorMetadata = runtime.entryPoint<PFN_pyrowave_decoder_get_color_metadata>(
         EntryPoint::DecoderGetColorMetadata);
     m_PwDestroyDecoder =
@@ -528,8 +546,12 @@ bool PyrowaveVulkanRenderer::createDevice(PyrowaveFailure& failure)
                                                  VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
             const VkFormatFeatureFlags writable =
                 VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+            // SDR planes PyroWave can't write are staged through host memory
+            // and uploaded instead (see createPlanes()).
+            const bool stageable = !m_Contract.isHdr() && (format.optimalTilingFeatures &
+                                                           VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0;
             if ((format.optimalTilingFeatures & sampled) != sampled ||
-                (format.optimalTilingFeatures & writable) == 0) {
+                ((format.optimalTilingFeatures & writable) == 0 && !stageable)) {
                 missing.append(m_PlaneEncoding.sixteenBit
                                    ? tr("16-bit plane images that can be written and sampled")
                                    : tr("8-bit plane images that can be written and sampled"));
@@ -917,7 +939,21 @@ bool PyrowaveVulkanRenderer::createPlanes(PyrowaveFailure& failure)
                                                   : VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
     VkFormatProperties format = {};
     m_GetFormatProperties(m_PhysicalDevice, m_PlaneFormat, &format);
-    if ((format.optimalTilingFeatures & writeFeature) == 0) {
+    const bool cannotWrite = (format.optimalTilingFeatures & writeFeature) == 0;
+
+    // SDR falls back to decoding into host memory and uploading the planes,
+    // at the cost of a GPU round trip per frame. PYROWAVE_CPU_STAGING=1 forces
+    // it to test the path. HDR has no such fallback.
+    const bool forceStaging = qgetenv("PYROWAVE_CPU_STAGING") == "1";
+    if (!m_Contract.isHdr() && (cannotWrite || forceStaging)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "PyroWave: staging SDR frames through host memory (%s)",
+                    cannotWrite ? "the GPU can't write the planes" : "PYROWAVE_CPU_STAGING=1");
+        m_CpuStaging = true;
+        return createStagingPlanes(failure);
+    }
+
+    if (cannotWrite) {
         failure.reason = (m_PlaneEncoding.sixteenBit
                               ? tr("%1 can't write 16-bit plane images the way PyroWave needs.")
                               : tr("%1 can't write 8-bit plane images the way PyroWave needs."))
@@ -954,6 +990,86 @@ bool PyrowaveVulkanRenderer::createPlanes(PyrowaveFailure& failure)
     return true;
 }
 
+bool PyrowaveVulkanRenderer::createStagingPlanes(PyrowaveFailure& failure)
+{
+    pl_gpu gpu = m_Vulkan->gpu;
+    pl_fmt format = pl_find_named_fmt(gpu, "r8");
+    if (format == nullptr || !(format->caps & PL_FMT_CAP_SAMPLEABLE)) {
+        failure.reason = tr("%1 can't write 8-bit plane images the way PyroWave needs.")
+                             .arg(QString::fromStdString(m_DeviceName));
+        return false;
+    }
+
+    const uint32_t width = static_cast<uint32_t>(m_Params.width);
+    const uint32_t height = static_cast<uint32_t>(m_Params.height);
+    for (int i = 0; i < 3; i++) {
+        Plane& plane = m_Planes[i];
+        // 4:2:0: chroma planes are half size in both directions.
+        plane.width = i == 0 ? width : width / 2;
+        plane.height = i == 0 ? height : height / 2;
+
+        pl_tex_params params = {};
+        params.w = static_cast<int>(plane.width);
+        params.h = static_cast<int>(plane.height);
+        params.format = format;
+        params.sampleable = true;
+        params.host_writable = true;
+        params.debug_tag = PL_DEBUG_TAG;
+        plane.tex = pl_tex_create(gpu, &params);
+        if (plane.tex == nullptr) {
+            failure.reason = tr("Couldn't allocate the %1x%2 video planes on the GPU.")
+                                 .arg(m_Params.width)
+                                 .arg(m_Params.height);
+            return false;
+        }
+
+        m_StagingPlanes[i].resize((size_t)plane.width * plane.height);
+    }
+
+    return true;
+}
+
+bool PyrowaveVulkanRenderer::decodeThroughCpu(PyrowaveFailure& failure)
+{
+    // Tightly packed 8-bit planes, the decoder's native 4:2:0 layout
+    pyrowave_cpu_buffer buffer = {};
+    for (int i = 0; i < 3; i++) {
+        buffer.data[i] = m_StagingPlanes[i].data();
+        buffer.row_stride_in_bytes[i] = m_Planes[i].width;
+        buffer.plane_size_in_bytes[i] = m_StagingPlanes[i].size();
+    }
+    buffer.width = m_Params.width;
+    buffer.height = m_Params.height;
+    buffer.format = PYROWAVE_CPU_BUFFER_FORMAT_YUV420P;
+
+    // Decodes on the GPU and waits for the planes to be read back.
+    const pyrowave_result result = m_PwDecodeCpu(m_Decoder, &buffer);
+    if (result != PYROWAVE_SUCCESS) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "pyrowave_decoder_decode_cpu_buffer_synchronous() failed: %d", result);
+        failure.stage = PyrowaveStage::Decode;
+        failure.reason = tr("PyroWave couldn't decode a frame (error %1).").arg(result);
+        return false;
+    }
+
+    // Without a callback, libplacebo copies the data before returning, so
+    // the staging planes can be reused for the next frame right away.
+    for (int i = 0; i < 3; i++) {
+        pl_tex_transfer_params transfer = {};
+        transfer.tex = m_Planes[i].tex;
+        transfer.row_pitch = m_Planes[i].width;
+        transfer.ptr = m_StagingPlanes[i].data();
+        if (!pl_tex_upload(m_Vulkan->gpu, &transfer)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "pl_tex_upload() failed");
+            failure.stage = PyrowaveStage::Sync;
+            failure.reason = tr("Couldn't upload a decoded frame to the GPU.");
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool PyrowaveVulkanRenderer::createPresentation(PyrowaveFailure& failure)
 {
     const VkSurfaceKHR surface = m_Instance.surface();
@@ -972,9 +1088,11 @@ bool PyrowaveVulkanRenderer::createPresentation(PyrowaveFailure& failure)
         });
 
     // Double-buffered for the lowest display latency, like PlVkRenderer.
-    // TODO(PW-4): PlVkRenderer's switch to triple buffering after delayed
-    // presents, and frame pacing.
-    m_Swapchain = PlVkShared::createSwapchain(m_Vulkan, surface, m_PresentMode, 1);
+    // submitFrame() switches to triple buffering after delayed presents.
+    m_SwapchainDepth = PyrowavePacing::SwapchainDepth();
+    m_SwapchainDepth.configure(m_Params.frameRate, m_Params.displayFps);
+    m_Swapchain =
+        PlVkShared::createSwapchain(m_Vulkan, surface, m_PresentMode, m_SwapchainDepth.depth());
     if (m_Swapchain == nullptr) {
         failure.reason = tr("Couldn't create a swapchain for the stream window.");
         return false;
@@ -1066,6 +1184,10 @@ bool PyrowaveVulkanRenderer::checkColorMetadata(PyrowaveFailure& failure)
 
 bool PyrowaveVulkanRenderer::decodeToPlanes(PyrowaveFailure& failure)
 {
+    if (m_CpuStaging) {
+        return decodeThroughCpu(failure);
+    }
+
     pl_gpu gpu = m_Vulkan->gpu;
 
     // Take the planes from libplacebo. Each hold transitions its plane to
@@ -1214,8 +1336,41 @@ PyrowaveVulkanRenderer::submitFrame(const uint8_t* data, size_t length,
     }
     if (result == FrameResult::Failed) {
         failure = presentFailure;
+        return result;
+    }
+
+    // Acquire, render and submit together: PyroWave presents on the thread
+    // that decodes, so a present that keeps waiting delays every frame.
+    if (result == FrameResult::Presented && m_SwapchainDepth.recordPresent(timings.renderUs) &&
+        !switchToTripleBuffering(failure)) {
+        return FrameResult::Failed;
     }
     return result;
+}
+
+bool PyrowaveVulkanRenderer::switchToTripleBuffering(PyrowaveFailure& failure)
+{
+    // Like PlVkRenderer with PLVK_USE_DYNAMIC_SWAPCHAIN_DEPTH, but on every
+    // platform: here a late present holds up the next decode too.
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "PyroWave: switching to a triple-buffered swapchain after delayed presents");
+    {
+        // Hold DRM master in case the Vulkan implementation wants to restore DRM state
+        DrmMasterLocker locker;
+        pl_swapchain_destroy(&m_Swapchain);
+    }
+
+    m_Swapchain = PlVkShared::createSwapchain(m_Vulkan, m_Instance.surface(), m_PresentMode,
+                                              m_SwapchainDepth.depth());
+    if (m_Swapchain == nullptr) {
+        failure.stage = PyrowaveStage::Present;
+        failure.reason = tr("Couldn't create a swapchain for the stream window.");
+        return false;
+    }
+
+    // The new swapchain starts without the stream's color space
+    hintSwapchainColorspace();
+    return true;
 }
 
 PyrowaveVulkanRenderer::FrameResult
@@ -1392,6 +1547,10 @@ void PyrowaveVulkanRenderer::destroy()
     m_PlaneSemaphore = VK_NULL_HANDLE;
     m_PlaneTimeline = 0;
     m_HasDecodedFrame = false;
+    m_CpuStaging = false;
+    for (std::vector<uint8_t>& staging : m_StagingPlanes) {
+        staging.clear();
+    }
     m_Setup.reset();
 }
 

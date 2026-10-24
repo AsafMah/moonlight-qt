@@ -41,6 +41,12 @@ public:
     Q_PROPERTY(int lastHostOffer READ lastHostOffer NOTIFY hostStatusChanged)
     Q_PROPERTY(QString lastHostSeen READ lastHostSeen NOTIFY hostStatusChanged)
 
+    // The last stream's preflight: which GPU and decode path it used, or why
+    // PyroWave couldn't start. Refreshed with the host status.
+    Q_PROPERTY(bool hasLastPreflight READ hasLastPreflight NOTIFY hostStatusChanged)
+    Q_PROPERTY(bool lastPreflightOk READ lastPreflightOk NOTIFY hostStatusChanged)
+    Q_PROPERTY(QString lastPreflightText READ lastPreflightText NOTIFY hostStatusChanged)
+
     Q_PROPERTY(int gpuCheckState READ gpuCheckState NOTIFY gpuCheckChanged)
     Q_PROPERTY(QString gpuCheckSummary READ gpuCheckSummary NOTIFY gpuCheckChanged)
     Q_PROPERTY(QString capabilityReport READ capabilityReport NOTIFY gpuCheckChanged)
@@ -61,6 +67,10 @@ public:
     int lastHostOffer() const { return m_LastHostOffer; }
     QString lastHostSeen() const { return m_LastHostSeen; }
 
+    bool hasLastPreflight() const { return m_HasLastPreflight; }
+    bool lastPreflightOk() const { return m_LastPreflightOk; }
+    QString lastPreflightText() const { return m_LastPreflightText; }
+
     int gpuCheckState() const { return m_GpuCheckState; }
     QString gpuCheckSummary() const { return m_GpuCheckSummary; }
     QString capabilityReport() const { return m_CapabilityReport; }
@@ -68,7 +78,8 @@ public:
     int lowBitrateThresholdKbps() const { return 150000; }
     int recommendedBitrateKbps() const { return 400000; }
 
-    // Re-reads the stored host status (a stream may have updated it).
+    // Re-reads the stored host status and the last preflight (a stream may
+    // have updated them).
     Q_INVOKABLE void refreshHostStatus();
 
     // Runs the read-only Vulkan capability check on a worker thread. Results
@@ -90,6 +101,10 @@ private:
     QString m_LastHostName;
     int m_LastHostOffer;
     QString m_LastHostSeen;
+
+    bool m_HasLastPreflight;
+    bool m_LastPreflightOk;
+    QString m_LastPreflightText;
 
     int m_GpuCheckState;
     QString m_GpuCheckSummary;

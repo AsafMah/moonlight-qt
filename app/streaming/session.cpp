@@ -1309,7 +1309,7 @@ bool Session::populateDecoderProperties(SDL_Window* window)
 
     m_VideoCallbacks.capabilities = decoder->getDecoderCapabilities();
     if (m_PyrowaveRequested) {
-        // One capability set covers both PyroWave and its H.264 fallback.
+        // One capability set covers both PyroWave and its fallback codec.
         m_VideoCallbacks.capabilities =
             PyrowaveVideoDecoder::advertisedCapabilities(m_VideoCallbacks.capabilities);
     }
@@ -1894,16 +1894,15 @@ bool Session::initialize(QQuickWindow* qtWindow)
         }
     }
 
+    // YUV 4:4:4 is locked off while PyroWave is selected, for its fallback too.
+    const bool enableYUV444 = m_Preferences->enableYUV444 && !m_PyrowaveRequested;
+
     switch (m_Preferences->videoCodecConfig)
     {
     case StreamingPreferences::VCC_FORCE_PYROWAVE:
-        if (m_PyrowaveRequested) {
-            // moonlight-common-c falls back to H.264 if the host doesn't
-            // negotiate PyroWave (client contract, section 1). YUV 4:4:4 is
-            // locked off while PyroWave is selected.
-            m_SupportedVideoFormats.removeByMask(~VIDEO_FORMAT_H264);
-            break;
-        }
+        // moonlight-common-c falls back to the formats chosen here if the host
+        // doesn't negotiate PyroWave (client contract, section 1), so they are
+        // what Automatic would pick, in 4:2:0.
         [[fallthrough]];
     case StreamingPreferences::VCC_AUTO:
     {
@@ -1913,25 +1912,22 @@ bool Session::initialize(QQuickWindow* qtWindow)
         // H.264 is already the lowest priority codec, so we don't need to do
         // any probing for deprioritization for it here.
 
-        auto hevcDA = getDecoderAvailability(testWindow,
-                                             m_Preferences->videoDecoderSelection,
-                                             m_Preferences->enableYUV444 ?
-                                                 (m_Preferences->enableHdr ? VIDEO_FORMAT_H265_REXT10_444 : VIDEO_FORMAT_H265_REXT8_444) :
-                                                 (m_Preferences->enableHdr ? VIDEO_FORMAT_H265_MAIN10 : VIDEO_FORMAT_H265),
-                                             m_StreamConfig.width,
-                                             m_StreamConfig.height,
-                                             m_StreamConfig.fps);
+        auto hevcDA = getDecoderAvailability(
+            testWindow, m_Preferences->videoDecoderSelection,
+            enableYUV444
+                ? (m_Preferences->enableHdr ? VIDEO_FORMAT_H265_REXT10_444
+                                            : VIDEO_FORMAT_H265_REXT8_444)
+                : (m_Preferences->enableHdr ? VIDEO_FORMAT_H265_MAIN10 : VIDEO_FORMAT_H265),
+            m_StreamConfig.width, m_StreamConfig.height, m_StreamConfig.fps);
         if (hevcDA == DecoderAvailability::None && m_Preferences->enableHdr) {
             // Remove all 10-bit HEVC profiles
             m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_H265 & VIDEO_FORMAT_MASK_10BIT);
 
             // Check if we have 10-bit AV1 support
-            auto av1DA = getDecoderAvailability(testWindow,
-                                                m_Preferences->videoDecoderSelection,
-                                                m_Preferences->enableYUV444 ? VIDEO_FORMAT_AV1_HIGH10_444 : VIDEO_FORMAT_AV1_MAIN10,
-                                                m_StreamConfig.width,
-                                                m_StreamConfig.height,
-                                                m_StreamConfig.fps);
+            auto av1DA = getDecoderAvailability(
+                testWindow, m_Preferences->videoDecoderSelection,
+                enableYUV444 ? VIDEO_FORMAT_AV1_HIGH10_444 : VIDEO_FORMAT_AV1_MAIN10,
+                m_StreamConfig.width, m_StreamConfig.height, m_StreamConfig.fps);
             if (av1DA == DecoderAvailability::None) {
                 // Remove all 10-bit AV1 profiles
                 m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_AV1 & VIDEO_FORMAT_MASK_10BIT);
@@ -1939,12 +1935,10 @@ bool Session::initialize(QQuickWindow* qtWindow)
                 // There are no available 10-bit profiles, so reprobe for 8-bit HEVC
                 // and we'll proceed as normal for an SDR streaming scenario.
                 SDL_assert(!(m_SupportedVideoFormats & VIDEO_FORMAT_MASK_10BIT));
-                hevcDA = getDecoderAvailability(testWindow,
-                                                m_Preferences->videoDecoderSelection,
-                                                m_Preferences->enableYUV444 ? VIDEO_FORMAT_H265_REXT8_444 : VIDEO_FORMAT_H265,
-                                                m_StreamConfig.width,
-                                                m_StreamConfig.height,
-                                                m_StreamConfig.fps);
+                hevcDA = getDecoderAvailability(
+                    testWindow, m_Preferences->videoDecoderSelection,
+                    enableYUV444 ? VIDEO_FORMAT_H265_REXT8_444 : VIDEO_FORMAT_H265,
+                    m_StreamConfig.width, m_StreamConfig.height, m_StreamConfig.fps);
             }
         }
 
@@ -1983,13 +1977,11 @@ bool Session::initialize(QQuickWindow* qtWindow)
 #endif
             ) {
             m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
-        }
-        else if (!m_Preferences->enableHdr &&
-                   getDecoderAvailability(testWindow,
-                                          m_Preferences->videoDecoderSelection,
-                                          m_Preferences->enableYUV444 ? VIDEO_FORMAT_AV1_HIGH8_444 : VIDEO_FORMAT_AV1_MAIN8,
-                                          m_StreamConfig.width,
-                                          m_StreamConfig.height,
+        } else if (!m_Preferences->enableHdr &&
+                   getDecoderAvailability(testWindow, m_Preferences->videoDecoderSelection,
+                                          enableYUV444 ? VIDEO_FORMAT_AV1_HIGH8_444
+                                                       : VIDEO_FORMAT_AV1_MAIN8,
+                                          m_StreamConfig.width, m_StreamConfig.height,
                                           m_StreamConfig.fps) != DecoderAvailability::Hardware) {
             m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
         }
@@ -2033,10 +2025,9 @@ bool Session::initialize(QQuickWindow* qtWindow)
     // if we can avoid it.
 
     // Mask off YUV 4:4:4 codecs if the option is not enabled
-    if (!m_Preferences->enableYUV444) {
+    if (!enableYUV444) {
         m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_YUV444);
-    }
-    else {
+    } else {
         // Deprioritize YUV 4:2:0 codecs if the user wants YUV 4:4:4
         //
         // NB: Since this happens first before deprioritizing HDR, we will
@@ -2240,8 +2231,14 @@ bool Session::validateLaunch(SDL_Window* testWindow)
         }
     }
 
-    // PyroWave negotiates HDR itself; its H.264 fallback streams SDR.
-    if (m_Preferences->enableHdr && !m_PyrowaveRequested) {
+    // PyroWave negotiates HDR itself. Its fallback quietly loses the 10-bit
+    // formats the host can't encode; the warnings below would be about a
+    // codec that may never be used.
+    if (m_Preferences->enableHdr && m_PyrowaveRequested) {
+        m_SupportedVideoFormats.removeByMask(
+            VIDEO_FORMAT_MASK_10BIT &
+            ~m_SupportedVideoFormats.maskByServerCodecModes(m_Computer->serverCodecModeSupport));
+    } else if (m_Preferences->enableHdr) {
         if (m_Preferences->videoCodecConfig == StreamingPreferences::VCC_FORCE_H264) {
             emitLaunchWarning(tr("HDR is not supported using the H.264 codec."));
             m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_10BIT);

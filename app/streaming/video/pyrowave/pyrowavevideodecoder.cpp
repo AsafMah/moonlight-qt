@@ -1,8 +1,11 @@
 #include "pyrowavevideodecoder.h"
+#include "pyrowavepreflightstore.h"
 #include "pyrowaveruntime.h"
 #include "pyrowavevulkan.h"
 
 #include "streaming/session.h"
+#include "streaming/stats/videostatsbridge.h"
+#include "streaming/streamutils.h"
 
 #include <QSize>
 
@@ -34,6 +37,12 @@ uint16_t hostProcessingLatency(const uint8_t* metadata, size_t length)
     return 0;
 }
 
+// Dynamic range label for the overlay and the stats model's codec name
+const char* dynamicRangeLabel(int hdrMode)
+{
+    return hdrMode == 2 ? "HLG" : hdrMode == 1 ? "HDR10" : "SDR";
+}
+
 void appendFormatted(char* output, int length, int& offset, const char* format, ...)
 {
     if (offset >= length) {
@@ -49,8 +58,8 @@ void appendFormatted(char* output, int length, int& offset, const char* format, 
     }
 }
 
-// The same accumulation as FFmpegVideoDecoder::addVideoStats().
-// TODO(PW-4): share it (and the stats text) with the stats overlay work.
+// The same accumulation as FFmpegVideoDecoder::addVideoStats(), which stays
+// as upstream wrote it so merges from there stay clean.
 void addVideoStats(const VIDEO_STATS& src, VIDEO_STATS& dst)
 {
     dst.receivedFrames += src.receivedFrames;
@@ -103,6 +112,23 @@ PyrowaveVideoDecoder::PyrowaveVideoDecoder(bool testOnly, const PyrowaveSessionC
 
 PyrowavePreflightResult PyrowaveVideoDecoder::preflight(const PyrowavePreflightRequest& request)
 {
+    const PyrowavePreflightResult result = runPreflight(request);
+
+    PyrowavePreflightStore::Entry entry;
+    entry.ok = result.ok;
+    entry.gpu = result.deviceName;
+    entry.decodePath = result.decodePath;
+    entry.reason = result.reason;
+    entry.width = request.width;
+    entry.height = request.height;
+    entry.frameRate = request.frameRate;
+    entry.hdrMode = request.hdrMode;
+    PyrowavePreflightStore::record(entry);
+    return result;
+}
+
+PyrowavePreflightResult PyrowaveVideoDecoder::runPreflight(const PyrowavePreflightRequest& request)
+{
     PyrowavePreflightResult result;
     result.ok = false;
 
@@ -152,6 +178,7 @@ PyrowavePreflightResult PyrowaveVideoDecoder::preflight(const PyrowavePreflightR
     params.hdrMode = request.hdrMode;
     if (!renderer.initialize(params, failure)) {
         result.reason = failure.reason;
+        result.deviceName = QString::fromStdString(renderer.deviceName());
 
         // Say so when only HDR is the problem. The same GPU and window are
         // tried in SDR just to tell, never to stream SDR instead.
@@ -169,10 +196,13 @@ PyrowavePreflightResult PyrowaveVideoDecoder::preflight(const PyrowavePreflightR
         return result;
     }
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave preflight passed on '%s' (%dx%d, %s)",
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave preflight passed on '%s' (%dx%d, %s, %s)",
                 renderer.deviceName().c_str(), request.width, request.height,
-                PyrowaveColor::Contract(request.hdrMode, false).signalName());
+                PyrowaveColor::Contract(request.hdrMode, false).signalName(),
+                qUtf8Printable(renderer.decodePathName()));
     result.ok = true;
+    result.deviceName = QString::fromStdString(renderer.deviceName());
+    result.decodePath = renderer.decodePathName();
     return result;
 #endif
 }
@@ -184,7 +214,7 @@ int PyrowaveVideoDecoder::advertisedVideoFormats(int supportedVideoFormats)
     }
 
     // moonlight-common-c tries PyroWave first and falls back to the legacy
-    // formats in supportedVideoFormats (H.264 for PyroWave sessions).
+    // formats in supportedVideoFormats (what Automatic would pick, in 4:2:0).
     return supportedVideoFormats | VIDEO_FORMAT_PYROWAVE;
 }
 
@@ -205,9 +235,9 @@ PyrowaveHostOffer PyrowaveVideoDecoder::hostOfferFromConnection(int negotiatedVi
         return PyrowaveHostOffer::Offered;
     }
 
-    // moonlight-common-c parses x-ss-pyrowave.* from DESCRIBE but doesn't
-    // expose the result yet. Once it provides this query (proposed name), the
-    // settings page learns about hosts even when PyroWave wasn't requested.
+    // The host's DESCRIBE offer, reported even when another codec was
+    // negotiated, so the settings page learns about hosts even when PyroWave
+    // wasn't requested. Older moonlight-common-c builds lack the query.
 #ifdef LI_PYROWAVE_HAS_HOST_CAPABILITIES_QUERY
     LI_PYROWAVE_CAPABILITIES hostCapabilities;
     if (LiGetHostPyrowaveCapabilities(&hostCapabilities)) {
@@ -295,7 +325,7 @@ PyrowaveVideoDecoder::~PyrowaveVideoDecoder()
 #endif
 
     if (!m_TestOnly && m_GlobalVideoStats.renderedFrames != 0) {
-        char statsText[512];
+        char statsText[1024];
         stringifyVideoStats(m_GlobalVideoStats, statsText, sizeof(statsText));
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Global video stats");
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -313,8 +343,30 @@ bool PyrowaveVideoDecoder::initialize(PDECODER_PARAMETERS params)
 #else
     m_Width = params->width;
     m_Height = params->height;
+    m_StreamFps = params->frameRate;
+    m_Window = params->window;
     m_EnableVsync = params->enableVsync;
     m_IgnoreAspectRatio = params->ignoreAspectRatio;
+
+    // enableFramePacing is only set with V-Sync on
+    m_EnableFramePacing = params->enableFramePacing;
+    m_DisplayFps = StreamUtils::getDisplayRefreshRate(params->window);
+    m_PacerDisplayFps = m_DisplayFps;
+    m_FramePacer.configure(m_EnableFramePacing, m_StreamFps, m_PacerDisplayFps);
+    // VRR turns V-Sync and frame pacing off (see VrrPolicy::decide()), so the
+    // swapchain presents without waiting; only the cap is left to apply here
+    m_VrrLimiter =
+        VrrPolicy::FrameLimiter(params->enableVrr ? VrrPolicy::frameCapFps(m_DisplayFps) : 0);
+    if (params->enableVrr) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "PyroWave VRR mode: presenting on arrival, capped at %d FPS",
+                    VrrPolicy::frameCapFps(m_DisplayFps));
+    }
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave pacing: %d FPS stream, %d Hz display, %s",
+                m_StreamFps, m_PacerDisplayFps,
+                m_FramePacer.isDecimating() ? "presenting an even share of frames"
+                : m_EnableFramePacing       ? "every frame"
+                                            : "frame pacing off");
 
     // preflight() refused anything else, so this can't happen.
     if (!PyrowaveColor::Contract(m_Contract.hdrMode, false).isValid()) {
@@ -381,6 +433,8 @@ bool PyrowaveVideoDecoder::createRenderer(PyrowaveFailure& failure)
     params.hdrMode = m_Contract.hdrMode;
     params.enableVsync = m_EnableVsync;
     params.ignoreAspectRatio = m_IgnoreAspectRatio;
+    params.frameRate = m_StreamFps;
+    params.displayFps = m_DisplayFps;
 
     auto renderer = std::make_unique<PyrowaveVulkanRenderer>(*m_Instance);
     {
@@ -397,6 +451,9 @@ bool PyrowaveVideoDecoder::createRenderer(PyrowaveFailure& failure)
     if (m_Contract.hdrMode != 0) {
         m_HdrVerified = true;
     }
+    m_DecoderName = renderer->decoderDescription();
+    m_RendererName = QStringLiteral("libplacebo Vulkan (%1)")
+                         .arg(QString::fromStdString(renderer->deviceName()));
     m_Renderer = std::move(renderer);
     return true;
 }
@@ -465,12 +522,18 @@ void PyrowaveVideoDecoder::accountReceivedFrame(PDECODE_UNIT du)
 
     // Flip stats windows roughly every second
     if (LiGetMicroseconds() > m_ActiveWndVideoStats.measurementStartUs + 1000000) {
+        VIDEO_STATS lastTwoWndStats = {};
+        addVideoStats(m_LastWndVideoStats, lastTwoWndStats);
+        addVideoStats(m_ActiveWndVideoStats, lastTwoWndStats);
+
+        // Publish to the stats model first, since the overlay text reads it
+        // back, as FFmpegVideoDecoder does.
+        m_BandwidthMbps =
+            m_BandwidthMeter.update(LiGetRTPVideoBytesReceived(), LiGetMicroseconds());
+        publishStatsWindow(lastTwoWndStats, m_ActiveWndVideoStats);
+
         Overlay::OverlayManager& overlays = Session::get()->getOverlayManager();
         if (overlays.isOverlayEnabled(Overlay::OverlayDebug)) {
-            VIDEO_STATS lastTwoWndStats = {};
-            addVideoStats(m_LastWndVideoStats, lastTwoWndStats);
-            addVideoStats(m_ActiveWndVideoStats, lastTwoWndStats);
-
             stringifyVideoStats(lastTwoWndStats, overlays.getOverlayText(Overlay::OverlayDebug),
                                 overlays.getOverlayMaxTextLength());
             overlays.setOverlayTextUpdated(Overlay::OverlayDebug);
@@ -501,6 +564,28 @@ void PyrowaveVideoDecoder::accountReceivedFrame(PDECODE_UNIT du)
     m_ActiveWndVideoStats.receivedFrames++;
     m_ActiveWndVideoStats.totalFrames++;
     m_ActiveWndVideoStats.totalReassemblyTimeUs += (du->enqueueTimeUs - du->receiveTimeUs);
+
+    Session::get()->getStatsModel().recordFrameArrival(du->receiveTimeUs, du->rtpTimestamp);
+}
+
+void PyrowaveVideoDecoder::publishStatsWindow(const VIDEO_STATS& recent,
+                                              const VIDEO_STATS& completed)
+{
+    StatsWindow window = VideoStatsBridge::toStatsWindow(recent);
+
+    window.width = m_Width;
+    window.height = m_Height;
+    window.targetFps = m_StreamFps;
+    window.codec =
+        QStringLiteral("PyroWave %1").arg(QLatin1String(dynamicRangeLabel(m_Contract.hdrMode)));
+    window.decoder = m_DecoderName;
+    window.renderer = m_RendererName;
+    window.hardwareDecode = true;
+    window.bitrateMbps = m_BandwidthMbps;
+    VideoStatsBridge::readRtpCounters(window);
+
+    Session::get()->getStatsModel().publishWindow(
+        window, VideoStatsBridge::toStatsWindow(completed), LiGetMicroseconds());
 }
 
 int PyrowaveVideoDecoder::processFrame(PDECODE_UNIT du)
@@ -523,6 +608,27 @@ int PyrowaveVideoDecoder::processFrame(PDECODE_UNIT du)
     if (LiGetPendingVideoFrames() > 0) {
         m_ActiveWndVideoStats.pacerDroppedFrames++;
         return DR_OK;
+    }
+
+    // Frame pacing follows the display the window is on now.
+    const int displayFps = m_DisplayFps;
+    if (displayFps != m_PacerDisplayFps) {
+        m_PacerDisplayFps = displayFps;
+        m_FramePacer.configure(m_EnableFramePacing, m_StreamFps, displayFps);
+    }
+    if (!m_FramePacer.shouldPresent()) {
+        m_ActiveWndVideoStats.pacerDroppedFrames++;
+        return DR_OK;
+    }
+
+    // VRR: wait for the present-rate cap. A newer frame arriving meanwhile
+    // replaces this one, as above.
+    if (const uint64_t waitUs = m_VrrLimiter.waitUs(LiGetMicroseconds()); waitUs > 0) {
+        SDL_Delay((Uint32)((waitUs + 999) / 1000));
+        if (LiGetPendingVideoFrames() > 0) {
+            m_ActiveWndVideoStats.pacerDroppedFrames++;
+            return DR_OK;
+        }
     }
 
     // The decoder takes the payload in one piece.
@@ -573,6 +679,10 @@ int PyrowaveVideoDecoder::processFrame(PDECODE_UNIT du)
 
     switch (result) {
     case PyrowaveVulkanRenderer::FrameResult::Presented:
+        // Present times feed the frame time percentiles (1% and 0.1% lows)
+        Session::get()->getStatsModel().recordFramePresented(LiGetMicroseconds());
+        m_VrrLimiter.onPresented(LiGetMicroseconds());
+
         // Only a decoded and presented frame clears the failure count.
         m_ConsecutiveFailures = 0;
         m_ActiveWndVideoStats.decodedFrames++;
@@ -657,6 +767,10 @@ void PyrowaveVideoDecoder::notifyOverlayUpdated(Overlay::OverlayType type)
 
 bool PyrowaveVideoDecoder::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info)
 {
+    if ((info->stateChangeFlags & WINDOW_STATE_CHANGE_DISPLAY) && m_Window != nullptr) {
+        m_DisplayFps = StreamUtils::getDisplayRefreshRate(m_Window);
+    }
+
     // The swapchain follows size changes on the next frame, like PlVkRenderer
     return !(info->stateChangeFlags & ~(WINDOW_STATE_CHANGE_SIZE | WINDOW_STATE_CHANGE_DISPLAY));
 }
@@ -669,9 +783,9 @@ QSize PyrowaveVideoDecoder::getDecoderMaxResolution()
 void PyrowaveVideoDecoder::stringifyVideoStats(const VIDEO_STATS& stats, char* output,
                                                int length) const
 {
-    // The same layout as FFmpegVideoDecoder's overlay text.
-    // TODO(PW-4): use the shared stats formatter once the stats overlay work
-    // provides one, with PyroWave's bandwidth and FEC counters.
+    // The same layout as FFmpegVideoDecoder's overlay text, sharing its last
+    // line. FEC results are in the stats overlay (StatsSnapshot), which this
+    // text doesn't show for any codec.
     int offset = 0;
     output[0] = 0;
 
@@ -679,10 +793,7 @@ void PyrowaveVideoDecoder::stringifyVideoStats(const VIDEO_STATS& stats, char* o
         appendFormatted(output, length, offset,
                         " {18}%dx%d@%.0f    PyroWave %s   {18}FPS  %.1f {14}Rx{18} · %.1f "
                         "{14}De{18} · %.1f {14}Rd{18} \n",
-                        m_Width, m_Height, stats.totalFps,
-                        m_Contract.hdrMode == 2   ? "HLG"
-                        : m_Contract.hdrMode == 1 ? "HDR10"
-                                                  : "SDR",
+                        m_Width, m_Height, stats.totalFps, dynamicRangeLabel(m_Contract.hdrMode),
                         stats.receivedFps, stats.decodedFps, stats.renderedFps);
     }
 
@@ -695,13 +806,21 @@ void PyrowaveVideoDecoder::stringifyVideoStats(const VIDEO_STATS& stats, char* o
             snprintf(rttString, sizeof(rttString), "N/A");
         }
 
+        char bandwidthString[32];
+        if (!std::isnan(m_BandwidthMbps)) {
+            snprintf(bandwidthString, sizeof(bandwidthString), "**%.2f** {16}Mbps{18}",
+                     m_BandwidthMbps);
+        } else {
+            snprintf(bandwidthString, sizeof(bandwidthString), "N/A");
+        }
+
         appendFormatted(
             output, length, offset,
-            " Network %s  Loss %.2f%%  {16}|  {18}Render **%.2f**ms · Decode "
+            " Network %s  Loss %.2f%%  Bandwidth %s  {16}|  {18}Render **%.2f**ms · Decode "
             "**%.2f**ms ",
             rttString,
             stats.totalFrames ? (float)stats.networkDroppedFrames / stats.totalFrames * 100 : 0.0f,
-            (double)stats.totalRenderTimeUs / 1000.0 / stats.renderedFrames,
+            bandwidthString, (double)stats.totalRenderTimeUs / 1000.0 / stats.renderedFrames,
             stats.decodedFrames ? (double)stats.totalDecodeTimeUs / 1000.0 / stats.decodedFrames
                                 : 0.0);
     }
@@ -710,5 +829,17 @@ void PyrowaveVideoDecoder::stringifyVideoStats(const VIDEO_STATS& stats, char* o
         appendFormatted(output, length, offset, "· Encode **%.1f**ms ",
                         (float)stats.totalHostProcessingLatency / 10 /
                             stats.framesWithHostProcessingLatency);
+    }
+
+    // Frame rate lows, jitter and the latency estimate from the stats model.
+    // The global stats logged at the end get whole-session lows.
+    if (stats.renderedFrames != 0 && Session::get() != nullptr && offset < length) {
+        const StatsSnapshot snapshot =
+            Session::get()->getStatsModel().snapshot(LiGetMicroseconds());
+        const int written = VideoStatsBridge::formatOverlayLows(
+            snapshot, stats, &stats == &m_GlobalVideoStats, &output[offset], length - offset);
+        if (written > 0) {
+            offset = SDL_min(length - 1, offset + written);
+        }
     }
 }

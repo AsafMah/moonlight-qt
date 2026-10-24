@@ -1,6 +1,9 @@
 #pragma once
 
 #include "pyrowavecolor.h"
+#include "pyrowavepacing.h"
+#include "streaming/video/vrrpolicy.h"
+#include "streaming/bandwidth.h"
 #include "streaming/video/decoder.h"
 #include "streaming/video/overlaymanager.h"
 
@@ -8,6 +11,7 @@
 #include <QString>
 
 #include <atomic>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -46,6 +50,10 @@ struct PyrowavePreflightResult
     bool ok;
     // Translated reason shown instead of connecting when ok is false.
     QString reason;
+    // The GPU that passed, or the one that failed (empty if none got that
+    // far), and how it decodes ("Vulkan compute", "CPU staging", ...).
+    QString deviceName;
+    QString decodePath;
 };
 
 // What the session negotiated that the decoder must follow. Session fills
@@ -88,8 +96,16 @@ struct PyrowaveFailure;
 // session is SDR or HDR is fixed before it starts; preflight() refuses HDR on
 // a GPU or display that can't show it rather than streaming SDR instead.
 //
-// Not yet: dynamic HDR metadata, the SDR CPU-staging fallback, frame pacing
-// and dynamic swapchain depth.
+// With V-Sync and frame pacing on, a stream faster than the display presents
+// an even share of its frames (PyrowavePacing::FramePacer). The swapchain
+// starts double-buffered and switches to triple buffering after delayed
+// presents.
+//
+// An SDR session on a GPU that can't write the plane format the way PyroWave
+// needs decodes into host memory and uploads the planes instead (CPU
+// staging), at the cost of a round trip per frame.
+//
+// Not yet: dynamic HDR metadata.
 class PyrowaveVideoDecoder : public IVideoDecoder, public Overlay::IOverlayRenderer
 {
     Q_DECLARE_TR_FUNCTIONS(PyrowaveVideoDecoder)
@@ -114,7 +130,8 @@ public:
 
     // Creates and releases a candidate device, decoder and swapchain at the
     // requested size on the request's window. Runs before ANNOUNCE, so a GPU
-    // or window that can't do it fails here with a specific reason.
+    // or window that can't do it fails here with a specific reason. The
+    // result is kept for Settings (PyrowavePreflightStore).
     static PyrowavePreflightResult preflight(const PyrowavePreflightRequest& request);
 
     // Adds PyroWave to the formats and capabilities that Session gives
@@ -156,16 +173,38 @@ public:
     virtual void notifyOverlayUpdated(Overlay::OverlayType type) override;
 
 private:
+    static PyrowavePreflightResult runPreflight(const PyrowavePreflightRequest& request);
     static int decoderThreadProc(void* context);
 
     int processFrame(PDECODE_UNIT du);
     void accountReceivedFrame(PDECODE_UNIT du);
+    void publishStatsWindow(const VIDEO_STATS& recent, const VIDEO_STATS& completed);
     void stringifyVideoStats(const VIDEO_STATS& stats, char* output, int length) const;
 
     bool m_TestOnly;
     PyrowaveSessionContract m_Contract;
     int m_Width = 0;
     int m_Height = 0;
+    int m_StreamFps = 0;
+    SDL_Window* m_Window = nullptr;
+
+    // Refresh rate of the window's display, 0 if unknown. Written on the
+    // main thread when the window moves, read by the decode thread.
+    std::atomic<int> m_DisplayFps{ 0 };
+    // Decode thread
+    bool m_EnableFramePacing = false;
+    int m_PacerDisplayFps = 0;
+    PyrowavePacing::FramePacer m_FramePacer;
+    // VRR mode: presents capped just below the refresh rate, like the Pacer
+    // does for FFmpeg, so they stay inside the display's VRR range
+    VrrPolicy::FrameLimiter m_VrrLimiter;
+
+    // Wire-level video bitrate (with FEC), read once per stats window
+    BandwidthMeter m_BandwidthMeter;
+    double m_BandwidthMbps = std::nan("");
+    // Describe the current renderer for the stats model. Decode thread.
+    QString m_DecoderName;
+    QString m_RendererName;
 
     // Video stats windows, as FFmpegVideoDecoder keeps them
     VIDEO_STATS m_ActiveWndVideoStats = {};

@@ -32,6 +32,7 @@ const char* pyrowaveStageName(PyrowaveStage stage);
 
 #include "pyrowaveabi.h"
 #include "pyrowavecolor.h"
+#include "pyrowavepacing.h"
 #include "streaming/video/ffmpeg-renderers/plvk.h"
 
 #include <memory>
@@ -88,6 +89,10 @@ struct PyrowavePresentParams
     int hdrMode = 0;
     bool enableVsync = false;
     bool ignoreAspectRatio = false;
+    // Stream and display rates, for when presents count as delayed. 0 when
+    // unknown.
+    int frameRate = 0;
+    int displayFps = 0;
 };
 
 // Client-thread time spent on one frame (decoder design, section 8). Neither
@@ -143,6 +148,16 @@ public:
 
     const std::string& deviceName() const { return m_DeviceName; }
 
+    // How frames are decoded: "Vulkan compute", "Vulkan fragment" or "CPU
+    // staging". English.
+    QString decodePathName() const;
+    // For the stats overlay, e.g. "PyroWave (Vulkan compute)". English.
+    QString decoderDescription() const;
+
+    // SDR frames go through host memory because this GPU can't write the
+    // plane format the way PyroWave needs (or PYROWAVE_CPU_STAGING=1).
+    bool cpuStaging() const { return m_CpuStaging; }
+
 private:
     struct DeviceSetup;
     struct Plane
@@ -165,12 +180,15 @@ private:
     bool createPyrowaveDecoder(PyrowaveFailure& failure);
     bool createPlanes(PyrowaveFailure& failure);
     bool createPlane(Plane& plane, uint32_t width, uint32_t height, VkImageUsageFlags usage);
+    bool createStagingPlanes(PyrowaveFailure& failure);
+    bool decodeThroughCpu(PyrowaveFailure& failure);
     bool createPresentation(PyrowaveFailure& failure);
     void hintSwapchainColorspace();
     bool checkColorMetadata(PyrowaveFailure& failure);
     bool decodeToPlanes(PyrowaveFailure& failure);
     FrameResult present(const pl_swapchain_frame& swapchainFrame, bool decoded,
                         PyrowaveFailure& failure);
+    bool switchToTripleBuffering(PyrowaveFailure& failure);
     void destroy();
 
     PyrowaveVulkanInstance& m_Instance;
@@ -212,6 +230,7 @@ private:
     PyrowaveAbi::PFN_pyrowave_decoder_push_packet m_PwPushPacket = nullptr;
     PyrowaveAbi::PFN_pyrowave_decoder_decode_is_ready m_PwDecodeIsReady = nullptr;
     PyrowaveAbi::PFN_pyrowave_decoder_decode_gpu_buffer m_PwDecodeGpu = nullptr;
+    PyrowaveAbi::PFN_pyrowave_decoder_decode_cpu_buffer_synchronous m_PwDecodeCpu = nullptr;
     PyrowaveAbi::PFN_pyrowave_decoder_get_color_metadata m_PwGetColorMetadata = nullptr;
     PyrowaveAbi::PFN_pyrowave_decoder_destroy m_PwDestroyDecoder = nullptr;
 
@@ -233,13 +252,20 @@ private:
 
     // Y, Cb and Cr. Owned by libplacebo between frames and held by us while
     // PyroWave writes them, with one timeline semaphore ordering the handoffs.
+    // With CPU staging they are plain libplacebo textures (no VkImage of our
+    // own) that each frame is uploaded to from m_StagingPlanes.
     Plane m_Planes[3];
+    bool m_CpuStaging = false;
+    std::vector<uint8_t> m_StagingPlanes[3];
     VkSemaphore m_PlaneSemaphore = VK_NULL_HANDLE;
     uint64_t m_PlaneTimeline = 0;
 
     // Presentation
     VkPresentModeKHR m_PresentMode = VK_PRESENT_MODE_FIFO_KHR;
     pl_swapchain m_Swapchain = nullptr;
+    // Double-buffered for the lowest latency until presents keep running
+    // late, then triple-buffered for the rest of this renderer's life.
+    PyrowavePacing::SwapchainDepth m_SwapchainDepth;
     pl_renderer m_Renderer = nullptr;
     PlVkOverlays m_Overlays;
 

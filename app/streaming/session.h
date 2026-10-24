@@ -257,6 +257,9 @@ private:
     void setupStatsOverlayShortcuts();
     void createStatsOverlay(OverlayWindowMode windowMode);
     bool handleStatsOverlayMenuAction(OverlayMenuPanel::MenuAction action);
+    // Overlay menu Session level (sessionstatsmenu.cpp)
+    void setupSessionStatsMenu();
+    std::vector<std::pair<QString, QString>> sessionStatsMenuRows() const;
     void requestRuntimeBitrateChange(int bitrateKbps);
     void startRuntimeBitrateWorker();
     void showStreamingToast(const QString& message, int durationMs = 2000);

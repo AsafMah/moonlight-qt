@@ -4940,6 +4940,7 @@ void Session::exec()
     m_MenuButton = nullptr;
     m_Toast = new OverlayToast(m_WaylandStreamWindow, overlayWindowMode);
     createStatsOverlay(overlayWindowMode);
+    setupSessionStatsMenu();
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
     // Developer-only harness: Session supplies integration callbacks while
     // the test class owns the panel, picker, replay scheduler, and cleanup.

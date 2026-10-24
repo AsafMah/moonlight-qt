@@ -10,6 +10,7 @@
 #include <QtMath>
 #include <algorithm>
 #include <memory>
+#include <tuple>
 
 namespace {
 constexpr qint64 PointerGracePeriodMs = 300;

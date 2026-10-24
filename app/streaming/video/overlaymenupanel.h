@@ -603,6 +603,9 @@ private:
     int m_PendingStreamFps = 0;
     int m_StreamQualityLevel = -1;
 
+    // Last updateMenuPositionState() choice, re-applied after a rebuild
+    std::optional<MenuAction> m_ActivePlacementAction;
+
     // Bitrate slider state. m_BitrateKbps is the on-screen value;
     // m_CommittedBitrateKbps is the last value sent to the callback.
     int m_BitrateKbps = 10000;

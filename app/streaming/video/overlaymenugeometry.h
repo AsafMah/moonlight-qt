@@ -112,7 +112,7 @@ bool isFullHeight(Placement placement);
 // Top-left corner of a menu of the given size. bounds is where the menu may
 // be (the stream, cut down to the screen it is on); margin keeps it off
 // the edges it is placed against. pointer is used by Cursor, dragged
-// (0..1 of the free space, see normalizedPosition()) by Dragged. The result
+// (0..1 of bounds, see normalizedPosition()) by Dragged. The result
 // always lies inside bounds; a menu bigger than bounds keeps its top-left
 // corner visible.
 QPoint placeMenu(Placement placement, const QRect& bounds, const QSize& size,
@@ -124,9 +124,11 @@ QSize placedSize(Placement placement, const QRect& bounds, const QSize& contentS
 
 QPoint clampToBounds(const QPoint& topLeft, const QSize& size, const QRect& bounds);
 
-// Position of a menu as a fraction of the space it can move in, so it lands
-// in the same place on a stream of another size
-QPointF normalizedPosition(const QPoint& topLeft, const QSize& size, const QRect& bounds);
+// Position of a menu's top-left corner as a fraction of bounds, so it lands
+// in the same place on a stream of another size. It does not depend on the
+// menu's size: levels differ in height, and the title bar must not move when
+// the menu reopens on another level.
+QPointF normalizedPosition(const QPoint& topLeft, const QRect& bounds);
 
 // The direction a menu slides in from: -1, 0 or +1 on each axis
 QPoint slideDirection(Placement placement);

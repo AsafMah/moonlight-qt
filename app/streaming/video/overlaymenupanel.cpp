@@ -1124,6 +1124,9 @@ void OverlayMenuPanel::buildMenuLevels()
     // the bitrate state so the scrubber row and preset checkmarks survive.
     refreshBitrateDetails();
     updateMenuStyleState();
+    if (m_ActivePlacementAction) {
+        updateMenuPositionState(*m_ActivePlacementAction);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1338,6 +1341,7 @@ void OverlayMenuPanel::gamepadAdjustSlider(int direction)
 
 void OverlayMenuPanel::updateMenuPositionState(MenuAction activePlacementAction)
 {
+    m_ActivePlacementAction = activePlacementAction;
     const int placementLevel = levelForOpenAction(MenuAction::OpenMenuPosition);
     if (placementLevel < 0) {
         return;
@@ -2861,11 +2865,10 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
 void OverlayMenuPanel::finishTitleDrag()
 {
     const int shadow = qRound(m_ShadowMargin * m_Scale);
-    const QSize content(width() - 2 * shadow, height() - 2 * shadow);
     const QRect bounds =
         m_Bounds.isValid() ? m_Bounds : QRect(m_ParentX, m_ParentY, m_ParentW, m_ParentH);
     const QPointF normalized =
-        OverlayMenu::normalizedPosition(position() + QPoint(shadow, shadow), content, bounds);
+        OverlayMenu::normalizedPosition(position() + QPoint(shadow, shadow), bounds);
 
     // Reopen (and lay out again) where it was left
     m_AnchorMode = AnchorMode::Placed;

@@ -152,9 +152,8 @@ QPoint placeMenu(Placement placement, const QRect& bounds, const QSize& size,
         if (dragged) {
             const qreal fx = std::clamp(dragged->x(), 0.0, 1.0);
             const qreal fy = std::clamp(dragged->y(), 0.0, 1.0);
-            const QPoint topLeft(
-                bounds.left() + qRound(fx * std::max(bounds.width() - size.width(), 0)),
-                bounds.top() + qRound(fy * std::max(bounds.height() - size.height(), 0)));
+            const QPoint topLeft(bounds.left() + qRound(fx * bounds.width()),
+                                 bounds.top() + qRound(fy * bounds.height()));
             return clampToBounds(topLeft, size, bounds);
         }
         break;
@@ -208,12 +207,11 @@ QPoint placeMenu(Placement placement, const QRect& bounds, const QSize& size,
     return clampToBounds(topLeft, size, bounds);
 }
 
-QPointF normalizedPosition(const QPoint& topLeft, const QSize& size, const QRect& bounds)
+QPointF normalizedPosition(const QPoint& topLeft, const QRect& bounds)
 {
-    const int freeWidth = bounds.width() - size.width();
-    const int freeHeight = bounds.height() - size.height();
-    const qreal fx = freeWidth > 0 ? qreal(topLeft.x() - bounds.left()) / freeWidth : 0.0;
-    const qreal fy = freeHeight > 0 ? qreal(topLeft.y() - bounds.top()) / freeHeight : 0.0;
+    const qreal fx = bounds.width() > 0 ? qreal(topLeft.x() - bounds.left()) / bounds.width() : 0.0;
+    const qreal fy =
+        bounds.height() > 0 ? qreal(topLeft.y() - bounds.top()) / bounds.height() : 0.0;
     return QPointF(std::clamp(fx, 0.0, 1.0), std::clamp(fy, 0.0, 1.0));
 }
 

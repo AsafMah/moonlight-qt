@@ -114,9 +114,13 @@ static void testPlacementGeometry()
 
     // A dragged position survives a stream of another size
     const QPoint draggedTo(700, 300);
-    const QPointF normalized = normalizedPosition(draggedTo, menu, screen);
+    const QPointF normalized = normalizedPosition(draggedTo, screen);
     if (placeMenu(Placement::Dragged, screen, menu, std::nullopt, normalized, 12) != draggedTo)
         qFatal("a dragged position did not round-trip");
+    // ... and a level of another height keeps its title bar where it was
+    if (placeMenu(Placement::Dragged, screen, QSize(340, 200), std::nullopt, normalized, 12) !=
+        draggedTo)
+        qFatal("a shorter level moved the dragged menu");
 
     for (int p = 0; p < int(Placement::Count); p++) {
         if (placementFromId(placementId(Placement(p)), Placement::Count) != Placement(p))
@@ -307,14 +311,14 @@ static void testMenuOptions(OverlayMenuPanel &panel)
     if (panel.position() == before || !dropped ||
         !QRect(0, 0, 1920, 1080).contains(contentRect(panel)))
         qFatal("dragging the title bar did not move the panel within the stream");
-    if (dropped->x() < 0.99 || dropped->y() < 0.99)
-        qFatal("a drag to the corner did not report the corner");
+    const QRect droppedRect = contentRect(panel);
+    if (droppedRect.right() != 1919 || droppedRect.bottom() != 1079)
+        qFatal("a drag past the corner did not stop at the corner");
     panel.closeMenu();
     waitClosed(panel);
     panel.showWithPlacement(Placement::Dragged, 0, 0, 1920, 1080, std::nullopt, dropped, false);
     QTest::qWait(200); // past the slide-in
-    const QRect reopened = contentRect(panel);
-    if (reopened.right() != 1919 || reopened.bottom() != 1079)
+    if (contentRect(panel).topLeft() != droppedRect.topLeft())
         qFatal("the dragged position was not restored");
     panel.closeMenu();
     waitClosed(panel);

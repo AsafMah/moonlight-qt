@@ -1,0 +1,17 @@
+# Branches merged into "integration", in order. One per line; # comments.
+# Upstream-able core (up/*) is merged through its feat/* branch, not listed here.
+#
+# Track A (client UI)
+feat/shortcuts
+feat/stats-overlay
+feat/session-summary
+feat/host-actions
+feat/live-stream-settings
+# feat/menu-tabs merges M3/X2 itself and adapts them to the tab table, so it goes last
+feat/menu-tabs
+#
+# PR qiin2333/moonlight-qt#104 — pins common-c to AsafMah's fork until common-c #10/#13 land
+#asaf-104
+#
+# Track B (PyroWave); pyrowave-hdr contains pyrowave-decoder
+feat/pyrowave-hdr

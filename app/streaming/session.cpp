@@ -2771,8 +2771,10 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
         return;
     }
 
-    // Save capture state and release mouse
-    m_WasCapturedBeforeMenu = m_InputHandler->isCaptureActive();
+    // Save capture state and release mouse. A hold to release the mouse ends
+    // here: the menu now owns the pointer and restores capture when it closes.
+    m_WasCapturedBeforeMenu =
+        m_InputHandler->cancelMouseHoldRelease() || m_InputHandler->isCaptureActive();
     if (m_WasCapturedBeforeMenu) {
         m_InputHandler->setCaptureActive(false);
     }

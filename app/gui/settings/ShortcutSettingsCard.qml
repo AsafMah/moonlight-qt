@@ -60,6 +60,7 @@ SettingsCard {
             required property string conflict1
             required property string conflict2
             required property bool customized
+            required property bool hold
 
             readonly property var bindings: [binding1, binding2]
             readonly property var conflicts: [conflict1, conflict2]
@@ -80,9 +81,16 @@ SettingsCard {
             SettingsRow {
                 title: actionItem.name
                 description: {
-                    var lines = actionItem.conflicts.filter(function(c) { return c !== "" })
+                    var lines = []
+                    // 按住型动作：按下生效、松开恢复，可以只绑一个修饰键（如右 Alt）
+                    if (actionItem.hold) {
+                        lines.push(qsTr("Works while the key is held down. A modifier key on its own works too, e.g. Right Alt; it then no longer reaches the host, so AltGr typing stops there."))
+                    }
+                    lines = lines.concat(actionItem.conflicts.filter(function(c) { return c !== "" }))
                     if (shortcutCard.captureRejected && actionItem.capturingThis) {
-                        lines.push(qsTr("Use Ctrl, Alt or the Windows/Command key with this key. Only F13-F24 and media keys work on their own."))
+                        lines.push(actionItem.hold
+                                   ? qsTr("Use a modifier key on its own, or Ctrl, Alt or the Windows/Command key with another key.")
+                                   : qsTr("Use Ctrl, Alt or the Windows/Command key with this key. Only F13-F24 and media keys work on their own."))
                     }
                     return lines.join("\n")
                 }
@@ -154,6 +162,27 @@ SettingsCard {
                                     shortcutCard.captureRejected = true
                                 }
                                 else if (result !== ShortcutModel.CaptureIgnored) {
+                                    shortcutCard.stopCapture()
+                                }
+                            }
+
+                            // 按住型动作可以只绑一个修饰键，在它松开时录入
+                            Keys.onReleased: function(event) {
+                                if (!bindingButton.capturing) {
+                                    return
+                                }
+
+                                event.accepted = true
+                                if (event.isAutoRepeat) {
+                                    return
+                                }
+
+                                var result = ShortcutModel.captureKeyRelease(actionItem.index, bindingButton.index,
+                                                                             event.key, event.nativeScanCode)
+                                if (result === ShortcutModel.CaptureInvalid) {
+                                    shortcutCard.captureRejected = true
+                                }
+                                else if (result === ShortcutModel.CaptureAccepted) {
                                     shortcutCard.stopCapture()
                                 }
                             }

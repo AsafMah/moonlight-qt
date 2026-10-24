@@ -2794,6 +2794,127 @@
     </message>
 </context>
 <context>
+    <name>ShortcutModel</name>
+    <message>
+        <source>Also used by: %1</source>
+        <translation>與以下動作衝突：%1</translation>
+    </message>
+</context>
+<context>
+    <name>ShortcutSettingsCard</name>
+    <message>
+        <source>Keyboard shortcuts</source>
+        <translation>鍵盤快速鍵</translation>
+    </message>
+    <message>
+        <source>Click a shortcut, then press the new key combination. Esc cancels and Backspace removes the shortcut. Shortcuts follow key positions, so they keep working when you switch keyboard layouts.</source>
+        <translation>點擊快速鍵後按下新的組合鍵。Esc 取消，Backspace 刪除該快速鍵。快速鍵依實體按鍵位置比對，切換鍵盤配置後依然有效。</translation>
+    </message>
+    <message>
+        <source>Default modifier keys</source>
+        <translation>預設輔助鍵</translation>
+    </message>
+    <message>
+        <source>Changes every shortcut that still uses its default key combination.</source>
+        <translation>同時修改所有仍在使用預設組合鍵的快速鍵。</translation>
+    </message>
+    <message>
+        <source>NOTE: Ctrl+Alt is also how AltGr is reported on some keyboard layouts, so Ctrl+Alt shortcuts can trigger while typing.</source>
+        <translation>注意：部分鍵盤配置會將 AltGr 回報為 Ctrl+Alt，因此 Ctrl+Alt 快速鍵可能在打字時被誤觸發。</translation>
+    </message>
+    <message>
+        <source>Use Ctrl, Alt or the Windows/Command key with this key. Only F13-F24 and media keys work on their own.</source>
+        <translation>此鍵需要搭配 Ctrl、Alt 或 Windows/Command 鍵使用。只有 F13-F24 與媒體鍵可以單獨使用。</translation>
+    </message>
+    <message>
+        <source>Press keys...</source>
+        <translation>請按下按鍵...</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>無</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation>重設</translation>
+    </message>
+    <message>
+        <source>Reset all shortcuts</source>
+        <translation>重設所有快速鍵</translation>
+    </message>
+    <message>
+        <source>Restores every default shortcut and the Ctrl+Alt+Shift modifier keys.</source>
+        <translation>還原所有預設快速鍵與 Ctrl+Alt+Shift 輔助鍵。</translation>
+    </message>
+    <message>
+        <source>Reset all</source>
+        <translation>全部重設</translation>
+    </message>
+</context>
+<context>
+    <name>Shortcuts</name>
+    <message>
+        <source>Disconnect from host</source>
+        <translation>中斷與主機的連線</translation>
+    </message>
+    <message>
+        <source>Session</source>
+        <translation>工作階段</translation>
+    </message>
+    <message>
+        <source>Disconnect and quit Moonlight</source>
+        <translation>中斷連線並結束 Moonlight</translation>
+    </message>
+    <message>
+        <source>Toggle full-screen</source>
+        <translation>切換全螢幕</translation>
+    </message>
+    <message>
+        <source>Window</source>
+        <translation>視窗</translation>
+    </message>
+    <message>
+        <source>Minimize window</source>
+        <translation>最小化視窗</translation>
+    </message>
+    <message>
+        <source>Toggle performance stats</source>
+        <translation>切換效能統計</translation>
+    </message>
+    <message>
+        <source>Show or hide the overlay menu</source>
+        <translation>顯示或隱藏懸浮選單</translation>
+    </message>
+    <message>
+        <source>Toggle mouse and keyboard capture</source>
+        <translation>切換滑鼠與鍵盤擷取</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>輸入</translation>
+    </message>
+    <message>
+        <source>Toggle remote desktop mouse mode</source>
+        <translation>切換遠端桌面滑鼠模式</translation>
+    </message>
+    <message>
+        <source>Show or hide the local cursor</source>
+        <translation>顯示或隱藏本機游標</translation>
+    </message>
+    <message>
+        <source>Toggle pointer region lock</source>
+        <translation>切換指標區域鎖定</translation>
+    </message>
+    <message>
+        <source>Toggle system keyboard shortcut capture</source>
+        <translation>切換系統鍵盤快速鍵擷取</translation>
+    </message>
+    <message>
+        <source>Type clipboard text on the host</source>
+        <translation>在主機上輸入剪貼簿文字</translation>
+    </message>
+</context>
+<context>
     <name>StreamSegue</name>
     <message>
         <location filename="../gui/StreamSegue.qml" line="22"/>

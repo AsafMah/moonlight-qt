@@ -4,6 +4,7 @@
 
 #include "streaming/session.h"
 #include "streaming/stats/videostatsbridge.h"
+#include "streaming/streamutils.h"
 
 #include <QSize>
 
@@ -321,8 +322,20 @@ bool PyrowaveVideoDecoder::initialize(PDECODER_PARAMETERS params)
     m_Width = params->width;
     m_Height = params->height;
     m_StreamFps = params->frameRate;
+    m_Window = params->window;
     m_EnableVsync = params->enableVsync;
     m_IgnoreAspectRatio = params->ignoreAspectRatio;
+
+    // enableFramePacing is only set with V-Sync on
+    m_EnableFramePacing = params->enableFramePacing;
+    m_DisplayFps = StreamUtils::getDisplayRefreshRate(params->window);
+    m_PacerDisplayFps = m_DisplayFps;
+    m_FramePacer.configure(m_EnableFramePacing, m_StreamFps, m_PacerDisplayFps);
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave pacing: %d FPS stream, %d Hz display, %s",
+                m_StreamFps, m_PacerDisplayFps,
+                m_FramePacer.isDecimating() ? "presenting an even share of frames"
+                : m_EnableFramePacing      ? "every frame"
+                                           : "frame pacing off");
 
     // preflight() refused anything else, so this can't happen.
     if (!PyrowaveColor::Contract(m_Contract.hdrMode, false).isValid()) {
@@ -389,6 +402,8 @@ bool PyrowaveVideoDecoder::createRenderer(PyrowaveFailure& failure)
     params.hdrMode = m_Contract.hdrMode;
     params.enableVsync = m_EnableVsync;
     params.ignoreAspectRatio = m_IgnoreAspectRatio;
+    params.frameRate = m_StreamFps;
+    params.displayFps = m_DisplayFps;
 
     auto renderer = std::make_unique<PyrowaveVulkanRenderer>(*m_Instance);
     {
@@ -564,6 +579,17 @@ int PyrowaveVideoDecoder::processFrame(PDECODE_UNIT du)
         return DR_OK;
     }
 
+    // Frame pacing follows the display the window is on now.
+    const int displayFps = m_DisplayFps;
+    if (displayFps != m_PacerDisplayFps) {
+        m_PacerDisplayFps = displayFps;
+        m_FramePacer.configure(m_EnableFramePacing, m_StreamFps, displayFps);
+    }
+    if (!m_FramePacer.shouldPresent()) {
+        m_ActiveWndVideoStats.pacerDroppedFrames++;
+        return DR_OK;
+    }
+
     // The decoder takes the payload in one piece.
     m_FrameBuffer.resize((size_t)du->fullLength);
     size_t offset = 0;
@@ -699,6 +725,10 @@ void PyrowaveVideoDecoder::notifyOverlayUpdated(Overlay::OverlayType type)
 
 bool PyrowaveVideoDecoder::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info)
 {
+    if ((info->stateChangeFlags & WINDOW_STATE_CHANGE_DISPLAY) && m_Window != nullptr) {
+        m_DisplayFps = StreamUtils::getDisplayRefreshRate(m_Window);
+    }
+
     // The swapchain follows size changes on the next frame, like PlVkRenderer
     return !(info->stateChangeFlags & ~(WINDOW_STATE_CHANGE_SIZE | WINDOW_STATE_CHANGE_DISPLAY));
 }

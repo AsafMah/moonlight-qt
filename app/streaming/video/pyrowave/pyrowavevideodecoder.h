@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pyrowavecolor.h"
+#include "pyrowavepacing.h"
 #include "streaming/bandwidth.h"
 #include "streaming/video/decoder.h"
 #include "streaming/video/overlaymanager.h"
@@ -90,8 +91,12 @@ struct PyrowaveFailure;
 // session is SDR or HDR is fixed before it starts; preflight() refuses HDR on
 // a GPU or display that can't show it rather than streaming SDR instead.
 //
-// Not yet: dynamic HDR metadata, the SDR CPU-staging fallback, frame pacing
-// and dynamic swapchain depth.
+// With V-Sync and frame pacing on, a stream faster than the display presents
+// an even share of its frames (PyrowavePacing::FramePacer). The swapchain
+// starts double-buffered and switches to triple buffering after delayed
+// presents.
+//
+// Not yet: dynamic HDR metadata, the SDR CPU-staging fallback.
 class PyrowaveVideoDecoder : public IVideoDecoder, public Overlay::IOverlayRenderer
 {
     Q_DECLARE_TR_FUNCTIONS(PyrowaveVideoDecoder)
@@ -170,6 +175,15 @@ private:
     int m_Width = 0;
     int m_Height = 0;
     int m_StreamFps = 0;
+    SDL_Window* m_Window = nullptr;
+
+    // Refresh rate of the window's display, 0 if unknown. Written on the
+    // main thread when the window moves, read by the decode thread.
+    std::atomic<int> m_DisplayFps{ 0 };
+    // Decode thread
+    bool m_EnableFramePacing = false;
+    int m_PacerDisplayFps = 0;
+    PyrowavePacing::FramePacer m_FramePacer;
 
     // Wire-level video bitrate (with FEC), read once per stats window
     BandwidthMeter m_BandwidthMeter;

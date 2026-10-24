@@ -262,6 +262,10 @@ private:
     // Qt-based overlay menu
     void showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition = std::nullopt,
                            bool closeWhenPointerOutside = true);
+    OverlayMenu::GamepadTrigger overlayMenuGamepadTrigger() const
+    {
+        return m_OverlayMenuOptions.gamepadTrigger;
+    }
     void hideQtOverlayMenu();
     void toggleQtOverlayMenu();
     bool isStreamingWindowVisible() const;
@@ -273,6 +277,23 @@ private:
     void syncWaylandSdlWindowState();
 #endif
     void dispatchQtMenuAction(OverlayMenuPanel::MenuAction action);
+
+    // Overlay menu options integration (sessionoverlaymenu.cpp)
+    void reloadOverlayMenuOptions();
+    // Applies layout, scale, opacity and Esc; returns the placement option
+    OverlayMenu::Placement applyOverlayMenuOptionsToPanel();
+    // Opens the menu at the placement option; false for Auto
+    bool showQtOverlayMenuWithPlacement(const QRect& parentRect,
+                                        std::optional<QPoint> pointerPosition,
+                                        bool closeWhenPointerOutside);
+    QPoint currentOverlayPointerPosition() const;
+    bool handleOverlayMenuOptionAction(OverlayMenuPanel::MenuAction action);
+    bool handleOverlayMenuOptionPayload(OverlayMenuPanel::MenuAction action,
+                                        const QString& payload);
+    void setupOverlayMenuShortcut();
+    void updateOverlayMenuEdgeTrigger();
+    // Until the edge trigger may fire, or -1 when it isn't waiting
+    int overlayMenuEdgeTriggerDelayMs() const;
     // Performance overlay integration (sessionstatsoverlay.cpp)
     void setupStatsOverlayShortcuts();
     void createStatsOverlay(OverlayWindowMode windowMode);
@@ -464,6 +485,12 @@ private:
     int m_ActiveVideoHeight;
     int m_ActiveVideoFrameRate;
 
+    // PyroWave is selected and its preflight passed, so it is advertised
+    // (see PyrowaveVideoDecoder) with H.264 as the fallback. YUV 4:4:4 is
+    // then locked off, and HDR is left to PyroWave's own negotiation.
+    bool m_PyrowaveRequested = false;
+    bool m_PyrowaveFallbackNoticeShown = false;
+
     OpusMSDecoder* m_OpusDecoder;
     IAudioRenderer* m_AudioRenderer;
     DualSenseHapticsRenderer* m_DualSenseHapticsRenderer;
@@ -516,6 +543,22 @@ private:
     QString m_FileMappingMountPath;
     QString m_FileMappingSessionId;
     Uint32 m_MenuCloseTicks;       // 菜单关闭时间戳（防抖）
+
+    // Overlay menu options, read when the stream starts and after the menu
+    // changes them (see reloadOverlayMenuOptions())
+    struct OverlayMenuOptions
+    {
+        bool buttonEnabled = false;
+        bool legacyEdgeTrigger = false; // the original immediate edge trigger
+        bool edgeTrigger = false;       // resting on edgeZone for edgeDelayMs
+        OverlayMenu::EdgeZone edgeZone = OverlayMenu::EdgeZone::Right;
+        int edgeDelayMs = OverlayMenu::DefaultEdgeDelayMs;
+        bool holdToPeek = false;
+        OverlayMenu::GamepadTrigger gamepadTrigger = OverlayMenu::GamepadTrigger::HoldStart;
+    };
+    OverlayMenuOptions m_OverlayMenuOptions;
+    OverlayMenu::EdgeDwell m_MenuEdgeDwell;
+    bool m_MenuPeeking = false; // opened by holding its shortcut
     void stopClipboardHelper();
     std::mutex m_ClipboardHelperMutex;
     class ClipboardHelperClient*

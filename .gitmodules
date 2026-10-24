@@ -22,3 +22,9 @@ url=https://github.com/qiin2333/moonlight-common-c.git
 [submodule "usb-helper/third_party/spdlog"]
 	path = usb-helper/third_party/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "third-party/pyrowave"]
+	path = third-party/pyrowave
+	url = https://github.com/AlkaidLab/pyrowave.git
+	# Optional and large (Granite and its dependencies). Recursive checkouts skip it;
+	# scripts/build-pyrowave.{sh,ps1} fetch exactly what the runtime build needs.
+	update = none

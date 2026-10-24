@@ -52,9 +52,11 @@ void Session::createStatsOverlay(OverlayWindowMode windowMode)
             // The pointer has to be free to drag the overlay. If the overlay
             // menu started this, take over its pending capture restore so the
             // menu's close animation does not recapture mid-edit.
-            m_WasCapturedBeforeStatsEdit = m_WasCapturedBeforeStatsEdit ||
-                                           m_WasCapturedBeforeMenu ||
-                                           m_InputHandler->isCaptureActive();
+            // A hold to release the mouse ends here too, or letting go of
+            // its key would capture the pointer in the middle of a drag.
+            m_WasCapturedBeforeStatsEdit =
+                m_WasCapturedBeforeStatsEdit || m_WasCapturedBeforeMenu ||
+                m_InputHandler->cancelMouseHoldRelease() || m_InputHandler->isCaptureActive();
             m_WasCapturedBeforeMenu = false;
             m_InputHandler->setCaptureActive(false);
             showStreamingToast(tr("Drag the overlay to move it. Press Esc when done."), 2500);

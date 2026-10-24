@@ -293,6 +293,9 @@ SOURCES += \
     gui/windowswindowchrome.cpp \
     streaming/video/overlaymanager.cpp \
     streaming/video/overlaymenupanel.cpp \
+    streaming/video/overlaymenugeometry.cpp \
+    streaming/sessionoverlaymenu.cpp \
+    settings/overlaymenusettings.cpp \
     streaming/video/overlaybuttonposition.cpp \
     streaming/video/overlaymenubutton.cpp \
     streaming/video/overlaytoast.cpp \
@@ -391,6 +394,8 @@ HEADERS += \
     gui/windowswindowchrome.h \
     streaming/video/overlaymanager.h \
     streaming/video/overlaymenupanel.h \
+    streaming/video/overlaymenugeometry.h \
+    settings/overlaymenusettings.h \
     streaming/video/overlaybuttonposition.h \
     streaming/video/overlayeventwakestate.h \
     streaming/video/overlaywindowpolicy.h \
@@ -410,6 +415,26 @@ HEADERS += \
     imageutils.h \
     pipwbackground.h \
     uifont.h
+
+# PyroWave (experimental). The runtime is loaded at run time, never linked, so
+# these files build on every platform. The Vulkan capability check and the
+# decoder (pyrowavevulkan.cpp) compile only with HAVE_LIBPLACEBO_VULKAN, which
+# provides the Vulkan headers and libplacebo.
+SOURCES += \
+    streaming/video/pyrowave/pyrowavecapabilities.cpp \
+    streaming/video/pyrowave/pyrowavehoststore.cpp \
+    streaming/video/pyrowave/pyrowaveruntime.cpp \
+    streaming/video/pyrowave/pyrowavestatus.cpp \
+    streaming/video/pyrowave/pyrowavevideodecoder.cpp \
+    streaming/video/pyrowave/pyrowavevulkan.cpp
+HEADERS += \
+    streaming/video/pyrowave/pyrowaveabi.h \
+    streaming/video/pyrowave/pyrowavecapabilities.h \
+    streaming/video/pyrowave/pyrowavehoststore.h \
+    streaming/video/pyrowave/pyrowaveruntime.h \
+    streaming/video/pyrowave/pyrowavestatus.h \
+    streaming/video/pyrowave/pyrowavevideodecoder.h \
+    streaming/video/pyrowave/pyrowavevulkan.h
 
 # Conditional files for non-Steam Link builds
 !config_SL: SOURCES += streaming/micstream.cpp

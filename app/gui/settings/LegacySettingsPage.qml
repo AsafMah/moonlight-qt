@@ -7,6 +7,7 @@ import "../theme"
 import "../Brand.js" as Brand
 
 import StreamingPreferences 1.0
+import OverlayMenuSettings 1.0
 import SdlGamepadKeyNavigation 1.0
 import ComputerManager 1.0
 import SystemProperties 1.0
@@ -729,8 +730,14 @@ Column {
     }
 
     SettingsCard {
+        id: overlayMenuCard
         visible: settingsPage.category === "advanced" && hasVisibleContent
         title: qsTr("Overlay menu position")
+
+        readonly property bool menuEnabled:
+            StreamingPreferences.overlayMenuPosition !== StreamingPreferences.OMP_DISABLED
+
+        Component.onCompleted: OverlayMenuSettings.reload()
 
         ChoiceRow {
             title: qsTr("Overlay menu position")
@@ -744,6 +751,245 @@ Column {
                 ListElement { text: qsTr("Left edge"); val: StreamingPreferences.OMP_LEFT_EDGE }
                 ListElement { text: qsTr("Floating button (default)"); val: StreamingPreferences.OMP_BUTTON }
                 ListElement { text: qsTr("Disabled"); val: StreamingPreferences.OMP_DISABLED }
+            }
+        }
+
+        // 以下选项的默认值都与原来的菜单完全一致：位置、触发方式「跟随上面的位置」，
+        // 紧凑布局，100% 缩放，不透明
+        ChoiceRow {
+            applicable: overlayMenuCard.menuEnabled
+            title: qsTr("Where the menu opens")
+            description: qsTr("Follow the position above, or open the menu somewhere else. Drag the menu by its title bar to choose a spot of your own.")
+            selectedValue: OverlayMenuSettings.placement
+            onValueActivated: function(value) { OverlayMenuSettings.placement = value }
+
+            model: ListModel {
+                ListElement { text: qsTr("Follow the position above (default)"); val: OverlayMenuSettings.PlacementAuto }
+                ListElement { text: qsTr("Centered"); val: OverlayMenuSettings.PlacementCenter }
+                ListElement { text: qsTr("At the pointer"); val: OverlayMenuSettings.PlacementCursor }
+                ListElement { text: qsTr("Top edge"); val: OverlayMenuSettings.PlacementTop }
+                ListElement { text: qsTr("Bottom edge"); val: OverlayMenuSettings.PlacementBottom }
+                ListElement { text: qsTr("Left edge"); val: OverlayMenuSettings.PlacementLeft }
+                ListElement { text: qsTr("Right edge"); val: OverlayMenuSettings.PlacementRight }
+                ListElement { text: qsTr("Top-left corner"); val: OverlayMenuSettings.PlacementTopLeft }
+                ListElement { text: qsTr("Top-right corner"); val: OverlayMenuSettings.PlacementTopRight }
+                ListElement { text: qsTr("Bottom-left corner"); val: OverlayMenuSettings.PlacementBottomLeft }
+                ListElement { text: qsTr("Bottom-right corner"); val: OverlayMenuSettings.PlacementBottomRight }
+                ListElement { text: qsTr("Left side panel"); val: OverlayMenuSettings.PlacementLeftPanel }
+                ListElement { text: qsTr("Right side panel"); val: OverlayMenuSettings.PlacementRightPanel }
+                ListElement { text: qsTr("Where I last dragged it"); val: OverlayMenuSettings.PlacementDragged }
+            }
+        }
+
+        SettingsRow {
+            applicable: overlayMenuCard.menuEnabled && OverlayMenuSettings.hasDraggedPosition
+            title: qsTr("Dragged position")
+            description: qsTr("Forget where the menu was dragged to.")
+
+            HardButton {
+                text: qsTr("Reset")
+                onClicked: OverlayMenuSettings.resetDraggedPosition()
+            }
+        }
+
+        ChoiceRow {
+            applicable: overlayMenuCard.menuEnabled
+            title: qsTr("Menu layout")
+            selectedValue: OverlayMenuSettings.layout
+            onValueActivated: function(value) { OverlayMenuSettings.layout = value }
+
+            model: ListModel {
+                ListElement { text: qsTr("Compact (default)"); val: OverlayMenuSettings.LayoutCompact }
+                ListElement { text: qsTr("Comfortable: bigger rows for a TV or gamepad"); val: OverlayMenuSettings.LayoutComfortable }
+                ListElement { text: qsTr("Side panel: tabs in a column"); val: OverlayMenuSettings.LayoutSidePanel }
+            }
+        }
+        SettingsRow {
+            id: overlayMenuScaleRow
+            applicable: overlayMenuCard.menuEnabled
+            title: qsTr("Menu scale")
+
+            Row {
+                width: Math.min(360, Math.max(220, overlayMenuScaleRow.width - Theme.spaceMd * 2))
+                height: Math.max(overlayMenuScaleSlider.implicitHeight, overlayMenuScaleValue.implicitHeight)
+                spacing: Theme.spaceSm
+
+                HardSlider {
+                    id: overlayMenuScaleSlider
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - overlayMenuScaleValue.width - parent.spacing
+                    from: OverlayMenuSettings.minScalePercent
+                    to: OverlayMenuSettings.maxScalePercent
+                    stepSize: 5
+                    snapMode: Slider.SnapAlways
+                    value: OverlayMenuSettings.scalePercent
+                    Accessible.name: overlayMenuScaleRow.title
+                    onMoved: OverlayMenuSettings.scalePercent = Math.round(value)
+                }
+
+                Text {
+                    id: overlayMenuScaleValue
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 64
+                    text: Math.round(overlayMenuScaleSlider.value) + "%"
+                    color: Theme.accent
+                    font.family: Theme.fontMono
+                    font.pointSize: Theme.fontBody
+                    font.weight: Font.DemiBold
+                    horizontalAlignment: Text.AlignRight
+                }
+            }
+        }
+        SettingsRow {
+            id: overlayMenuOpacityRow
+            applicable: overlayMenuCard.menuEnabled
+            title: qsTr("Menu opacity")
+
+            Row {
+                width: Math.min(360, Math.max(220, overlayMenuOpacityRow.width - Theme.spaceMd * 2))
+                height: Math.max(overlayMenuOpacitySlider.implicitHeight, overlayMenuOpacityValue.implicitHeight)
+                spacing: Theme.spaceSm
+
+                HardSlider {
+                    id: overlayMenuOpacitySlider
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - overlayMenuOpacityValue.width - parent.spacing
+                    from: OverlayMenuSettings.minOpacityPercent
+                    to: OverlayMenuSettings.maxOpacityPercent
+                    stepSize: 5
+                    snapMode: Slider.SnapAlways
+                    value: OverlayMenuSettings.opacityPercent
+                    Accessible.name: overlayMenuOpacityRow.title
+                    onMoved: OverlayMenuSettings.opacityPercent = Math.round(value)
+                }
+
+                Text {
+                    id: overlayMenuOpacityValue
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 64
+                    text: Math.round(overlayMenuOpacitySlider.value) + "%"
+                    color: Theme.accent
+                    font.family: Theme.fontMono
+                    font.pointSize: Theme.fontBody
+                    font.weight: Font.DemiBold
+                    horizontalAlignment: Text.AlignRight
+                }
+            }
+        }
+
+        ChoiceRow {
+            applicable: overlayMenuCard.menuEnabled
+            title: qsTr("Floating button")
+            selectedValue: OverlayMenuSettings.buttonMode
+            onValueActivated: function(value) { OverlayMenuSettings.buttonMode = value }
+
+            model: ListModel {
+                ListElement { text: qsTr("Follow the position above (default)"); val: OverlayMenuSettings.TriggerAuto }
+                ListElement { text: qsTr("Always show"); val: OverlayMenuSettings.TriggerOn }
+                ListElement { text: qsTr("Never show"); val: OverlayMenuSettings.TriggerOff }
+            }
+        }
+
+        ChoiceRow {
+            applicable: overlayMenuCard.menuEnabled
+            title: qsTr("Screen edge trigger")
+            description: qsTr("Open the menu when the pointer rests on an edge or corner of the stream while the mouse is free.")
+            selectedValue: OverlayMenuSettings.edgeTriggerMode
+            onValueActivated: function(value) { OverlayMenuSettings.edgeTriggerMode = value }
+
+            model: ListModel {
+                ListElement { text: qsTr("Follow the position above (default)"); val: OverlayMenuSettings.TriggerAuto }
+                ListElement { text: qsTr("On"); val: OverlayMenuSettings.TriggerOn }
+                ListElement { text: qsTr("Off"); val: OverlayMenuSettings.TriggerOff }
+            }
+        }
+
+        ChoiceRow {
+            applicable: overlayMenuCard.menuEnabled &&
+                        OverlayMenuSettings.edgeTriggerMode === OverlayMenuSettings.TriggerOn
+            title: qsTr("Trigger edge or corner")
+            selectedValue: OverlayMenuSettings.edgeZone
+            onValueActivated: function(value) { OverlayMenuSettings.edgeZone = value }
+
+            model: ListModel {
+                ListElement { text: qsTr("Top edge"); val: OverlayMenuSettings.ZoneTop }
+                ListElement { text: qsTr("Bottom edge"); val: OverlayMenuSettings.ZoneBottom }
+                ListElement { text: qsTr("Left edge"); val: OverlayMenuSettings.ZoneLeft }
+                ListElement { text: qsTr("Right edge"); val: OverlayMenuSettings.ZoneRight }
+                ListElement { text: qsTr("Top-left corner"); val: OverlayMenuSettings.ZoneTopLeft }
+                ListElement { text: qsTr("Top-right corner"); val: OverlayMenuSettings.ZoneTopRight }
+                ListElement { text: qsTr("Bottom-left corner"); val: OverlayMenuSettings.ZoneBottomLeft }
+                ListElement { text: qsTr("Bottom-right corner"); val: OverlayMenuSettings.ZoneBottomRight }
+            }
+        }
+        SettingsRow {
+            id: overlayMenuEdgeDelayRow
+            applicable: overlayMenuCard.menuEnabled && OverlayMenuSettings.edgeTriggerMode === OverlayMenuSettings.TriggerOn
+            title: qsTr("Trigger delay")
+
+            Row {
+                width: Math.min(360, Math.max(220, overlayMenuEdgeDelayRow.width - Theme.spaceMd * 2))
+                height: Math.max(overlayMenuEdgeDelaySlider.implicitHeight, overlayMenuEdgeDelayValue.implicitHeight)
+                spacing: Theme.spaceSm
+
+                HardSlider {
+                    id: overlayMenuEdgeDelaySlider
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - overlayMenuEdgeDelayValue.width - parent.spacing
+                    from: 0
+                    to: OverlayMenuSettings.maxEdgeDelayMs
+                    stepSize: 100
+                    snapMode: Slider.SnapAlways
+                    value: OverlayMenuSettings.edgeDelayMs
+                    Accessible.name: overlayMenuEdgeDelayRow.title
+                    onMoved: OverlayMenuSettings.edgeDelayMs = Math.round(value)
+                }
+
+                Text {
+                    id: overlayMenuEdgeDelayValue
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 64
+                    text: Math.round(overlayMenuEdgeDelaySlider.value) + " ms"
+                    color: Theme.accent
+                    font.family: Theme.fontMono
+                    font.pointSize: Theme.fontBody
+                    font.weight: Font.DemiBold
+                    horizontalAlignment: Text.AlignRight
+                }
+            }
+        }
+
+        ToggleRow {
+            applicable: overlayMenuCard.menuEnabled
+            title: qsTr("Hold the shortcut to peek")
+            description: qsTr("Holding the overlay menu shortcut shows the menu until you let go. Use the menu meanwhile and it stays open.")
+            checked: OverlayMenuSettings.holdToPeek
+            onToggled: function(value) { OverlayMenuSettings.holdToPeek = value }
+        }
+
+        ChoiceRow {
+            applicable: overlayMenuCard.menuEnabled
+            title: qsTr("Esc and gamepad B")
+            selectedValue: OverlayMenuSettings.escapeAction
+            onValueActivated: function(value) { OverlayMenuSettings.escapeAction = value }
+
+            model: ListModel {
+                ListElement { text: qsTr("Go back one level (default)"); val: OverlayMenuSettings.EscapeBack }
+                ListElement { text: qsTr("Close the menu"); val: OverlayMenuSettings.EscapeClose }
+            }
+        }
+
+        ChoiceRow {
+            applicable: overlayMenuCard.menuEnabled
+            title: qsTr("Gamepad button")
+            description: qsTr("Hold it to open the menu while Gamepad Mouse is off.")
+            selectedValue: OverlayMenuSettings.gamepadTrigger
+            onValueActivated: function(value) { OverlayMenuSettings.gamepadTrigger = value }
+
+            model: ListModel {
+                ListElement { text: qsTr("Hold Start (default)"); val: OverlayMenuSettings.GamepadHoldStart }
+                ListElement { text: qsTr("Hold Back / Select"); val: OverlayMenuSettings.GamepadHoldBack }
+                ListElement { text: qsTr("Off"); val: OverlayMenuSettings.GamepadOff }
             }
         }
     }

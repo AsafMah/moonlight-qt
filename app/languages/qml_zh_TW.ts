@@ -1606,6 +1606,162 @@
         <source>Diagnostics</source>
         <translation>診斷</translation>
     </message>
+    <message>
+        <source>Where the menu opens</source>
+        <translation>選單開啟位置</translation>
+    </message>
+    <message>
+        <source>Follow the position above, or open the menu somewhere else. Drag the menu by its title bar to choose a spot of your own.</source>
+        <translation>沿用上面的位置，或在別處開啟選單。拖曳選單標題列可以自選位置。</translation>
+    </message>
+    <message>
+        <source>Follow the position above (default)</source>
+        <translation>跟隨上面的位置（預設）</translation>
+    </message>
+    <message>
+        <source>Centered</source>
+        <translation>置中</translation>
+    </message>
+    <message>
+        <source>At the pointer</source>
+        <translation>游標所在處</translation>
+    </message>
+    <message>
+        <source>Bottom edge</source>
+        <translation>底部邊緣</translation>
+    </message>
+    <message>
+        <source>Top-left corner</source>
+        <translation>左上角</translation>
+    </message>
+    <message>
+        <source>Top-right corner</source>
+        <translation>右上角</translation>
+    </message>
+    <message>
+        <source>Bottom-left corner</source>
+        <translation>左下角</translation>
+    </message>
+    <message>
+        <source>Bottom-right corner</source>
+        <translation>右下角</translation>
+    </message>
+    <message>
+        <source>Left side panel</source>
+        <translation>左側面板</translation>
+    </message>
+    <message>
+        <source>Right side panel</source>
+        <translation>右側面板</translation>
+    </message>
+    <message>
+        <source>Where I last dragged it</source>
+        <translation>上次拖曳到的位置</translation>
+    </message>
+    <message>
+        <source>Dragged position</source>
+        <translation>拖曳的位置</translation>
+    </message>
+    <message>
+        <source>Forget where the menu was dragged to.</source>
+        <translation>忘記選單被拖曳到的位置。</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation>重設</translation>
+    </message>
+    <message>
+        <source>Menu layout</source>
+        <translation>選單版面</translation>
+    </message>
+    <message>
+        <source>Compact (default)</source>
+        <translation>緊湊（預設）</translation>
+    </message>
+    <message>
+        <source>Comfortable: bigger rows for a TV or gamepad</source>
+        <translation>寬鬆：更大的列，適合電視或手把</translation>
+    </message>
+    <message>
+        <source>Side panel: tabs in a column</source>
+        <translation>側邊欄：分頁直向排列</translation>
+    </message>
+    <message>
+        <source>Menu scale</source>
+        <translation>選單縮放</translation>
+    </message>
+    <message>
+        <source>Menu opacity</source>
+        <translation>選單不透明度</translation>
+    </message>
+    <message>
+        <source>Always show</source>
+        <translation>一律顯示</translation>
+    </message>
+    <message>
+        <source>Never show</source>
+        <translation>永不顯示</translation>
+    </message>
+    <message>
+        <source>Screen edge trigger</source>
+        <translation>螢幕邊緣觸發</translation>
+    </message>
+    <message>
+        <source>Open the menu when the pointer rests on an edge or corner of the stream while the mouse is free.</source>
+        <translation>滑鼠未被擷取時，游標停在串流畫面的邊緣或角落即開啟選單。</translation>
+    </message>
+    <message>
+        <source>On</source>
+        <translation>開</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>關</translation>
+    </message>
+    <message>
+        <source>Trigger edge or corner</source>
+        <translation>觸發的邊緣或角落</translation>
+    </message>
+    <message>
+        <source>Trigger delay</source>
+        <translation>觸發延遲</translation>
+    </message>
+    <message>
+        <source>Hold the shortcut to peek</source>
+        <translation>按住快速鍵暫時查看</translation>
+    </message>
+    <message>
+        <source>Holding the overlay menu shortcut shows the menu until you let go. Use the menu meanwhile and it stays open.</source>
+        <translation>按住懸浮選單快速鍵時顯示選單，放開即關閉。期間操作過選單則保持開啟。</translation>
+    </message>
+    <message>
+        <source>Esc and gamepad B</source>
+        <translation>Esc 與手把 B 鍵</translation>
+    </message>
+    <message>
+        <source>Go back one level (default)</source>
+        <translation>返回上一層（預設）</translation>
+    </message>
+    <message>
+        <source>Close the menu</source>
+        <translation>關閉選單</translation>
+    </message>
+    <message>
+        <source>Gamepad button</source>
+        <translation>手把按鍵</translation>
+    </message>
+    <message>
+        <source>Hold it to open the menu while Gamepad Mouse is off.</source>
+        <translation>關閉手把滑鼠時，長按此鍵開啟選單。</translation>
+    </message>
+    <message>
+        <source>Hold Start (default)</source>
+        <translation>長按 Start（預設）</translation>
+    </message>
+    <message>
+        <source>Hold Back / Select</source>
+        <translation>長按 Back / Select</translation>
+    </message>
 </context>
 <context>
     <name>NvHTTP</name>
@@ -1874,6 +2030,79 @@
     <message>
         <source>Set them up in Foundation Sunshine</source>
         <translation>請在 Foundation Sunshine 中新增</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <comment>FPS preset at the display refresh rate</comment>
+        <translation>顯示器</translation>
+    </message>
+    <message>
+        <source>Quick</source>
+        <translation>快捷</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>輸入</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>主機</translation>
+    </message>
+    <message>
+        <source>Tabs</source>
+        <translation>切換頁</translation>
+    </message>
+    <message>
+        <source>Menu Layout</source>
+        <translation>選單版面</translation>
+    </message>
+    <message>
+        <source>Centered</source>
+        <translation>置中</translation>
+    </message>
+    <message>
+        <source>At the pointer</source>
+        <translation>游標所在處</translation>
+    </message>
+    <message>
+        <source>Bottom edge</source>
+        <translation>底部邊緣</translation>
+    </message>
+    <message>
+        <source>Top-left corner</source>
+        <translation>左上角</translation>
+    </message>
+    <message>
+        <source>Top-right corner</source>
+        <translation>右上角</translation>
+    </message>
+    <message>
+        <source>Bottom-left corner</source>
+        <translation>左下角</translation>
+    </message>
+    <message>
+        <source>Bottom-right corner</source>
+        <translation>右下角</translation>
+    </message>
+    <message>
+        <source>Left side panel</source>
+        <translation>左側面板</translation>
+    </message>
+    <message>
+        <source>Right side panel</source>
+        <translation>右側面板</translation>
+    </message>
+    <message>
+        <source>Comfortable</source>
+        <translation>寬鬆</translation>
+    </message>
+    <message>
+        <source>Side panel</source>
+        <translation>側邊欄</translation>
+    </message>
+    <message>
+        <source>Scale %1%</source>
+        <translation>縮放 %1%</translation>
     </message>
 </context>
 <context>
@@ -4052,6 +4281,321 @@
     <message>
         <source>Add</source>
         <translation>新增</translation>
+    </message>
+</context>
+<context>
+    <name>PyrowaveCodecPanel</name>
+    <message>
+        <source>Host support unknown</source>
+        <translation>主機支援情況未知</translation>
+    </message>
+    <message>
+        <source>%1 offers PyroWave</source>
+        <translation>%1 支援 PyroWave</translation>
+    </message>
+    <message>
+        <source>Not offered by %1</source>
+        <translation>%1 未提供 PyroWave</translation>
+    </message>
+    <message>
+        <source>%1: host support unknown</source>
+        <translation>%1：主機支援情況未知</translation>
+    </message>
+    <message>
+        <source>On its last connection (%1), %2 didn&apos;t offer PyroWave. The host needs Foundation Sunshine with PyroWave enabled; until then, streams use H.264.</source>
+        <translation>上次連線（%1）時，%2 未提供 PyroWave。主機需要使用已啟用 PyroWave 的 Foundation Sunshine；在此之前，串流將使用 H.264。</translation>
+    </message>
+    <message>
+        <source>%1 offered PyroWave on its last connection (%2).</source>
+        <translation>%1 在上次連線（%2）時提供了 PyroWave。</translation>
+    </message>
+    <message>
+        <source>Host support is checked when a stream starts. If the host doesn&apos;t offer PyroWave, the stream uses H.264 and says so.</source>
+        <translation>開始串流時會檢查主機是否支援。若主機未提供 PyroWave，串流將改用 H.264 並顯示提示。</translation>
+    </message>
+    <message>
+        <source>Checking GPU...</source>
+        <translation>正在檢查 GPU...</translation>
+    </message>
+    <message>
+        <source>GPU check passed</source>
+        <translation>GPU 檢查通過</translation>
+    </message>
+    <message>
+        <source>This PC can&apos;t decode PyroWave</source>
+        <translation>此電腦無法解碼 PyroWave</translation>
+    </message>
+    <message>
+        <source>GPU check unavailable</source>
+        <translation>無法檢查 GPU</translation>
+    </message>
+    <message>
+        <source>GPU not checked yet</source>
+        <translation>尚未檢查 GPU</translation>
+    </message>
+    <message>
+        <source>Decoder not in this build yet</source>
+        <translation>此版本尚未包含解碼器</translation>
+    </message>
+    <message>
+        <source>PyroWave is an experimental, lightly compressed codec for wired LAN. It needs much more bandwidth than other codecs (200 Mbps or more); over Wi-Fi or the internet, expect dropped frames.</source>
+        <translation>PyroWave 是針對有線區域網路的實驗性低壓縮編解碼器，所需頻寬遠高於其他編解碼器（200 Mbps 或更高）；透過 Wi-Fi 或網際網路串流時可能會掉格。</translation>
+    </message>
+    <message>
+        <source>This build can&apos;t decode PyroWave yet, so starting a stream shows an error instead of connecting. Choose another codec to stream.</source>
+        <translation>此版本暫時無法解碼 PyroWave，開始串流時會顯示錯誤而不會連線。請選擇其他編解碼器進行串流。</translation>
+    </message>
+    <message>
+        <source>Your bitrate is %1 Mbps. PyroWave needs far more than other codecs; %2 Mbps is a good start on wired LAN.</source>
+        <translation>目前位元速率為 %1 Mbps。PyroWave 所需位元速率遠高於其他編解碼器；在有線區域網路中可從 %2 Mbps 開始。</translation>
+    </message>
+    <message>
+        <source>Use %1 Mbps</source>
+        <translation>使用 %1 Mbps</translation>
+    </message>
+    <message>
+        <source>Fixed while PyroWave is selected</source>
+        <translation>選擇 PyroWave 時固定</translation>
+    </message>
+    <message>
+        <source>YUV 4:4:4: off</source>
+        <translation>YUV 4:4:4：關閉</translation>
+    </message>
+    <message>
+        <source>The PyroWave stream contract covers 4:2:0 only, and its H.264 fallback streams 4:2:0 too. Your saved setting is kept.</source>
+        <translation>PyroWave 串流協定僅支援 4:2:0，改用的 H.264 串流同樣使用 4:2:0。已儲存的設定會保留。</translation>
+    </message>
+    <message>
+        <source>Video AI-Enhancement: not used</source>
+        <translation>視訊 AI 增強：不使用</translation>
+    </message>
+    <message>
+        <source>It runs inside the D3D11 renderer, which PyroWave doesn&apos;t use. Your saved setting is kept and still applies to other codecs, including an H.264 fallback.</source>
+        <translation>此功能在 D3D11 轉譯器中執行，而 PyroWave 不使用該轉譯器。已儲存的設定會保留，並繼續套用於其他編解碼器（包括改用的 H.264）。</translation>
+    </message>
+    <message>
+        <source>Hardware or software decoding: not used</source>
+        <translation>硬體或軟體解碼：不使用</translation>
+    </message>
+    <message>
+        <source>PyroWave always decodes on the GPU with Vulkan. Your saved setting is kept and still applies to other codecs, including an H.264 fallback.</source>
+        <translation>PyroWave 一律透過 Vulkan 在 GPU 上解碼。已儲存的設定會保留，並繼續套用於其他編解碼器（包括改用的 H.264）。</translation>
+    </message>
+    <message>
+        <source>Run capability check</source>
+        <translation>執行能力檢測</translation>
+    </message>
+    <message>
+        <source>Reads Vulkan version, subgroup operations and size control for each GPU. It doesn&apos;t start a stream or change settings.</source>
+        <translation>讀取每個 GPU 的 Vulkan 版本、子群組操作與子群組大小控制。不會開始串流，也不會變更設定。</translation>
+    </message>
+    <message>
+        <source>PyroWave capability check</source>
+        <translation>PyroWave 能力檢測</translation>
+    </message>
+    <message>
+        <source>PyroWave (experimental)</source>
+        <translation>PyroWave（實驗性）</translation>
+    </message>
+</context>
+<context>
+    <name>PyrowaveRuntime</name>
+    <message>
+        <source>PyroWave runtime %1 is installed.</source>
+        <translation>已安裝 PyroWave 執行階段程式庫 %1。</translation>
+    </message>
+    <message>
+        <source>This build doesn&apos;t include the PyroWave runtime.</source>
+        <translation>此版本未包含 PyroWave 執行階段程式庫。</translation>
+    </message>
+    <message>
+        <source>The installed PyroWave runtime isn&apos;t a supported build.</source>
+        <translation>已安裝的 PyroWave 執行階段程式庫不是受支援的版本。</translation>
+    </message>
+    <message>
+        <source>The installed PyroWave runtime is version %1, but this build needs %2.</source>
+        <translation>已安裝的 PyroWave 執行階段程式庫版本為 %1，但此版本需要 %2。</translation>
+    </message>
+    <message>
+        <source>The installed PyroWave runtime is incomplete (%1).</source>
+        <translation>已安裝的 PyroWave 執行階段程式庫不完整（%1）。</translation>
+    </message>
+</context>
+<context>
+    <name>PyrowaveVideoDecoder</name>
+    <message>
+        <source>PyroWave needs an even resolution up to %1x%1 (selected: %2x%3).</source>
+        <translation>PyroWave 要求解析度的寬高皆為偶數且不超過 %1x%1（目前選擇：%2x%3）。</translation>
+    </message>
+    <message>
+        <source>The PyroWave decoder isn&apos;t implemented in this build yet.</source>
+        <translation>此版本尚未實作 PyroWave 解碼器。</translation>
+    </message>
+    <message>
+        <source>PyroWave is selected as the video codec, but it can&apos;t be used on this PC: %1
+
+Choose another video codec in Settings to stream.</source>
+        <translation>視訊編解碼器已選擇 PyroWave，但此電腦無法使用：%1
+
+請在設定中選擇其他視訊編解碼器後再串流。</translation>
+    </message>
+    <message>
+        <source>PyroWave wasn&apos;t available from this host, so this stream uses %1. Your codec setting hasn&apos;t changed.</source>
+        <translation>此主機未提供 PyroWave，本次串流使用 %1。你的編解碼器設定未變更。</translation>
+    </message>
+</context>
+<context>
+    <name>PyrowaveCapabilities</name>
+    <message>
+        <source>yes</source>
+        <translation>是</translation>
+    </message>
+    <message>
+        <source>no</source>
+        <translation>否</translation>
+    </message>
+    <message>
+        <source>integrated</source>
+        <translation>內建顯示卡</translation>
+    </message>
+    <message>
+        <source>discrete</source>
+        <translation>獨立顯示卡</translation>
+    </message>
+    <message>
+        <source>virtual</source>
+        <translation>虛擬 GPU</translation>
+    </message>
+    <message>
+        <source>CPU</source>
+        <translation>CPU</translation>
+    </message>
+    <message>
+        <source>other</source>
+        <translation>其他</translation>
+    </message>
+    <message>
+        <source>Vulkan 1.3 (this GPU reports %1)</source>
+        <translation>Vulkan 1.3（此 GPU 回報 %1）</translation>
+    </message>
+    <message>
+        <source>subgroup operations: %1</source>
+        <translation>子群組操作：%1</translation>
+    </message>
+    <message>
+        <source>subgroup operations in compute shaders</source>
+        <translation>計算著色器中的子群組操作</translation>
+    </message>
+    <message>
+        <source>subgroup size control</source>
+        <translation>子群組大小控制</translation>
+    </message>
+    <message>
+        <source>full compute subgroups</source>
+        <translation>完整計算子群組</translation>
+    </message>
+    <message>
+        <source>a usable subgroup size range (reports %1 to %2)</source>
+        <translation>可用的子群組大小範圍（回報為 %1 到 %2）</translation>
+    </message>
+    <message>
+        <source>8-bit storage buffers</source>
+        <translation>8 位元儲存緩衝區</translation>
+    </message>
+    <message>
+        <source>a queue with both graphics and compute</source>
+        <translation>同時支援圖形與計算的佇列</translation>
+    </message>
+    <message>
+        <source>This build can&apos;t check Vulkan capabilities.</source>
+        <translation>此版本無法檢測 Vulkan 能力。</translation>
+    </message>
+    <message>
+        <source>No Vulkan loader was found on this PC.</source>
+        <translation>此電腦上找不到 Vulkan 載入器。</translation>
+    </message>
+    <message>
+        <source>The Vulkan loader is too old to check (%1).</source>
+        <translation>Vulkan 載入器版本過舊，無法檢測（%1）。</translation>
+    </message>
+    <message>
+        <source>Vulkan couldn&apos;t start (VkResult %1).</source>
+        <translation>Vulkan 無法啟動（VkResult %1）。</translation>
+    </message>
+    <message>
+        <source>The Vulkan driver didn&apos;t answer the capability query.</source>
+        <translation>Vulkan 驅動程式未回應能力查詢。</translation>
+    </message>
+    <message>
+        <source>No Vulkan GPU was found.</source>
+        <translation>找不到支援 Vulkan 的 GPU。</translation>
+    </message>
+    <message>
+        <source>%1 meets the basic requirements.</source>
+        <translation>%1 符合基本需求。</translation>
+    </message>
+    <message>
+        <source>%1 is missing %2.</source>
+        <translation>%1 缺少：%2。</translation>
+    </message>
+    <message>
+        <source>Runtime: %1</source>
+        <translation>執行階段程式庫：%1</translation>
+    </message>
+    <message>
+        <source>Vulkan loader: not available</source>
+        <translation>Vulkan 載入器：無法使用</translation>
+    </message>
+    <message>
+        <source>Vulkan loader: %1 (%2)</source>
+        <translation>Vulkan 載入器：%1（%2）</translation>
+    </message>
+    <message>
+        <source>GPU %1: %2 (%3)</source>
+        <translation>GPU %1：%2（%3）</translation>
+    </message>
+    <message>
+        <source>Vulkan version: %1</source>
+        <translation>Vulkan 版本：%1</translation>
+    </message>
+    <message>
+        <source>Subgroup size: %1</source>
+        <translation>子群組大小：%1</translation>
+    </message>
+    <message>
+        <source>Subgroup operations: %1 (compute shaders: %2)</source>
+        <translation>子群組操作：%1（計算著色器：%2）</translation>
+    </message>
+    <message>
+        <source>Subgroup size control: %1 (sizes %2 to %3, full compute subgroups: %4)</source>
+        <translation>子群組大小控制：%1（大小 %2 到 %3，完整計算子群組：%4）</translation>
+    </message>
+    <message>
+        <source>8-bit storage buffers: %1, 16-bit integers: %2</source>
+        <translation>8 位元儲存緩衝區：%1，16 位元整數：%2</translation>
+    </message>
+    <message>
+        <source>Graphics and compute queue: %1</source>
+        <translation>圖形與計算佇列：%1</translation>
+    </message>
+    <message>
+        <source>Result: basic requirements met</source>
+        <translation>結果：符合基本需求</translation>
+    </message>
+    <message>
+        <source>Result: missing %1</source>
+        <translation>結果：缺少 %1</translation>
+    </message>
+    <message>
+        <source>This check only reads device properties. Starting a stream still checks the window, image formats, resolution and HDR on the GPU that will be used.</source>
+        <translation>此檢測僅讀取裝置屬性。開始串流時仍會在實際使用的 GPU 上檢查視窗、影像格式、解析度與 HDR。</translation>
+    </message>
+</context>
+<context>
+    <name>PyrowaveStatus</name>
+    <message>
+        <source>Checking Vulkan capabilities...</source>
+        <translation>正在檢測 Vulkan 能力...</translation>
     </message>
 </context>
 </TS>

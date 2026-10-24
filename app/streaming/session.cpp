@@ -15,6 +15,7 @@
 #include "streaming/input/gamepadglyphs.h"
 #endif
 #include "streaming/video/overlaystatscontroller.h"
+#include "settings/overlaymenusettings.h"
 #include "backend/richpresencemanager.h"
 #include "backend/nvhttp.h"
 #include "streaming/hostcommandrunner.h"
@@ -42,6 +43,10 @@
 #ifdef HAVE_SLVIDEO
 #include "video/slvid.h"
 #endif
+
+#include "video/pyrowave/pyrowavehoststore.h"
+#include "video/pyrowave/pyrowaveruntime.h"
+#include "video/pyrowave/pyrowavevideodecoder.h"
 
 #ifdef Q_OS_WIN32
 // Scaling the icon down on Win32 looks dreadful, so render at lower res
@@ -318,6 +323,37 @@ static QString gamepadQuitComboGlyphText(GamepadUiStyle style,
     default:
         return gamepadStartButtonName(style) + "+" + gamepadSelectButtonName(style) + "+" + lb +
                "+" + rb;
+    }
+}
+
+// Qt key for an SDL key that navigates the overlay menu, or 0. Escape is
+// handled separately (back/close on key-up).
+static int overlayMenuNavigationKey(const SDL_KeyboardEvent& key)
+{
+    switch (key.keysym.sym) {
+    case SDLK_UP:
+        return Qt::Key_Up;
+    case SDLK_DOWN:
+        return Qt::Key_Down;
+    case SDLK_LEFT:
+        return Qt::Key_Left;
+    case SDLK_RIGHT:
+        return Qt::Key_Right;
+    case SDLK_TAB:
+        return (key.keysym.mod & KMOD_SHIFT) ? Qt::Key_Backtab : Qt::Key_Tab;
+    case SDLK_PAGEUP:
+        return Qt::Key_PageUp;
+    case SDLK_PAGEDOWN:
+        return Qt::Key_PageDown;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:
+        return Qt::Key_Return;
+    case SDLK_SPACE:
+        return Qt::Key_Space;
+    case SDLK_BACKSPACE:
+        return Qt::Key_Backspace;
+    default:
+        return 0;
     }
 }
 
@@ -1002,6 +1038,31 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                 "V-sync %s",
                 enableVsync ? "enabled" : "disabled");
 
+    // PyroWave never goes through FFmpeg or SLVideo: PyrowaveVideoDecoder owns
+    // its Vulkan decode and presentation. Session only asks for this format
+    // after PyrowaveVideoDecoder::preflight() has passed.
+    if (videoFormat == VIDEO_FORMAT_PYROWAVE) {
+        // The decoder checks every frame against the negotiated range and
+        // follows the delivery model that the advertised capabilities chose.
+        PyrowaveSessionContract contract;
+        if (s_ActiveSession != nullptr) {
+            contract.colorRange = s_ActiveSession->m_StreamConfig.colorRange;
+            contract.hdrMode = s_ActiveSession->m_StreamConfig.hdrMode;
+            contract.pullRenderer =
+                (s_ActiveSession->m_VideoCallbacks.capabilities & CAPABILITY_PULL_RENDERER) != 0;
+        }
+        chosenDecoder = new PyrowaveVideoDecoder(testOnly, contract);
+        if (chosenDecoder->initialize(&params)) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave video decoder chosen");
+            return true;
+        }
+
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to load PyroWave decoder");
+        delete chosenDecoder;
+        chosenDecoder = nullptr;
+        return false;
+    }
+
 #ifdef HAVE_SLVIDEO
     chosenDecoder = new SLVideoDecoder(testOnly);
     if (chosenDecoder->initialize(&params)) {
@@ -1231,6 +1292,11 @@ bool Session::populateDecoderProperties(SDL_Window* window)
     }
 
     m_VideoCallbacks.capabilities = decoder->getDecoderCapabilities();
+    if (m_PyrowaveRequested) {
+        // One capability set covers both PyroWave and its H.264 fallback.
+        m_VideoCallbacks.capabilities =
+            PyrowaveVideoDecoder::advertisedCapabilities(m_VideoCallbacks.capabilities);
+    }
     if (m_VideoCallbacks.capabilities & CAPABILITY_PULL_RENDERER) {
         // It is an error to pass a push callback when in pull mode
         m_VideoCallbacks.submitDecodeUnit = nullptr;
@@ -1779,8 +1845,50 @@ bool Session::initialize(QQuickWindow* qtWindow)
     m_SupportedVideoFormats.append(VIDEO_FORMAT_H264_HIGH8_444);
     m_SupportedVideoFormats.append(VIDEO_FORMAT_H264);
 
+    // PyroWave is only used when chosen explicitly; VCC_AUTO never picks it.
+    // Without the runtime the saved choice behaves like Automatic (the
+    // settings page hides it). With the runtime, a failed preflight stops the
+    // launch with its reason instead of connecting.
+    if (m_Preferences->videoCodecConfig == StreamingPreferences::VCC_FORCE_PYROWAVE) {
+        const PyrowaveRuntime& pyrowaveRuntime = PyrowaveRuntime::get();
+        if (!pyrowaveRuntime.isAvailable()) {
+            const QString reason = pyrowaveRuntime.diagnosticMessage();
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "PyroWave unavailable, using Automatic: %s",
+                        qUtf8Printable(reason));
+        } else {
+            PyrowavePreflightRequest request;
+            request.window = testWindow;
+            request.width = m_StreamConfig.width;
+            request.height = m_StreamConfig.height;
+            request.frameRate = m_StreamConfig.fps;
+            const int hdrMode = static_cast<int>(m_Preferences->hdrMode);
+            request.hdrMode = m_Preferences->enableHdr ? hdrMode : 0;
+
+            const PyrowavePreflightResult preflight = PyrowaveVideoDecoder::preflight(request);
+            if (!preflight.ok) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "PyroWave preflight failed: %s",
+                             qUtf8Printable(preflight.reason));
+                emit displayLaunchError(PyrowaveVideoDecoder::launchErrorText(preflight.reason));
+                SDL_DestroyWindow(testWindow);
+                SDL_QuitSubSystem(SDL_INIT_VIDEO);
+                return false;
+            }
+
+            m_PyrowaveRequested = true;
+        }
+    }
+
     switch (m_Preferences->videoCodecConfig)
     {
+    case StreamingPreferences::VCC_FORCE_PYROWAVE:
+        if (m_PyrowaveRequested) {
+            // moonlight-common-c falls back to H.264 if the host doesn't
+            // negotiate PyroWave (client contract, section 1). YUV 4:4:4 is
+            // locked off while PyroWave is selected.
+            m_SupportedVideoFormats.removeByMask(~VIDEO_FORMAT_H264);
+            break;
+        }
+        [[fallthrough]];
     case StreamingPreferences::VCC_AUTO:
     {
         // Codecs are checked in order of ascending decode complexity to ensure
@@ -1984,6 +2092,10 @@ bool Session::initialize(QQuickWindow* qtWindow)
     if (ret) {
         // Video format is now locked in
         m_StreamConfig.supportedVideoFormats = m_SupportedVideoFormats.front();
+        if (m_PyrowaveRequested) {
+            m_StreamConfig.supportedVideoFormats =
+                PyrowaveVideoDecoder::advertisedVideoFormats(m_StreamConfig.supportedVideoFormats);
+        }
 
         // Populate decoder-dependent properties.
         // Must be done after validateLaunch() since m_StreamConfig is finalized.
@@ -2112,7 +2224,8 @@ bool Session::validateLaunch(SDL_Window* testWindow)
         }
     }
 
-    if (m_Preferences->enableHdr) {
+    // PyroWave negotiates HDR itself; its H.264 fallback streams SDR.
+    if (m_Preferences->enableHdr && !m_PyrowaveRequested) {
         if (m_Preferences->videoCodecConfig == StreamingPreferences::VCC_FORCE_H264) {
             emitLaunchWarning(tr("HDR is not supported using the H.264 codec."));
             m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_10BIT);
@@ -2175,7 +2288,8 @@ bool Session::validateLaunch(SDL_Window* testWindow)
         }
     }
 
-    if (m_Preferences->enableYUV444) {
+    // YUV 4:4:4 is locked off while PyroWave is selected.
+    if (m_Preferences->enableYUV444 && !m_PyrowaveRequested) {
         if (!(m_Computer->serverCodecModeSupport & SCM_MASK_YUV444)) {
             emitLaunchWarning(tr("Your host PC doesn't support YUV 4:4:4 streaming."));
             m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_YUV444);
@@ -2786,6 +2900,8 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     // Flush stale mouse motion events from relative mode
     SDL_FlushEvent(SDL_MOUSEMOTION);
 
+    const OverlayMenu::Placement menuPlacement = applyOverlayMenuOptionsToPanel();
+
     // Rebuild for the current gamepad set before applying dynamic menu state.
     GamepadUiStyle gamepadUiStyle = m_InputHandler->getGamepadUiStyle();
     m_MenuPanel->setGamepadHints(
@@ -2807,8 +2923,12 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     m_MenuPanel->updateBitrateState(m_Preferences->bitrateKbps);
     updateStreamQualityMenuState();
     m_MenuPanel->updateGamepadMouseState(m_InputHandler->isMouseEmulationActive());
+    // Tick the placement option, else the position preference
     m_MenuPanel->updateMenuPositionState(
-            menuPlacementActionForPreference(m_Preferences->overlayMenuPosition));
+        menuPlacement == OverlayMenu::Placement::Auto
+            ? menuPlacementActionForPreference(m_Preferences->overlayMenuPosition)
+            : OverlayMenuPanel::actionForPlacement(menuPlacement));
+    m_MenuPanel->updateMenuStyleState();
     if (m_StatsOverlay) {
         m_MenuPanel->updateStatsOverlayState(m_StatsOverlay->preset(),
                                              m_StatsOverlay->usesCompositorWindow());
@@ -2817,7 +2937,13 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     updateRemoteUsbMenuState();
     updateHostActionsMenuState();
 
-    // Show menu based on user preference
+    // A placement option, else as the position preference says
+    if (showQtOverlayMenuWithPlacement(parentRect, pointerGlobalPosition,
+                                       closeWhenPointerOutside)) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Qt overlay menu shown at a placement option");
+        return;
+    }
+
     switch (m_Preferences->overlayMenuPosition) {
     case StreamingPreferences::OMP_LEFT_EDGE:
         m_MenuPanel->showAtLeftEdge(parentRect.x(), parentRect.y(),
@@ -2932,7 +3058,7 @@ void Session::syncQtOverlayWindowsWithSdlWindowState()
         return;
     }
 
-    if (m_Preferences->overlayMenuPosition != StreamingPreferences::OMP_BUTTON ||
+    if (!m_OverlayMenuOptions.buttonEnabled ||
         (m_MenuPanel && (m_MenuPanel->isMenuVisible() || m_MenuPanel->isClosing()))) {
         m_MenuButton->hideButton();
         return;
@@ -2948,8 +3074,14 @@ void Session::syncQtOverlayWindowsWithSdlWindowState()
 void Session::dispatchQtMenuAction(OverlayMenuPanel::MenuAction action)
 {
     if (const auto placement = menuPlacementForAction(action)) {
+        // The original positions also bring back their own placement
         m_Preferences->setOverlayMenuPosition(*placement);
         m_Preferences->save();
+        OverlayMenuSettings().setPlacement(int(OverlayMenu::Placement::Auto));
+        reloadOverlayMenuOptions();
+        return;
+    }
+    if (handleOverlayMenuOptionAction(action)) {
         return;
     }
     if (handleStatsOverlayMenuAction(action)) {
@@ -3766,6 +3898,24 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
     case SDL_CODE_FLUSH_WINDOW_EVENT_BARRIER:
         m_FlushingWindowEventsRef--;
         break;
+    case SDL_CODE_PYROWAVE_FATAL: {
+        // PyroWave gave up after its bounded recovery. End the stream with
+        // the failing stage; the codec is never switched mid-stream.
+        QString* reason = static_cast<QString*>(event.data2);
+        m_UnexpectedTermination = true;
+        emit displayLaunchError(
+            PyrowaveVideoDecoder::fatalErrorText((int)(intptr_t)event.data1, *reason));
+        delete reason;
+
+        SDL_Event quitEvent = {};
+        quitEvent.type = SDL_QUIT;
+        quitEvent.quit.timestamp = SDL_GetTicks();
+        pushEventOrWarn(quitEvent);
+        break;
+    }
+    case SDL_CODE_PYROWAVE_FALLBACK_NOTICE:
+        showStreamingToast(PyrowaveVideoDecoder::fallbackNotice((int)(intptr_t)event.data1), 8000);
+        break;
     case SDL_CODE_GAMECONTROLLER_RUMBLE:
         m_InputHandler->rumble((uint16_t)(uintptr_t)event.data1,
                                (uint16_t)((uintptr_t)event.data2 >> 16),
@@ -4533,6 +4683,34 @@ bool Session::startConnectionAsync()
         }
     }
 
+    {
+        // Remember what this host said about PyroWave for the settings page.
+        QString hostUuid, hostName;
+        {
+            QReadLocker locker(&m_Computer->lock);
+            hostUuid = m_Computer->uuid;
+            hostName = m_Computer->name;
+        }
+        const auto offer = PyrowaveVideoDecoder::hostOfferFromConnection(m_ActiveVideoFormat);
+        PyrowaveHostStore::recordConnection(hostUuid, hostName, offer);
+
+        // PyroWave was requested but the host negotiated another codec. Keep
+        // streaming and say so once; the saved setting stays as it is.
+        if (m_PyrowaveRequested && m_ActiveVideoFormat != VIDEO_FORMAT_PYROWAVE &&
+            !m_PyrowaveFallbackNoticeShown) {
+            m_PyrowaveFallbackNoticeShown = true;
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "PyroWave was not negotiated; streaming with format 0x%x",
+                        m_ActiveVideoFormat);
+
+            SDL_Event noticeEvent = {};
+            noticeEvent.type = SDL_USEREVENT;
+            noticeEvent.user.code = SDL_CODE_PYROWAVE_FALLBACK_NOTICE;
+            noticeEvent.user.data1 = (void*)(intptr_t)m_ActiveVideoFormat;
+            pushEventOrWarn(noticeEvent);
+        }
+    }
+
     emit connectionStarted();
     startSunshineAbr();
     startFileMappingUxProbe();
@@ -4622,8 +4800,6 @@ void Session::start()
     // NB: m_InputHandler must be initialized before starting the connection.
     m_InputHandler = new SdlInputHandler(*m_Preferences, m_StreamConfig.width,
                                          m_StreamConfig.height, enablePhysicalDualSenseHaptics);
-    m_InputHandler->getShortcutDispatcher().setHandler(
-        QLatin1String(ShortcutActions::ToggleOverlayMenu), [this] { toggleQtOverlayMenu(); });
     setupStatsOverlayShortcuts();
     registerHostActionShortcuts();
     updateDualSenseHapticsControllerTarget();
@@ -5222,7 +5398,9 @@ void Session::exec()
         showQtOverlayMenu(globalPosition, closeWhenPointerOutside);
     });
 
-    if (m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_BUTTON) {
+    reloadOverlayMenuOptions();
+    setupOverlayMenuShortcut();
+    if (m_OverlayMenuOptions.buttonEnabled) {
         // Show button at initial position
         const QRect parentRect = qtOverlayParentGeometry();
         if (parentRect.isValid()) {
@@ -5372,6 +5550,7 @@ void Session::exec()
         if (m_StatsOverlay) {
             m_StatsOverlay->tick();
         }
+        updateOverlayMenuEdgeTrigger();
 #ifdef Q_OS_WIN32
         processClientSdrWhiteUpdate();
 #endif
@@ -5408,6 +5587,9 @@ void Session::exec()
         if (const int statsDelayMs = m_StatsOverlay ? m_StatsOverlay->nextEventDelayMs() : -1;
             statsDelayMs >= 0) {
             waitTimeoutMs = qMin(waitTimeoutMs, qMax(statsDelayMs, 1));
+        }
+        if (const int menuEdgeDelayMs = overlayMenuEdgeTriggerDelayMs(); menuEdgeDelayMs >= 0) {
+            waitTimeoutMs = qMin(waitTimeoutMs, qMax(menuEdgeDelayMs, 1));
         }
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         if (const int replayDelayMs = m_StylusReplayTest ?
@@ -5744,6 +5926,17 @@ void Session::exec()
                 }
                 break;
             }
+            // While the menu is open, its navigation keys drive it and never
+            // reach the host (both halves are swallowed, like Escape).
+            if (m_MenuPanel && (m_MenuPanel->isMenuVisible() || m_MenuPanel->isClosing())) {
+                const int menuKey = overlayMenuNavigationKey(event.key);
+                if (menuKey != 0) {
+                    if (event.type == SDL_KEYDOWN && m_MenuPanel->isMenuVisible()) {
+                        m_MenuPanel->handleNavigationKey(menuKey);
+                    }
+                    break;
+                }
+            }
             // Escape also ends moving the performance overlay
             if (m_StatsOverlay && m_StatsOverlay->isEditing() &&
                 event.key.keysym.sym == SDLK_ESCAPE) {
@@ -5797,8 +5990,7 @@ void Session::exec()
             // fixed overlay control remains usable even when Qt receives no
             // mouse events for its X11 surface.
             if (m_MenuButton && event.button.button == SDL_BUTTON_LEFT &&
-                m_WaylandStreamWindow == nullptr &&
-                m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_BUTTON) {
+                m_WaylandStreamWindow == nullptr && m_OverlayMenuOptions.buttonEnabled) {
                 const QPoint pointerPosition =
                     qtOverlayPositionForSdlPoint(event.button.x, event.button.y);
                 const bool handled =
@@ -5825,8 +6017,7 @@ void Session::exec()
                 qtWaylandOverlay ? qtOverlayPositionForSdlPoint(event.motion.x, event.motion.y)
                                  : QPoint();
 
-            if (m_MenuButton && !qtWaylandOverlay &&
-                m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_BUTTON &&
+            if (m_MenuButton && !qtWaylandOverlay && m_OverlayMenuOptions.buttonEnabled &&
                 m_MenuButton->handleExternalMouseMove(
                     qtOverlayPositionForSdlPoint(event.motion.x, event.motion.y),
                     (event.motion.state & SDL_BUTTON_LMASK) != 0)) {
@@ -5846,8 +6037,7 @@ void Session::exec()
             // pointer location, so it must never be interpreted as an edge hit.
             if (m_MenuPanel && (!qtWaylandOverlay || !SDL_GetRelativeMouseMode()) &&
                 !m_MenuPanel->isMenuVisible() && !m_MenuPanel->isClosing() &&
-                m_Preferences->overlayMenuPosition != StreamingPreferences::OMP_DISABLED &&
-                m_Preferences->overlayMenuPosition != StreamingPreferences::OMP_BUTTON) {
+                m_OverlayMenuOptions.legacyEdgeTrigger) {
                 Uint32 elapsed = SDL_GetTicks() - m_MenuCloseTicks;
                 if (elapsed > 500) {
                     bool atEdge = false;
@@ -5927,10 +6117,16 @@ void Session::exec()
                         m_MenuPanel->gamepadMoveDown();
                         break;
                     case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
-                        m_MenuPanel->gamepadAdjustSlider(-1);
+                        m_MenuPanel->gamepadMoveHorizontal(-1);
                         break;
                     case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-                        m_MenuPanel->gamepadAdjustSlider(1);
+                        m_MenuPanel->gamepadMoveHorizontal(1);
+                        break;
+                    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+                        m_MenuPanel->gamepadSwitchTab(-1);
+                        break;
+                    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+                        m_MenuPanel->gamepadSwitchTab(1);
                         break;
                     case SDL_CONTROLLER_BUTTON_A:
                         m_MenuPanel->gamepadSelect();
@@ -5974,7 +6170,7 @@ void Session::exec()
         case SDL_FINGERMOTION:
         case SDL_FINGERUP:
             if (m_MenuButton && m_WaylandStreamWindow == nullptr &&
-                m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_BUTTON) {
+                m_OverlayMenuOptions.buttonEnabled) {
                 const QRect parentRect = qtOverlayParentGeometry();
                 const QPoint pointerPosition(
                     parentRect.x() + qRound(event.tfinger.x * parentRect.width()),

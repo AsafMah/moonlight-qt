@@ -124,6 +124,14 @@ cp "$USB_HELPER_BUILD/moonlight-usbd" $BUILD_FOLDER/app/Moonlight.app/Contents/M
 # and clipboard sync silently disables itself.
 macdeployqt $BUILD_FOLDER/app/Moonlight.app $EXTRA_ARGS -executable=$BUILD_FOLDER/app/Moonlight.app/Contents/MacOS/moonlight-clipboard-helper -executable=$BUILD_FOLDER/app/Moonlight.app/Contents/MacOS/moonlight-usbd -qmldir=$SOURCE_ROOT/app/gui -appstore-compliant || fail "macdeployqt failed!"
 
+# setup-deps.py builds the PyroWave runtime into libs/mac/lib and app.pro
+# copies it into Frameworks. Moonlight loads it at runtime, so nothing above
+# would notice if it were missing.
+if [ "${PYROWAVE_BUILD:-auto}" = "require" ]; then
+  [ -s "$BUILD_FOLDER/app/Moonlight.app/Contents/Frameworks/libpyrowave-shared.101.dylib" ] || \
+    fail "App bundle is missing the PyroWave runtime!"
+fi
+
 echo Building File Provider extension into app bundle
 bash "$SOURCE_ROOT/scripts/build-macos-fileprovider-extension.sh" "$SOURCE_ROOT" "$BUILD_FOLDER" "$BUILD_FOLDER/app/Moonlight.app" "$MOONLIGHT_ARCH" || fail "File Provider extension build failed"
 

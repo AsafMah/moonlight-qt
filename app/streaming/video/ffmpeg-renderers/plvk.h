@@ -12,6 +12,133 @@
 #include <libplacebo/renderer.h>
 #include <libplacebo/vulkan.h>
 
+#include <functional>
+#include <vector>
+
+#ifdef HAVE_DRM_MASTER_HOOKS
+extern "C" {
+void lockDrmMaster();
+void unlockDrmMaster();
+}
+#endif
+
+// Many operations like setting a display mode or creating a swapchain
+// may require the Vulkan implementation to have DRM master in a KMSDRM
+// environment. Since this will not necessarily be the case during decoder
+// probing (when the Qt UI is still rendering), we need to grab the DRM
+// master lock to prevent Qt from taking it out from under us.
+class DrmMasterLocker
+{
+public:
+    DrmMasterLocker()
+    {
+#ifdef HAVE_DRM_MASTER_HOOKS
+        lockDrmMaster();
+#endif
+    }
+
+    ~DrmMasterLocker()
+    {
+#ifdef HAVE_DRM_MASTER_HOOKS
+        unlockDrmMaster();
+#endif
+    }
+
+    // Disallow copies and moves
+    DrmMasterLocker(const DrmMasterLocker&) = delete;
+    DrmMasterLocker& operator=(const DrmMasterLocker&) = delete;
+    DrmMasterLocker(DrmMasterLocker&&) noexcept = delete;
+    DrmMasterLocker& operator=(DrmMasterLocker&&) noexcept = delete;
+};
+
+// Vulkan setup shared by PlVkRenderer and the PyroWave decoder, which creates
+// its own VkDevice and imports it into libplacebo (see
+// streaming/video/pyrowave/pyrowavevulkan.h). Each helper does what
+// PlVkRenderer used to do inline, including its logging.
+namespace PlVkShared {
+
+// A libplacebo log routed to SDL logging. PLVK_LOG_LEVEL overrides the level.
+pl_log createLog();
+
+// The loader entry point SDL loaded for SDL_WINDOW_VULKAN windows.
+PFN_vkGetInstanceProcAddr getInstanceProcAddr();
+
+// The instance extensions SDL needs to create a surface for the window.
+bool getInstanceExtensions(SDL_Window* window, std::vector<const char*>& extensions);
+
+// Creates a surface for the window, holding DRM master while doing so.
+bool createWindowSurface(SDL_Window* window, VkInstance instance, VkSurfaceKHR* surface);
+
+void getDrawableSize(SDL_Window* window, int* width, int* height);
+
+// Every physical device in the order to try them: the first one (device
+// selection layers put the preferred GPU there), then integrated GPUs, then
+// discrete GPUs, then everything else.
+std::vector<VkPhysicalDevice>
+devicesInPreferenceOrder(VkInstance instance, PFN_vkEnumeratePhysicalDevices enumerate,
+                         PFN_vkGetPhysicalDeviceProperties getProperties);
+
+// True (and logged) for software renderers unless PLVK_ALLOW_SOFTWARE=1.
+bool isSoftwareDeviceRejected(const VkPhysicalDeviceProperties& properties);
+
+// FIFO with V-Sync. Without it, the first supported of Immediate, FIFO
+// Relaxed and Mailbox, falling back to FIFO.
+VkPresentModeKHR choosePresentMode(bool enableVsync,
+                                   const std::function<bool(VkPresentModeKHR)>& isSupported);
+
+// Logs and returns null on failure. Holds DRM master while creating.
+pl_swapchain createSwapchain(pl_vulkan vulkan, VkSurfaceKHR surface, VkPresentModeKHR presentMode,
+                             int depth);
+
+}
+
+// The overlay textures a libplacebo renderer draws over the video, and the
+// handoff from the overlay update thread to the render thread.
+class PlVkOverlays
+{
+public:
+    // Takes ownership of surface in all cases!
+    static bool createOverlay(pl_gpu gpu, pl_overlay* overlay, SDL_Surface* surface);
+
+    // Overlay update thread
+    void notifyUpdated(pl_gpu gpu, Overlay::OverlayType type);
+
+    // Render thread: picks up staged overlays and positions every enabled one
+    // in targetFrame. parts must outlive the render call. Textures that are no
+    // longer used are returned for the caller to destroy after rendering.
+    void collect(const pl_frame& targetFrame, pl_overlay_part (&parts)[Overlay::OverlayMax],
+                 std::vector<pl_overlay>& overlays, std::vector<pl_tex>& texturesToDestroy);
+
+    // Destroys every overlay texture. Call before destroying the pl_vulkan.
+    void destroy(pl_gpu gpu);
+
+private:
+    static void uploadComplete(void* opaque);
+
+    SDL_SpinLock m_Lock = 0;
+    struct
+    {
+        // The staging overlay state is copied here under the overlay lock in the render thread.
+        //
+        // These values can be safely read by the render thread outside of the overlay lock,
+        // but the copy from stagingOverlay to overlay must only happen under the overlay
+        // lock when hasStagingOverlay is true.
+        bool hasOverlay;
+        pl_overlay overlay;
+
+        // This state is written by the overlay update thread
+        //
+        // NB: hasStagingOverlay may be false even if there is a staging overlay texture present,
+        // because this is how the overlay update path indicates that the overlay is not currently
+        // safe for the render thread to read.
+        //
+        // It is safe for the overlay update thread to write to stagingOverlay outside of the lock,
+        // as long as hasStagingOverlay is false.
+        bool hasStagingOverlay;
+        pl_overlay stagingOverlay;
+    } m_Overlays[Overlay::OverlayMax] = {};
+};
+
 #ifdef Q_OS_DARWIN
 class MetalVulkanTextureFactory {
 public:
@@ -59,14 +186,12 @@ public:
 
 private:
     static void lockQueue(AVHWDeviceContext *dev_ctx, uint32_t queue_family, uint32_t index);
-    static void unlockQueue(AVHWDeviceContext *dev_ctx, uint32_t queue_family, uint32_t index);
-    static void overlayUploadComplete(void* opaque);
+    static void unlockQueue(AVHWDeviceContext* dev_ctx, uint32_t queue_family, uint32_t index);
 
     void beginRenderTiming();
     void endRenderTiming();
 
     bool createSwapchain(int depth);
-    bool createOverlay(pl_overlay* overlay, SDL_Surface* surface);
     bool mapAvFrameToPlacebo(const AVFrame *frame, pl_frame* mappedFrame);
     void unmapAvFrameFromPlacebo(const AVFrame *frame, pl_frame* mappedFrame);
     bool populateQueues(int videoFormat);
@@ -129,27 +254,7 @@ private:
     bool m_IgnoreAspectRatio = false;
 
     // Overlay state
-    SDL_SpinLock m_OverlayLock = 0;
-    struct {
-        // The staging overlay state is copied here under the overlay lock in the render thread.
-        //
-        // These values can be safely read by the render thread outside of the overlay lock,
-        // but the copy from stagingOverlay to overlay must only happen under the overlay
-        // lock when hasStagingOverlay is true.
-        bool hasOverlay;
-        pl_overlay overlay;
-
-        // This state is written by the overlay update thread
-        //
-        // NB: hasStagingOverlay may be false even if there is a staging overlay texture present,
-        // because this is how the overlay update path indicates that the overlay is not currently
-        // safe for the render thread to read.
-        //
-        // It is safe for the overlay update thread to write to stagingOverlay outside of the lock,
-        // as long as hasStagingOverlay is false.
-        bool hasStagingOverlay;
-        pl_overlay stagingOverlay;
-    } m_Overlays[Overlay::OverlayMax] = {};
+    PlVkOverlays m_Overlays;
 
     // Device context used for hwaccel decoders
     AVBufferRef* m_HwDeviceCtx = nullptr;

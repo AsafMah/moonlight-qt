@@ -71,6 +71,9 @@ void Session::updateHostActionsMenuState()
 void Session::dispatchQtMenuPayloadAction(OverlayMenuPanel::MenuAction action,
                                           const QString& payload)
 {
+    if (handleOverlayMenuOptionPayload(action, payload)) {
+        return;
+    }
     switch (action) {
     case OverlayMenuPanel::MenuAction::SendHostKeys:
         sendHostKeys(HostKeys::bindingForPayload(payload));

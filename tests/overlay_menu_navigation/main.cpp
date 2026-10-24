@@ -60,6 +60,266 @@ static void waitClosed(const OverlayMenuPanel &panel)
         QTest::qWait(50);
 }
 
+// Every placement keeps the menu inside the bounds it is given (the stream,
+// cut to its screen), on any monitor layout, and big menus keep their
+// top-left corner visible.
+static void testPlacementGeometry()
+{
+    using namespace OverlayMenu;
+    const QSize menu(340, 420);
+    const QRect boundsList[] = {
+        QRect(0, 0, 1920, 1080),
+        QRect(-1920, 200, 1280, 720),   // a monitor left of the primary one
+        QRect(2560, -1440, 3840, 2160), // above and right, high DPI in logical pixels
+        QRect(100, 50, 300, 260),       // a stream smaller than the menu
+    };
+    const std::optional<QPoint> pointers[] = { std::nullopt, QPoint(5, 5), QPoint(100000, 100000) };
+    const std::optional<QPointF> draggedList[] = { std::nullopt, QPointF(0, 0), QPointF(1, 1),
+                                                   QPointF(0.3, 0.8) };
+    for (const QRect &bounds : boundsList) {
+        for (int p = 0; p < int(Placement::Count); p++) {
+            const Placement placement = Placement(p);
+            for (const auto &pointer : pointers) {
+                for (const auto &dragged : draggedList) {
+                    const QSize size = placedSize(placement, bounds, menu);
+                    const QRect placed(placeMenu(placement, bounds, size, pointer, dragged, 12),
+                                       size);
+                    const bool fits =
+                        size.width() <= bounds.width() && size.height() <= bounds.height();
+                    if (fits
+                            ? !bounds.contains(placed)
+                            : (placed.left() != bounds.left() && size.width() > bounds.width()) ||
+                                  (placed.top() != bounds.top() && size.height() > bounds.height()))
+                        qFatal("placement %s left the bounds", qPrintable(placementId(placement)));
+                }
+            }
+        }
+    }
+
+    const QRect screen(0, 0, 1920, 1080);
+    if (placeMenu(Placement::Center, screen, menu, std::nullopt, std::nullopt, 12) !=
+            QPoint((1920 - 340) / 2, (1080 - 420) / 2) ||
+        placeMenu(Placement::BottomRight, screen, menu, std::nullopt, std::nullopt, 12) !=
+            QPoint(1920 - 340 - 12, 1080 - 420 - 12) ||
+        placeMenu(Placement::TopLeft, screen, menu, std::nullopt, std::nullopt, 12) !=
+            QPoint(12, 12) ||
+        placeMenu(Placement::Cursor, screen, menu, QPoint(1900, 1000), std::nullopt, 12) !=
+            QPoint(1920 - 340, 1080 - 420))
+        qFatal("a placement is in the wrong spot");
+    const QSize panelSize = placedSize(Placement::RightPanel, screen, menu);
+    if (panelSize.height() != 1080 ||
+        placeMenu(Placement::RightPanel, screen, panelSize, std::nullopt, std::nullopt, 12) !=
+            QPoint(1920 - 340, 0))
+        qFatal("the side panel is not full height against the edge");
+
+    // A dragged position survives a stream of another size
+    const QPoint draggedTo(700, 300);
+    const QPointF normalized = normalizedPosition(draggedTo, menu, screen);
+    if (placeMenu(Placement::Dragged, screen, menu, std::nullopt, normalized, 12) != draggedTo)
+        qFatal("a dragged position did not round-trip");
+
+    for (int p = 0; p < int(Placement::Count); p++) {
+        if (placementFromId(placementId(Placement(p)), Placement::Count) != Placement(p))
+            qFatal("placement id did not round-trip");
+    }
+}
+
+static void testEdgeTrigger()
+{
+    using namespace OverlayMenu;
+    const QRect bounds(0, 0, 1920, 1080);
+    if (!pointerInZone(QPoint(1919, 500), bounds, EdgeZone::Right, 6, 48) ||
+        pointerInZone(QPoint(1900, 500), bounds, EdgeZone::Right, 6, 48) ||
+        !pointerInZone(QPoint(500, 1079), bounds, EdgeZone::Bottom, 6, 48) ||
+        !pointerInZone(QPoint(2, 30), bounds, EdgeZone::TopLeft, 6, 48) ||
+        pointerInZone(QPoint(2, 500), bounds, EdgeZone::TopLeft, 6, 48) ||
+        pointerInZone(QPoint(30, 30), bounds, EdgeZone::TopLeft, 6, 48) ||
+        pointerInZone(QPoint(-5, 500), bounds, EdgeZone::Left, 6, 48))
+        qFatal("edge zone hit test is wrong");
+
+    EdgeDwell dwell;
+    if (dwell.update(true, 1000, 400) || dwell.remainingMs(1100, 400) != 300 ||
+        dwell.update(true, 1399, 400) || !dwell.update(true, 1400, 400))
+        qFatal("edge dwell did not wait for its delay");
+    if (dwell.update(true, 3000, 400) || dwell.remainingMs(3000, 400) != -1)
+        qFatal("edge dwell fired twice in one visit");
+    if (dwell.update(false, 3100, 400) || dwell.update(true, 3200, 400) ||
+        !dwell.update(true, 3600, 400))
+        qFatal("edge dwell did not re-arm after leaving");
+    EdgeDwell immediate;
+    if (!immediate.update(true, 0, 0))
+        qFatal("a zero delay did not fire at once");
+}
+
+static QRect contentRect(const OverlayMenuPanel &panel)
+{
+    return panel.contentGeometry();
+}
+
+static void testMenuOptions(OverlayMenuPanel &panel)
+{
+    using namespace OverlayMenu;
+    const QRect stream(0, 0, 1920, 1080);
+
+    // A long label widens the panel instead of being cut off
+    panel.updateRemoteUsbState(
+        true, OverlayMenuPanel::RemoteUsbState::Available,
+        { { QStringLiteral("9-9"),
+            QStringLiteral("A keyboard with a remarkably long product name that never ends"),
+            QStringLiteral("1234:ABCD"), true } },
+        {}, QStringLiteral("1 available"));
+
+    // No title, tab or label is cut off in any layout, scale or position
+    const Layout layouts[] = { Layout::Compact, Layout::Comfortable, Layout::SidePanel };
+    const Placement placements[] = { Placement::Center, Placement::BottomRight,
+                                     Placement::LeftPanel, Placement::Cursor };
+    for (Layout layout : layouts) {
+        for (int scale : { 75, 100, 150 }) {
+            for (Placement placement : placements) {
+                panel.setStyle(layout, scale, 90);
+                panel.setGamepadHints(true, GamepadUiStyleXbox, false,
+                                      QStringLiteral("Back+Start"));
+                panel.showWithPlacement(placement, stream.x(), stream.y(), stream.width(),
+                                        stream.height(), QPoint(1800, 1000), std::nullopt, false);
+                QTest::qWait(200); // past the slide-in
+                const QStringList clipped = panel.clippedTexts();
+                if (!clipped.isEmpty())
+                    qFatal("%s at %d%% cuts off: %s", qPrintable(layoutId(layout)), scale,
+                           qPrintable(clipped.join(QStringLiteral(", "))));
+                if (!stream.contains(contentRect(panel)))
+                    qFatal("%s at %d%% (%s) is off the stream", qPrintable(layoutId(layout)), scale,
+                           qPrintable(placementId(placement)));
+                // Every sub-level fits too, and keeps the panel on the stream
+                for (MenuAction open : { MenuAction::OpenMenuPosition, MenuAction::OpenMenuLayout,
+                                         MenuAction::OpenRemoteUsbDevices }) {
+                    if (!panel.showLevel(open))
+                        qFatal("level %d is missing", int(open));
+                    if (!stream.contains(contentRect(panel))) {
+                        const QRect content = contentRect(panel);
+                        qFatal("sub-level %d of %s at %d%% (%s) left the stream: %d,%d %dx%d",
+                               int(open), qPrintable(layoutId(layout)), scale,
+                               qPrintable(placementId(placement)), content.x(), content.y(),
+                               content.width(), content.height());
+                    }
+                }
+                panel.closeMenu();
+                waitClosed(panel);
+            }
+        }
+    }
+    panel.setGamepadHints(false, GamepadUiStyleXbox, false, QString());
+
+    // Scale grows the window
+    panel.setStyle(Layout::Compact, 100, 100);
+    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt, false);
+    QTest::qWait(200); // past the slide-in
+    const int normalWidth = panel.width();
+    panel.closeMenu();
+    waitClosed(panel);
+    panel.setStyle(Layout::Compact, 150, 100);
+    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt, false);
+    QTest::qWait(200); // past the slide-in
+    if (panel.width() < normalWidth * 14 / 10)
+        qFatal("150%% scale did not grow the panel");
+    // Rows are still found and clicked by identity at another scale
+    panel.showTab(MenuTab::Display);
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      panel.rowGeometry(rowOf(panel, MenuAction::OpenMenuLayout)).center());
+    if (panel.isAtTabRoot() || panel.rowOfAction(MenuAction::SetMenuLayoutSidePanel) < 0)
+        qFatal("clicking a row at 150%% did not open its level");
+    panel.closeMenu();
+    waitClosed(panel);
+
+    // Side panel: the tabs are a vertical rail, driven by gamepad, keys and mouse
+    panel.setStyle(Layout::SidePanel, 100, 100);
+    panel.showWithPlacement(Placement::RightPanel, 0, 0, 1920, 1080, std::nullopt, std::nullopt,
+                            false);
+    QTest::qWait(200); // past the slide-in
+    panel.showTab(MenuTab::Quick);
+    const QRect quickTab = panel.tabGeometry(MenuTab::Quick);
+    const QRect displayTab = panel.tabGeometry(MenuTab::Display);
+    if (quickTab.isEmpty() || displayTab.x() != quickTab.x() || displayTab.y() <= quickTab.y())
+        qFatal("side panel tabs are not a vertical rail");
+    if (panel.rowGeometry(0).left() <= quickTab.right())
+        qFatal("side panel rows overlap the rail");
+    if (contentRect(panel).height() != 1080 || contentRect(panel).right() != 1919)
+        qFatal("the right side panel is not full height against the edge");
+    panel.gamepadSwitchTab(1);
+    if (panel.currentTab() != MenuTab::Display)
+        qFatal("RB did not move down the rail");
+    panel.handleNavigationKey(Qt::Key_Tab);
+    if (panel.currentTab() != MenuTab::Input)
+        qFatal("Tab did not move down the rail");
+    panel.handleNavigationKey(Qt::Key_PageUp);
+    if (panel.currentTab() != MenuTab::Display)
+        qFatal("Page Up did not move up the rail");
+    panel.gamepadMoveHorizontal(1);
+    if (panel.currentTab() != MenuTab::Input)
+        qFatal("D-pad right did not switch rail tabs");
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      panel.tabGeometry(MenuTab::Session).center());
+    if (panel.currentTab() != MenuTab::Session)
+        qFatal("clicking a rail tab did not switch to it");
+    panel.showTab(MenuTab::Display);
+    panel.gamepadMoveDown();
+    panel.gamepadSelect();
+    if (panel.isAtTabRoot())
+        qFatal("gamepad select in the side panel did not open a level");
+    panel.handleNavigationKey(Qt::Key_Backspace);
+    if (!panel.isAtTabRoot() || panel.currentTab() != MenuTab::Display)
+        qFatal("Backspace did not go back to the rail tab");
+    panel.closeMenu();
+    waitClosed(panel);
+
+    // Escape: back one level by default, or close from anywhere
+    panel.setStyle(Layout::Compact, 100, 100);
+    panel.setEscapeAction(EscapeAction::Back);
+    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt, false);
+    QTest::qWait(200); // past the slide-in
+    panel.showLevel(MenuAction::OpenBitrate);
+    panel.handleNavigationKey(Qt::Key_Escape);
+    if (!panel.isMenuVisible() || !panel.isAtTabRoot())
+        qFatal("Escape did not go back one level");
+    panel.closeMenu();
+    waitClosed(panel);
+    panel.setEscapeAction(EscapeAction::Close);
+    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt, false);
+    QTest::qWait(200); // past the slide-in
+    panel.showLevel(MenuAction::OpenBitrate);
+    panel.handleNavigationKey(Qt::Key_Escape);
+    if (panel.isMenuVisible())
+        qFatal("Escape did not close the menu from a sub-level");
+    waitClosed(panel);
+    panel.setEscapeAction(EscapeAction::Back);
+
+    // Dragging the title bar moves the panel, keeps it on the stream and
+    // reports where it was left
+    std::optional<QPointF> dropped;
+    panel.setDragFinishedCallback([&](const QPointF &position) { dropped = position; });
+    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt, false);
+    QTest::qWait(200); // past the slide-in
+    const QPoint before = panel.position();
+    const QPoint grip(60, 8 + 12);
+    QTest::mousePress(&panel, Qt::LeftButton, Qt::NoModifier, grip);
+    QTest::mouseMove(&panel, grip + QPoint(40, 30));
+    QTest::mouseMove(&panel, grip + QPoint(5000, 5000));
+    QTest::mouseRelease(&panel, Qt::LeftButton, Qt::NoModifier, grip + QPoint(5000, 5000));
+    if (panel.position() == before || !dropped ||
+        !QRect(0, 0, 1920, 1080).contains(contentRect(panel)))
+        qFatal("dragging the title bar did not move the panel within the stream");
+    if (dropped->x() < 0.99 || dropped->y() < 0.99)
+        qFatal("a drag to the corner did not report the corner");
+    panel.closeMenu();
+    waitClosed(panel);
+    panel.showWithPlacement(Placement::Dragged, 0, 0, 1920, 1080, std::nullopt, dropped, false);
+    QTest::qWait(200); // past the slide-in
+    const QRect reopened = contentRect(panel);
+    if (reopened.right() != 1919 || reopened.bottom() != 1079)
+        qFatal("the dragged position was not restored");
+    panel.closeMenu();
+    waitClosed(panel);
+}
+
 int main(int argc, char **argv)
 {
     QGuiApplication app(argc, argv);
@@ -113,7 +373,7 @@ int main(int argc, char **argv)
     // Offscreen cursor remains outside this panel. Explicitly entering a
     // shorter submenu must not trigger the pointer-leave dismissal timer.
     panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), true);
-    QTest::qWait(20);
+    QTest::qWait(200); // past the slide-in
     if (panel.currentTab() != MenuTab::Quick || !panel.isAtTabRoot())
         qFatal("menu did not open on the Quick tab");
     const int initialHeight = panel.height();
@@ -501,5 +761,9 @@ int main(int argc, char **argv)
         qFatal("the Session level kept refreshing after it was left");
     panel.closeMenu();
     waitClosed(panel);
+
+    testPlacementGeometry();
+    testEdgeTrigger();
+    testMenuOptions(panel);
     return 0;
 }

@@ -293,6 +293,9 @@ SOURCES += \
     gui/windowswindowchrome.cpp \
     streaming/video/overlaymanager.cpp \
     streaming/video/overlaymenupanel.cpp \
+    streaming/video/overlaymenugeometry.cpp \
+    streaming/sessionoverlaymenu.cpp \
+    settings/overlaymenusettings.cpp \
     streaming/video/overlaybuttonposition.cpp \
     streaming/video/overlaymenubutton.cpp \
     streaming/video/overlaytoast.cpp \
@@ -389,6 +392,8 @@ HEADERS += \
     gui/windowswindowchrome.h \
     streaming/video/overlaymanager.h \
     streaming/video/overlaymenupanel.h \
+    streaming/video/overlaymenugeometry.h \
+    settings/overlaymenusettings.h \
     streaming/video/overlaybuttonposition.h \
     streaming/video/overlayeventwakestate.h \
     streaming/video/overlaywindowpolicy.h \

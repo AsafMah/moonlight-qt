@@ -21,6 +21,7 @@
 
 #include "streaming/input/gamepadglyphs.h"
 #include "streaming/input/shortcuts.h"
+#include "overlaymenugeometry.h"
 #include "overlaystatspreset.h"
 #include "overlaywindowpolicy.h"
 
@@ -45,6 +46,12 @@
  *
  * Navigation: mouse (tabs, rows, back/close), gamepad (LB/RB tabs, D-pad
  * move, A select, B back/close) and keyboard (handleNavigationKey()).
+ * Look and placement follow the OverlayMenu options (overlaymenugeometry.h):
+ * setStyle() picks the layout (Compact, Comfortable, or Side panel with the
+ * tabs as a vertical rail), the scale and the opacity; showWithPlacement()
+ * opens it centered, at the cursor, at an edge or corner, as a full-height
+ * side panel, or where it was last dragged by its title bar. The panel widens
+ * so that no title or label is cut off.
  * Sub-level navigation uses a title bar with back button (◂ Title); back
  * returns to the tab the sub-level was opened from.
  * Square industrial theme matching Theme.qml, with hard shadows and brand accents.
@@ -113,6 +120,24 @@ public:
         // Live session totals (SessionStatsProvider). Marks the submenu entry
         // and its read-only rows; never dispatched.
         OpenSessionStats,
+        // More menu placements (OverlayMenu::Placement), next to the
+        // SetMenuPlacement* rows of the original positions
+        SetMenuPlacementCenter,
+        SetMenuPlacementCursor,
+        SetMenuPlacementBottom,
+        SetMenuPlacementTopLeft,
+        SetMenuPlacementTopRight,
+        SetMenuPlacementBottomLeft,
+        SetMenuPlacementBottomRight,
+        SetMenuPlacementLeftPanel,
+        SetMenuPlacementRightPanel,
+        // Menu Layout level: layout rows, and scale rows carrying the percent
+        // in MenuItem::payload. OpenMenuLayout tags its entry; never dispatched.
+        OpenMenuLayout,
+        SetMenuLayoutCompact,
+        SetMenuLayoutComfortable,
+        SetMenuLayoutSidePanel,
+        SetMenuScale,
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         OpenStylusReplayPanel,
 #endif
@@ -269,6 +294,40 @@ public:
     void showAtCursor(int parentX, int parentY, int parentW, int parentH,
                       const QPoint& cursorPosition, bool pointerTriggered = true);
 
+    // Opens at one of the placement options; Auto is the showAt*() functions'
+    // job. pointerPosition is used by Cursor, draggedPosition by Dragged.
+    void showWithPlacement(OverlayMenu::Placement placement, int parentX, int parentY, int parentW,
+                           int parentH, std::optional<QPoint> pointerPosition,
+                           std::optional<QPointF> draggedPosition, bool closeWhenPointerOutside);
+
+    // Layout, scale (75-150%) and opacity (40-100%) of the panel
+    void setStyle(OverlayMenu::Layout layout, int scalePercent, int opacityPercent);
+    OverlayMenu::Layout menuLayout() const { return m_Layout; }
+    // The chosen scale; a level too tall for the stream is shown smaller
+    int scalePercent() const { return qRound(m_RequestedScale * 100); }
+
+    // The panel without its shadow margin, in the parent's coordinates
+    QRect contentGeometry() const;
+
+    // What Escape and the gamepad's B do; Backspace always goes back
+    void setEscapeAction(OverlayMenu::EscapeAction action) { m_EscapeAction = action; }
+
+    // Fired when the user lets go of the title bar after dragging the panel,
+    // with its position as OverlayMenu::normalizedPosition() of the stream
+    using DragFinishedCallback = std::function<void(const QPointF&)>;
+    void setDragFinishedCallback(DragFinishedCallback cb)
+    {
+        m_DragFinishedCallback = std::move(cb);
+    }
+
+    // Whether the user did anything in the menu since it opened (hold to
+    // peek keeps such a menu open when the key comes up)
+    bool hasUserInteracted() const { return m_UserInteracted; }
+
+    // Texts that don't fit their space, on every level: titles, tabs, labels
+    // and details. Empty unless the stream is too small for the panel to widen.
+    QStringList clippedTexts() const;
+
     void closeMenu();
     void dismissOnOutsideClick(const QPoint& parentPosition);
     void dismissOnOutsidePointerMove(const QPoint& parentPosition);
@@ -280,6 +339,13 @@ public:
     void updateMicrophoneState(bool enabled);
     void updateBitrateState(int bitrateKbps);
     void updateMenuPositionState(MenuAction activePlacementAction);
+    // Marks the active layout and scale in the Menu Layout level
+    void updateMenuStyleState();
+
+    // SetMenuPlacement* action of a placement option, and back; Auto has none
+    static MenuAction actionForPlacement(OverlayMenu::Placement placement);
+    static std::optional<OverlayMenu::Placement> placementForAction(MenuAction action);
+    static std::optional<OverlayMenu::Layout> layoutForAction(MenuAction action);
     // Marks the active performance overlay preset. canEditPosition is false
     // where the overlay falls back to the in-renderer text.
     void updateStatsOverlayState(StatsOverlay::Preset preset, bool canEditPosition);
@@ -410,7 +476,14 @@ private:
         MenuAction openAction = MenuAction::MenuActionMax;
     };
 
-    enum class AnchorMode { RightEdge, LeftEdge, TopEdge, AtCursor };
+    enum class AnchorMode
+    {
+        RightEdge,
+        LeftEdge,
+        TopEdge,
+        AtCursor,
+        Placed
+    };
 
     // Hit zones inside the slider row (local coordinates).
     enum class SliderZone { None, Minus, Track, Plus };
@@ -423,6 +496,21 @@ private:
     };
 
     void buildMenuLevels();
+    void applyMetrics();
+    // Unscaled width the content needs so that nothing is cut off
+    int requiredMenuWidth() const;
+    QString gamepadHintText() const;
+    int gamepadHintWidth() const; // 0 without gamepads
+    int menuHeight() const;
+    // Left edge of the rows: right of the tab rail in the Side panel layout
+    int rowsLeft() const { return m_Layout == OverlayMenu::Layout::SidePanel ? m_RailWidth : 0; }
+    int rowsWidth() const { return m_MenuWidth - rowsLeft(); }
+    // Window position (logical pixels) to unscaled layout coordinates
+    QPoint layoutPosition(const QPointF& windowPosition) const;
+    QPoint parentPosition(QMouseEvent* event) const;
+    QPoint slideVector() const;
+    void goBack(); // up one level, or close from a tab
+    void finishTitleDrag();
     void applyStatsOverlayState();
     QString shortcutDetail(MenuAction action) const; // live key binding text
     MenuLevel buildStreamQualityLevel() const;
@@ -437,6 +525,7 @@ private:
     MenuItem* findRootItem(MenuAction action);
     void showTabLevel(int level, int direction); // direction: slide, 0 for none
     int contentTop() const { return m_TitleHeight + m_TabBarHeight + m_Padding; }
+    int railTabHeight() const { return m_ItemHeight; }
     QRect tabRect(int visibleIndex, int contentWidth) const;
     void repositionWindow();
     void showInternal();     // shared show logic after geometry is set
@@ -531,14 +620,36 @@ private:
     int m_ParentX, m_ParentY, m_ParentW, m_ParentH;
     OverlayWindowMode m_WindowMode;
 
-    // Layout constants (logical units, Qt 6 auto-scales)
+    // Layout constants (logical units before m_Scale; Qt 6 handles DPI).
+    // applyMetrics() sets them for the layout; m_MenuWidth is widened to fit
+    // the content in repositionWindow().
     int m_ItemHeight;
     int m_Padding;
     int m_MenuWidth;
+    int m_BaseMenuWidth;
     int m_ShadowMargin;
     int m_TitleHeight;
     int m_IconAreaWidth;
-    int m_TabBarHeight;
+    int m_TabBarHeight; // 0 in the Side panel layout
+    int m_RailWidth = 0;
+
+    OverlayMenu::Layout m_Layout = OverlayMenu::Layout::Compact;
+    qreal m_RequestedScale = 1.0;
+    qreal m_Scale = 1.0; // in effect, see repositionWindow()
+    qreal m_PanelOpacity = 1.0;
+    OverlayMenu::EscapeAction m_EscapeAction = OverlayMenu::EscapeAction::Back;
+    OverlayMenu::Placement m_Placement = OverlayMenu::Placement::Auto;
+    std::optional<QPointF> m_DraggedPosition;
+    QRect m_Bounds; // where the panel may be, parent coordinates
+    bool m_UserInteracted = false;
+
+    // Title bar drag: armed on press, a drag once the pointer moves
+    bool m_TitlePressed = false;
+    bool m_TitleDragging = false;
+    int m_TitlePressIndex = -1;  // -1 title, -2 back button
+    QPoint m_TitlePressPosition; // parent coordinates
+    QPoint m_TitlePressWindowPos;
+    DragFinishedCallback m_DragFinishedCallback;
 
     // Fonts
     QFont m_LabelFont;

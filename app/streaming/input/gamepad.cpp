@@ -451,8 +451,9 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
 
         if (event->button == SDL_CONTROLLER_BUTTON_START) {
             state->lastStartDownTime = SDL_GetTicks();
-        }
-        else if (state->mouseEmulationTimer != 0) {
+        } else if (event->button == SDL_CONTROLLER_BUTTON_BACK) {
+            state->lastBackDownTime = SDL_GetTicks();
+        } else if (state->mouseEmulationTimer != 0) {
             for (const auto& binding : k_MouseEmulationButtons) {
                 if (event->button == binding.controllerButton) {
                     LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, binding.mouseButton);
@@ -496,14 +497,21 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
                     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                                 "Mouse emulation active");
                     Session::get()->notifyMouseEmulationMode(true);
-                }
-                else {
+                } else if (Session::get()->overlayMenuGamepadTrigger() ==
+                           OverlayMenu::GamepadTrigger::HoldStart) {
                     // Gamepad mouse disabled — long-press Start opens overlay menu
                     Session::get()->showQtOverlayMenu();
                 }
             }
-        }
-        else if (state->mouseEmulationTimer != 0) {
+        } else if (event->button == SDL_CONTROLLER_BUTTON_BACK &&
+                   Session::get()->overlayMenuGamepadTrigger() ==
+                       OverlayMenu::GamepadTrigger::HoldBack &&
+                   state->buttons == 0 &&
+                   SDL_GetTicks() - state->lastBackDownTime > MOUSE_EMULATION_LONG_PRESS_TIME) {
+            // Long-press Back on its own opens the overlay menu (combos that
+            // include Back hold other buttons too)
+            Session::get()->showQtOverlayMenu();
+        } else if (state->mouseEmulationTimer != 0) {
             for (const auto& binding : k_MouseEmulationButtons) {
                 if (event->button == binding.controllerButton) {
                     state->mouseEmulationButtonsHeld &= ~binding.flag;

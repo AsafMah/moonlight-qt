@@ -100,6 +100,7 @@ static QString getStartupApplicationDir(const char* argv0)
 #include "settings/streamingpreferences.h"
 #include "settings/sessionstatssettings.h"
 #include "settings/statsoverlaysettings.h"
+#include "settings/overlaymenusettings.h"
 #include "gui/sdlgamepadkeynavigation.h"
 #include "gui/windowplacement.h"
 #include "gui/windowswindowchrome.h"
@@ -1403,6 +1404,9 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonType<StatsOverlaySettings>(
         "StatsOverlaySettings", 1, 0, "StatsOverlaySettings",
         [](QQmlEngine*, QJSEngine*) -> QObject* { return new StatsOverlaySettings(); });
+    qmlRegisterSingletonType<OverlayMenuSettings>(
+        "OverlayMenuSettings", 1, 0, "OverlayMenuSettings",
+        [](QQmlEngine*, QJSEngine*) -> QObject* { return new OverlayMenuSettings(); });
     qmlRegisterSingletonType<PyrowaveStatus>(
         "PyrowaveStatus", 1, 0, "PyrowaveStatus", [](QQmlEngine*, QJSEngine*) -> QObject* {
             // Static singleton; QML must not delete it.

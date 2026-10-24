@@ -56,6 +56,7 @@ struct GamepadState {
     bool quitComboLatched;
     bool statsComboLatched;
     uint32_t lastStartDownTime;
+    uint32_t lastBackDownTime;
 
     bool clickpadButtonEmulationEnabled;
     bool emulatedClickpadButtonDown;

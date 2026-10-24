@@ -125,6 +125,7 @@ constexpr TabAssignment kTabAssignments[] = {
     { MenuAction::OpenStatsOverlay, MenuTab::Display },
     { MenuAction::OpenBitrate, MenuTab::Display },
     { MenuAction::OpenMenuPosition, MenuTab::Display },
+    { MenuAction::OpenMenuLayout, MenuTab::Display },
     // Input: keys sent to the host, mouse/keyboard/gamepad options, USB
     { MenuAction::OpenSendKeys, MenuTab::Input },
     { MenuAction::ToggleGamepadMouse, MenuTab::Input },
@@ -173,15 +174,8 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode
     fmt.setAlphaBufferSize(8);
     setFormat(fmt);
 
-    // Logical (unscaled) values — Qt 6 handles DPI automatically
-    // Match the application's square industrial panels.
-    m_ItemHeight   = 38;
-    m_Padding      = 4;
-    m_MenuWidth    = 320;
+    // Sizes come from the layout, see applyMetrics()
     m_ShadowMargin = 8;
-    m_TitleHeight  = 32;
-    m_IconAreaWidth = 28;
-    m_TabBarHeight = 30;
 
     m_LabelFont.setFamilies(UiFont::familyChain(QStringLiteral("Manrope")));
     m_LabelFont.setPointSize(10);
@@ -198,6 +192,8 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode
     m_TabFont = m_DetailFont;
     m_TabFont.setWeight(QFont::DemiBold);
     m_TabFont.setLetterSpacing(QFont::AbsoluteSpacing, 1.0);
+
+    applyMetrics();
 
     // Reuse the same bundled Fluent 24 Regular assets as settings/toolbars.
     // Keep QIcon instances alive so Qt can cache rasterizations for each DPI.
@@ -296,6 +292,350 @@ void OverlayMenuPanel::forceRepaint()
         // Synchronously deliver UpdateRequest to trigger paintEvent + backing store flush
         QEvent ev(QEvent::UpdateRequest);
         QCoreApplication::sendEvent(this, &ev);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Layout options
+// ---------------------------------------------------------------------------
+
+void OverlayMenuPanel::applyMetrics()
+{
+    // Logical (unscaled) values — Qt 6 handles DPI automatically. Compact
+    // keeps the original sizes, matching the application's square panels.
+    const bool comfortable = m_Layout == OverlayMenu::Layout::Comfortable;
+    m_ItemHeight = comfortable ? 48 : 38;
+    m_Padding = comfortable ? 6 : 4;
+    m_TitleHeight = comfortable ? 38 : 32;
+    m_IconAreaWidth = comfortable ? 32 : 28;
+    m_TabBarHeight = m_Layout == OverlayMenu::Layout::SidePanel ? 0 : (comfortable ? 36 : 30);
+    m_BaseMenuWidth = comfortable ? 380 : 320;
+
+    m_LabelFont.setPointSizeF(comfortable ? 12 : 10);
+    m_DetailFont.setPointSizeF(comfortable ? 9.5 : 8);
+    m_TitleFont.setPointSizeF(comfortable ? 10.5 : 9);
+    m_TabFont.setPointSizeF(comfortable ? 9.5 : 8);
+
+    m_RailWidth = 0;
+    if (m_Layout == OverlayMenu::Layout::SidePanel) {
+        // The rail fits its longest tab title
+        const QFontMetrics tabMetrics(m_TabFont);
+        int widest = 0;
+        for (int t = 0; t < static_cast<int>(MenuTab::Count); t++) {
+            widest = qMax(
+                widest, tabMetrics.horizontalAdvance(tabTitle(static_cast<MenuTab>(t)).toUpper()));
+        }
+        m_RailWidth = qMax(96, widest + 28);
+        m_BaseMenuWidth += m_RailWidth;
+    }
+    m_MenuWidth = m_BaseMenuWidth;
+}
+
+void OverlayMenuPanel::setStyle(OverlayMenu::Layout layout, int scalePercent, int opacityPercent)
+{
+    m_Layout = layout;
+    m_RequestedScale = OverlayMenu::clampScalePercent(scalePercent) / 100.0;
+    m_Scale = m_RequestedScale;
+    m_PanelOpacity = OverlayMenu::clampOpacityPercent(opacityPercent) / 100.0;
+    applyMetrics();
+    if (m_Visible) {
+        repositionWindow();
+        forceRepaint();
+    }
+}
+
+QRect OverlayMenuPanel::contentGeometry() const
+{
+    const int shadow = qRound(m_ShadowMargin * m_Scale);
+    return geometry().adjusted(shadow, shadow, -shadow, -shadow);
+}
+
+QPoint OverlayMenuPanel::layoutPosition(const QPointF& windowPosition) const
+{
+    return (windowPosition / m_Scale).toPoint();
+}
+
+QPoint OverlayMenuPanel::parentPosition(QMouseEvent* event) const
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    const QPoint local = event->position().toPoint();
+    const QPoint global = event->globalPosition().toPoint();
+#else
+    const QPoint local = event->pos();
+    const QPoint global = event->globalPos();
+#endif
+    // Native Wayland children live in parent-local coordinates
+    return OverlayWindowPolicy::usesParentCoordinates(m_WindowMode) ? position() + local : global;
+}
+
+QPoint OverlayMenuPanel::slideVector() const
+{
+    switch (m_AnchorMode) {
+    case AnchorMode::TopEdge:
+        return QPoint(0, -1);
+    case AnchorMode::LeftEdge:
+        return QPoint(-1, 0);
+    case AnchorMode::Placed:
+        return OverlayMenu::slideDirection(m_Placement);
+    case AnchorMode::RightEdge:
+    case AnchorMode::AtCursor:
+    default:
+        return QPoint(1, 0);
+    }
+}
+
+namespace {
+
+// One text of the panel and the panel width it needs to be shown in full
+struct TextNeed
+{
+    QString text;
+    int width;
+};
+
+} // namespace
+
+// Shared by requiredMenuWidth() and clippedTexts(). Mirrors the painting in
+// paintOverlay(); keep the two in step.
+static std::vector<TextNeed>
+textNeeds(const QFontMetrics& label, const QFontMetrics& detail, const QFontMetrics& title,
+          int iconAreaWidth, int titleHeight, int rowsLeft,
+          const std::vector<std::pair<QString, bool>>& titles,
+          const std::vector<std::tuple<QString, QString, int, bool>>& rows)
+{
+    const int textPad = 16;
+    std::vector<TextNeed> needs;
+    for (const auto& levelTitle : titles) {
+        // Back icon on sub-levels, then the title, then the close button
+        needs.push_back(
+            { levelTitle.first, textPad + (levelTitle.second ? 0 : 28) +
+                                    title.horizontalAdvance(levelTitle.first.toUpper()) + 4 +
+                                    titleHeight });
+    }
+    for (const auto& row : rows) {
+        const QString& text = std::get<0>(row);
+        const QString& detailText = std::get<1>(row);
+        const int type = std::get<2>(row);
+        const int labelX = rowsLeft + textPad + (std::get<3>(row) ? iconAreaWidth : 0);
+        const int labelWidth = label.horizontalAdvance(text);
+        const int detailWidth = detail.horizontalAdvance(detailText);
+        int need = 0;
+        switch (static_cast<OverlayMenuPanel::MenuItemType>(type)) {
+        case OverlayMenuPanel::MenuItemType::SubMenu:
+            // label, detail, then the arrow
+            need =
+                labelX + labelWidth + (detailText.isEmpty() ? 0 : 12 + detailWidth) + 20 + textPad;
+            break;
+        case OverlayMenuPanel::MenuItemType::Toggle:
+            need = labelX + labelWidth + 52;
+            break;
+        case OverlayMenuPanel::MenuItemType::Action:
+            if (detailText.length() > 3) {
+                // two lines
+                need = labelX + qMax(labelWidth, detailWidth) + textPad;
+            } else if (!detailText.isEmpty()) {
+                need = labelX + labelWidth + 8 + qMax(20, detailWidth + 8) + textPad;
+            } else {
+                need = labelX + labelWidth + textPad;
+            }
+            break;
+        case OverlayMenuPanel::MenuItemType::Back:
+            need = labelX + detail.horizontalAdvance(text) + textPad;
+            break;
+        case OverlayMenuPanel::MenuItemType::Slider:
+        default:
+            break;
+        }
+        if (need > 0) {
+            needs.push_back({ text, need });
+        }
+    }
+    return needs;
+}
+
+QString OverlayMenuPanel::gamepadHintText() const
+{
+    return gamepadLeftShoulderName(m_GamepadUiStyle) + QStringLiteral("/") +
+           gamepadRightShoulderName(m_GamepadUiStyle) + QStringLiteral(" ") + tr("Tabs") +
+           QStringLiteral("    ") + QStringLiteral("\xe2\x86\x91\xe2\x86\x93 ") + tr("Move") +
+           QStringLiteral("    ") +
+           gamepadFaceButtonGlyph(m_GamepadUiStyle, m_SwapFaceButtons ? 1 : 0) +
+           QStringLiteral(" ") + tr("Select") + QStringLiteral("    ") +
+           gamepadFaceButtonGlyph(m_GamepadUiStyle, m_SwapFaceButtons ? 0 : 1) +
+           QStringLiteral(" ") + tr("Back");
+}
+
+int OverlayMenuPanel::gamepadHintWidth() const
+{
+    // The hint bar runs across the rows, padded on both sides
+    return m_HasGamepads
+               ? rowsLeft() + 32 + QFontMetrics(m_DetailFont).horizontalAdvance(gamepadHintText())
+               : 0;
+}
+
+int OverlayMenuPanel::requiredMenuWidth() const
+{
+    int width = m_BaseMenuWidth;
+    std::vector<std::pair<QString, bool>> titles;
+    std::vector<std::tuple<QString, QString, int, bool>> rows;
+    for (int l = 0; l < static_cast<int>(m_MenuLevels.size()); l++) {
+        const bool tabRoot = isTabRootLevel(l);
+        titles.push_back({ m_MenuLevels[l].title, tabRoot });
+        for (const MenuItem& item : m_MenuLevels[l].items) {
+            rows.emplace_back(item.label, item.detail, static_cast<int>(item.type), tabRoot);
+        }
+    }
+    for (const TextNeed& need :
+         textNeeds(QFontMetrics(m_LabelFont), QFontMetrics(m_DetailFont), QFontMetrics(m_TitleFont),
+                   m_IconAreaWidth, m_TitleHeight, rowsLeft(), titles, rows)) {
+        width = qMax(width, need.width);
+    }
+
+    // A tab bar splits the width evenly; the rail has its own width
+    if (m_Layout != OverlayMenu::Layout::SidePanel && !m_TabLevels.empty()) {
+        const QFontMetrics tabMetrics(m_TabFont);
+        int widest = 0;
+        for (int level : m_TabLevels) {
+            widest = qMax(
+                widest, tabMetrics.horizontalAdvance(tabTitle(*m_MenuLevels[level].tab).toUpper()));
+        }
+        width = qMax(width, (widest + 8) * static_cast<int>(m_TabLevels.size()) + 2);
+    }
+    return qMax(width, gamepadHintWidth());
+}
+
+QStringList OverlayMenuPanel::clippedTexts() const
+{
+    QStringList clipped;
+    std::vector<std::pair<QString, bool>> titles;
+    std::vector<std::tuple<QString, QString, int, bool>> rows;
+    for (int l = 0; l < static_cast<int>(m_MenuLevels.size()); l++) {
+        const bool tabRoot = isTabRootLevel(l);
+        titles.push_back({ m_MenuLevels[l].title, tabRoot });
+        for (const MenuItem& item : m_MenuLevels[l].items) {
+            rows.emplace_back(item.label, item.detail, static_cast<int>(item.type), tabRoot);
+        }
+    }
+    for (const TextNeed& need :
+         textNeeds(QFontMetrics(m_LabelFont), QFontMetrics(m_DetailFont), QFontMetrics(m_TitleFont),
+                   m_IconAreaWidth, m_TitleHeight, rowsLeft(), titles, rows)) {
+        if (need.width > m_MenuWidth) {
+            clipped.append(need.text);
+        }
+    }
+
+    const QFontMetrics tabMetrics(m_TabFont);
+    for (int i = 0; i < static_cast<int>(m_TabLevels.size()); i++) {
+        const QString text = tabTitle(*m_MenuLevels[m_TabLevels[i]].tab).toUpper();
+        const QRect tab = tabRect(i, m_MenuWidth);
+        // Horizontal tabs pad their text by 2 on each side; rail tabs by 14
+        const int room =
+            m_Layout == OverlayMenu::Layout::SidePanel ? tab.width() - 28 : tab.width() - 4;
+        if (tabMetrics.horizontalAdvance(text) > room) {
+            clipped.append(text);
+        }
+    }
+    if (gamepadHintWidth() > m_MenuWidth) {
+        clipped.append(gamepadHintText());
+    }
+    return clipped;
+}
+
+int OverlayMenuPanel::menuHeight() const
+{
+    int itemCount = (int)m_MenuLevels[m_CurrentLevel].items.size();
+    if (isTabRootLevel(m_CurrentLevel)) {
+        // All tab roots share the tallest tab's height, so switching tabs
+        // doesn't move or resize the panel.
+        for (int level : m_TabLevels) {
+            itemCount = std::max(itemCount, static_cast<int>(m_MenuLevels[level].items.size()));
+        }
+    }
+    int height = m_TitleHeight + m_TabBarHeight + itemCount * m_ItemHeight + m_Padding * 2;
+    if (m_Layout == OverlayMenu::Layout::SidePanel) {
+        // The rail fits every tab
+        height = qMax(height, m_TitleHeight + m_Padding * 2 +
+                                  static_cast<int>(m_TabLevels.size()) * railTabHeight());
+    }
+    if (m_HasGamepads) {
+        height += kGamepadHintBarHeight;
+    }
+    return height;
+}
+
+OverlayMenuPanel::MenuAction OverlayMenuPanel::actionForPlacement(OverlayMenu::Placement placement)
+{
+    using OverlayMenu::Placement;
+    switch (placement) {
+    case Placement::Center:
+        return MenuAction::SetMenuPlacementCenter;
+    case Placement::Cursor:
+        return MenuAction::SetMenuPlacementCursor;
+    case Placement::Top:
+        return MenuAction::SetMenuPlacementTop;
+    case Placement::Bottom:
+        return MenuAction::SetMenuPlacementBottom;
+    case Placement::Left:
+        return MenuAction::SetMenuPlacementLeft;
+    case Placement::Right:
+        return MenuAction::SetMenuPlacementRight;
+    case Placement::TopLeft:
+        return MenuAction::SetMenuPlacementTopLeft;
+    case Placement::TopRight:
+        return MenuAction::SetMenuPlacementTopRight;
+    case Placement::BottomLeft:
+        return MenuAction::SetMenuPlacementBottomLeft;
+    case Placement::BottomRight:
+        return MenuAction::SetMenuPlacementBottomRight;
+    case Placement::LeftPanel:
+        return MenuAction::SetMenuPlacementLeftPanel;
+    case Placement::RightPanel:
+        return MenuAction::SetMenuPlacementRightPanel;
+    default:
+        return MenuAction::MenuActionMax;
+    }
+}
+
+std::optional<OverlayMenu::Placement> OverlayMenuPanel::placementForAction(MenuAction action)
+{
+    // Top, Left and Right are the original positions; their rows set the
+    // overlay menu position preference instead (see Session)
+    using OverlayMenu::Placement;
+    switch (action) {
+    case MenuAction::SetMenuPlacementCenter:
+        return Placement::Center;
+    case MenuAction::SetMenuPlacementCursor:
+        return Placement::Cursor;
+    case MenuAction::SetMenuPlacementBottom:
+        return Placement::Bottom;
+    case MenuAction::SetMenuPlacementTopLeft:
+        return Placement::TopLeft;
+    case MenuAction::SetMenuPlacementTopRight:
+        return Placement::TopRight;
+    case MenuAction::SetMenuPlacementBottomLeft:
+        return Placement::BottomLeft;
+    case MenuAction::SetMenuPlacementBottomRight:
+        return Placement::BottomRight;
+    case MenuAction::SetMenuPlacementLeftPanel:
+        return Placement::LeftPanel;
+    case MenuAction::SetMenuPlacementRightPanel:
+        return Placement::RightPanel;
+    default:
+        return std::nullopt;
+    }
+}
+
+std::optional<OverlayMenu::Layout> OverlayMenuPanel::layoutForAction(MenuAction action)
+{
+    switch (action) {
+    case MenuAction::SetMenuLayoutCompact:
+        return OverlayMenu::Layout::Compact;
+    case MenuAction::SetMenuLayoutComfortable:
+        return OverlayMenu::Layout::Comfortable;
+    case MenuAction::SetMenuLayoutSidePanel:
+        return OverlayMenu::Layout::SidePanel;
+    default:
+        return std::nullopt;
     }
 }
 
@@ -497,6 +837,8 @@ void OverlayMenuPanel::buildMenuLevels()
                         true, false, false });
     entries.push_back({ tr("Menu Position"), QString(), MenuItemType::SubMenu,
                         MenuAction::OpenMenuPosition, 0, true, false, false });
+    entries.push_back({ tr("Menu Layout"), QString(), MenuItemType::SubMenu,
+                        MenuAction::OpenMenuLayout, 0, true, false, false });
     // Input
     entries.push_back({ tr("Send Keys"), QString(), MenuItemType::SubMenu, MenuAction::OpenSendKeys,
                         0, true, false, true });
@@ -591,9 +933,43 @@ void OverlayMenuPanel::buildMenuLevels()
                                MenuAction::SetMenuPlacementLeft, 0, true, false, false});
     placement.items.push_back({tr("Floating button"), QString(), MenuItemType::Action,
                                MenuAction::SetMenuPlacementButton, 0, true, false, false});
-    placement.items.push_back({tr("Disabled"), QString(), MenuItemType::Action,
-                               MenuAction::SetMenuPlacementDisabled, 0, true, false, false});
+    placement.items.push_back({ tr("Disabled"), QString(), MenuItemType::Action,
+                                MenuAction::SetMenuPlacementDisabled, 0, true, false, true });
+    // Further placements; the edge trigger and the button keep following the
+    // position above
+    const std::pair<QString, MenuAction> morePlacements[] = {
+        { tr("Centered"), MenuAction::SetMenuPlacementCenter },
+        { tr("At the pointer"), MenuAction::SetMenuPlacementCursor },
+        { tr("Bottom edge"), MenuAction::SetMenuPlacementBottom },
+        { tr("Top-left corner"), MenuAction::SetMenuPlacementTopLeft },
+        { tr("Top-right corner"), MenuAction::SetMenuPlacementTopRight },
+        { tr("Bottom-left corner"), MenuAction::SetMenuPlacementBottomLeft },
+        { tr("Bottom-right corner"), MenuAction::SetMenuPlacementBottomRight },
+        { tr("Left side panel"), MenuAction::SetMenuPlacementLeftPanel },
+        { tr("Right side panel"), MenuAction::SetMenuPlacementRightPanel },
+    };
+    for (const auto& more : morePlacements) {
+        placement.items.push_back(
+            { more.first, QString(), MenuItemType::Action, more.second, 0, true, false, false });
+    }
     m_MenuLevels.push_back(std::move(placement));
+
+    // === Overlay menu layout and scale ===
+    MenuLevel menuLayout;
+    menuLayout.title = tr("Menu Layout");
+    menuLayout.openAction = MenuAction::OpenMenuLayout;
+    menuLayout.items.push_back({ tr("Compact"), QString(), MenuItemType::Action,
+                                 MenuAction::SetMenuLayoutCompact, 0, true, false, false });
+    menuLayout.items.push_back({ tr("Comfortable"), QString(), MenuItemType::Action,
+                                 MenuAction::SetMenuLayoutComfortable, 0, true, false, false });
+    menuLayout.items.push_back({ tr("Side panel"), QString(), MenuItemType::Action,
+                                 MenuAction::SetMenuLayoutSidePanel, 0, true, false, true });
+    for (int percent : { 75, 100, 125, 150 }) {
+        menuLayout.items.push_back({ tr("Scale %1%").arg(percent), QString(), MenuItemType::Action,
+                                     MenuAction::SetMenuScale, 0, true, false, false,
+                                     QString::number(percent) });
+    }
+    m_MenuLevels.push_back(std::move(menuLayout));
 
     // === Remote USB devices ===
     if (m_RemoteUsbAvailable) {
@@ -746,6 +1122,7 @@ void OverlayMenuPanel::buildMenuLevels()
     // Rebuilds (gamepad set / USB refresh) wipe derived details; re-stamp
     // the bitrate state so the scrubber row and preset checkmarks survive.
     refreshBitrateDetails();
+    updateMenuStyleState();
 }
 
 // ---------------------------------------------------------------------------
@@ -912,10 +1289,10 @@ OverlayMenuPanel::SliderZone OverlayMenuPanel::sliderZoneAt(const QPoint& window
         return SliderZone::None;
     }
 
-    // Row rects live in content coordinates; callers hand us window coords.
-    const QPoint contentPos = windowPos - QPoint(m_ShadowMargin, m_ShadowMargin);
+    // Row rects live in row coordinates; callers hand us layout coords.
+    const QPoint contentPos = windowPos - QPoint(m_ShadowMargin + rowsLeft(), m_ShadowMargin);
     const int itemY = contentTop() + rowIdx * m_ItemHeight;
-    const SliderRowRects r = sliderRowRects(width() - 2 * m_ShadowMargin, itemY);
+    const SliderRowRects r = sliderRowRects(rowsWidth(), itemY);
 
     // Buttons win over the track so their hit area feels solid.
     if (r.minus.adjusted(-2, -2, 2, 2).contains(contentPos)) return SliderZone::Minus;
@@ -975,6 +1352,34 @@ void OverlayMenuPanel::updateMenuPositionState(MenuAction activePlacementAction)
     }
 
     if (MenuItem* entry = findRootItem(MenuAction::OpenMenuPosition)) {
+        entry->detail = activeLabel;
+    }
+    forceRepaint();
+}
+
+void OverlayMenuPanel::updateMenuStyleState()
+{
+    const int layoutLevel = levelForOpenAction(MenuAction::OpenMenuLayout);
+    if (layoutLevel < 0) {
+        return;
+    }
+
+    const QString check = QString::fromUtf8("\342\234\223");
+    QString activeLabel;
+    for (MenuItem& item : m_MenuLevels[layoutLevel].items) {
+        bool active = false;
+        if (const auto layout = layoutForAction(item.action)) {
+            active = *layout == m_Layout;
+            if (active) {
+                activeLabel = item.label;
+            }
+        } else if (item.action == MenuAction::SetMenuScale) {
+            active = item.payload.toInt() == scalePercent();
+        }
+        item.detail = active ? check : QString();
+    }
+
+    if (MenuItem* entry = findRootItem(MenuAction::OpenMenuLayout)) {
         entry->detail = activeLabel;
     }
     forceRepaint();
@@ -1183,20 +1588,29 @@ int OverlayMenuPanel::rowOfAction(MenuAction action, const QString& payload) con
     return -1;
 }
 
+static QRect scaledRect(const QRect& rect, qreal scale)
+{
+    return QRectF(rect.x() * scale, rect.y() * scale, rect.width() * scale, rect.height() * scale)
+        .toAlignedRect();
+}
+
 QRect OverlayMenuPanel::rowGeometry(int row) const
 {
     if (row < 0 || row >= static_cast<int>(m_MenuLevels[m_CurrentLevel].items.size())) {
         return QRect();
     }
-    return QRect(m_ShadowMargin, m_ShadowMargin + contentTop() + row * m_ItemHeight, m_MenuWidth,
-                 m_ItemHeight);
+    return scaledRect(QRect(m_ShadowMargin + rowsLeft(),
+                            m_ShadowMargin + contentTop() + row * m_ItemHeight, rowsWidth(),
+                            m_ItemHeight),
+                      m_Scale);
 }
 
 QRect OverlayMenuPanel::tabGeometry(MenuTab tab) const
 {
     for (int i = 0; i < static_cast<int>(m_TabLevels.size()); i++) {
         if (*m_MenuLevels[m_TabLevels[i]].tab == tab) {
-            return tabRect(i, m_MenuWidth).translated(m_ShadowMargin, m_ShadowMargin);
+            return scaledRect(tabRect(i, m_MenuWidth).translated(m_ShadowMargin, m_ShadowMargin),
+                              m_Scale);
         }
     }
     return QRect();
@@ -1289,6 +1703,8 @@ bool OverlayMenuPanel::handleNavigationKey(int key, Qt::KeyboardModifiers modifi
         gamepadSelect();
         return true;
     case Qt::Key_Backspace:
+        goBack();
+        return true;
     case Qt::Key_Escape:
         gamepadBack();
         return true;
@@ -1442,7 +1858,8 @@ void OverlayMenuPanel::dispatchActionItem(const MenuItem& item)
         }
         return;
     }
-    if (item.action == MenuAction::SendHostKeys || item.action == MenuAction::RunHostCommand) {
+    if (item.action == MenuAction::SendHostKeys || item.action == MenuAction::RunHostCommand ||
+        item.action == MenuAction::SetMenuScale) {
         closeMenu();
         if (m_PayloadActionCallback) {
             m_PayloadActionCallback(item.action, payload);
@@ -1514,9 +1931,30 @@ void OverlayMenuPanel::showAtCursor(int parentX, int parentY, int parentW, int p
     showInternal();
 }
 
+void OverlayMenuPanel::showWithPlacement(OverlayMenu::Placement placement, int parentX, int parentY,
+                                         int parentW, int parentH,
+                                         std::optional<QPoint> pointerPosition,
+                                         std::optional<QPointF> draggedPosition,
+                                         bool closeWhenPointerOutside)
+{
+    m_AnchorMode = AnchorMode::Placed;
+    m_Placement = placement;
+    m_DraggedPosition = draggedPosition;
+    m_ParentX = parentX;
+    m_ParentY = parentY;
+    m_ParentW = parentW;
+    m_ParentH = parentH;
+    m_TriggerPosition = pointerPosition;
+    m_CloseWhenPointerOutside = closeWhenPointerOutside && pointerPosition.has_value();
+    showInternal();
+}
+
 void OverlayMenuPanel::showInternal()
 {
     m_LeaveTimer.stop();
+    m_UserInteracted = false;
+    m_TitlePressed = false;
+    m_TitleDragging = false;
     // Reopen on the last tab of this session
     m_CurrentLevel = tabRootLevel();
     m_HoveredIndex = -1;
@@ -1541,8 +1979,9 @@ void OverlayMenuPanel::showInternal()
     m_TargetPosition = position();
 
     // Slide direction depends on anchor mode
-    const bool verticalSlide = m_AnchorMode == AnchorMode::TopEdge;
-    const int slideDirection = (m_AnchorMode == AnchorMode::LeftEdge || verticalSlide) ? -1 : 1;
+    const QPoint slide = slideVector();
+    const bool verticalSlide = slide.y() != 0;
+    const int slideDirection = verticalSlide ? slide.y() : slide.x();
     const int slideDistance = 8;
     const int targetCoordinate = verticalSlide ? m_TargetPosition.y() : m_TargetPosition.x();
     const int startCoordinate = targetCoordinate + slideDistance * slideDirection;
@@ -1567,7 +2006,7 @@ void OverlayMenuPanel::showInternal()
     // Short, mechanical reveal.
     m_OpacityAnim->setDuration(120);
     m_OpacityAnim->setStartValue(0.0);
-    m_OpacityAnim->setEndValue(1.0);
+    m_OpacityAnim->setEndValue(m_PanelOpacity);
     m_OpacityAnim->setEasingCurve(QEasingCurve::OutQuad);
 
     m_SlideAnim->start();
@@ -1603,41 +2042,76 @@ void OverlayMenuPanel::repositionWindow()
     int qpW = m_ParentW;
     int qpH = m_ParentH;
 
-    int itemCount  = (int)m_MenuLevels[m_CurrentLevel].items.size();
-    if (isTabRootLevel(m_CurrentLevel)) {
-        // All tab roots share the tallest tab's height, so switching tabs
-        // doesn't move or resize the panel.
-        for (int level : m_TabLevels) {
-            itemCount = std::max(itemCount, static_cast<int>(m_MenuLevels[level].items.size()));
+    // The original anchors stay inside the stream. The placement options also
+    // stay on the screen the stream is on, for a window spanning monitors.
+    QRect bounds(qpX, qpY, qpW, qpH);
+    if (m_AnchorMode == AnchorMode::Placed &&
+        !OverlayWindowPolicy::usesParentCoordinates(m_WindowMode)) {
+        if (QScreen* screen = QGuiApplication::screenAt(bounds.center())) {
+            const QRect onScreen = bounds.intersected(screen->geometry());
+            if (!onScreen.isEmpty()) {
+                bounds = onScreen;
+            }
         }
     }
-    int titleH = m_TitleHeight + m_TabBarHeight;
-    int menuHeight = titleH + itemCount * m_ItemHeight + m_Padding * 2;
-    if (m_HasGamepads) {
-        menuHeight += kGamepadHintBarHeight;
+    m_Bounds = bounds;
+
+    // Widen to fit every text, as far as the stream allows
+    m_Scale = m_RequestedScale;
+    const int maxWidth = qMax(m_BaseMenuWidth, int(bounds.width() / m_Scale) - 2 * m_ShadowMargin);
+    m_MenuWidth = qBound(m_BaseMenuWidth, requiredMenuWidth(), maxWidth);
+    int menuHeight = this->menuHeight();
+
+    // With the options in use, a level too big for the stream is shown
+    // smaller so it stays whole. The original menu (Compact at 100%, opened
+    // by the position preference) keeps its size as it always did.
+    const bool originalMenu = m_AnchorMode != AnchorMode::Placed && m_RequestedScale == 1.0 &&
+                              m_Layout == OverlayMenu::Layout::Compact;
+    if (!originalMenu) {
+        const qreal fit = qMin(qreal(bounds.height()) / (menuHeight + 2 * m_ShadowMargin),
+                               qreal(bounds.width()) / (m_MenuWidth + 2 * m_ShadowMargin));
+        if (fit < m_Scale) {
+            m_Scale = qMax(qreal(0.5), fit);
+        }
     }
+
+    // On-screen sizes; everything else here is in unscaled layout units
+    int scaledWidth = qRound(m_MenuWidth * m_Scale);
+    int scaledHeight = qRound(menuHeight * m_Scale);
+    const int scaledShadow = qRound(m_ShadowMargin * m_Scale);
 
     const QPoint triggerPosition = m_TriggerPosition.value_or(QPoint());
 
     int cx, cy; // content top-left position
 
     switch (m_AnchorMode) {
+    case AnchorMode::Placed: {
+        const QSize size =
+            OverlayMenu::placedSize(m_Placement, bounds, QSize(scaledWidth, scaledHeight));
+        scaledHeight = size.height();
+        const QPoint topLeft = OverlayMenu::placeMenu(m_Placement, bounds, size, m_TriggerPosition,
+                                                      m_DraggedPosition, qRound(12 * m_Scale));
+        cx = topLeft.x();
+        cy = topLeft.y();
+        break;
+    }
+
     case AnchorMode::LeftEdge:
         cx = qpX;
         if (m_TriggerPosition.has_value()) {
-            cy = triggerPosition.y() - contentTop() - m_ItemHeight / 2;
+            cy = triggerPosition.y() - qRound((contentTop() + m_ItemHeight / 2) * m_Scale);
         }
         else {
-            cy = qpY + (qpH - menuHeight) / 2;
+            cy = qpY + (qpH - scaledHeight) / 2;
         }
         break;
 
     case AnchorMode::TopEdge:
         if (m_TriggerPosition.has_value()) {
-            cx = triggerPosition.x() - m_MenuWidth / 2;
+            cx = triggerPosition.x() - scaledWidth / 2;
         }
         else {
-            cx = qpX + (qpW - m_MenuWidth) / 2;
+            cx = qpX + (qpW - scaledWidth) / 2;
         }
         cy = qpY;
         break;
@@ -1651,28 +2125,26 @@ void OverlayMenuPanel::repositionWindow()
 
     case AnchorMode::RightEdge:
     default:
-        cx = qpX + qpW - m_MenuWidth;
+        cx = qpX + qpW - scaledWidth;
         if (m_TriggerPosition.has_value()) {
-            cy = triggerPosition.y() - contentTop() - m_ItemHeight / 2;
+            cy = triggerPosition.y() - qRound((contentTop() + m_ItemHeight / 2) * m_Scale);
         }
         else {
-            cy = qpY + (qpH - menuHeight) / 2;
+            cy = qpY + (qpH - scaledHeight) / 2;
         }
         break;
     }
 
     // Clamp within the parent. If the menu is larger than the streaming
     // window, keep its origin visible instead of pushing it past an edge.
-    cx = qpW >= m_MenuWidth
-            ? qBound(qpX, cx, qpX + qpW - m_MenuWidth)
-            : qpX;
-    cy = qpH >= menuHeight
-            ? qBound(qpY, cy, qpY + qpH - menuHeight)
-            : qpY;
+    const QPoint clamped =
+        OverlayMenu::clampToBounds(QPoint(cx, cy), QSize(scaledWidth, scaledHeight), bounds);
+    cx = clamped.x();
+    cy = clamped.y();
 
     // Window includes shadow margin around content
-    setGeometry(cx - m_ShadowMargin, cy - m_ShadowMargin,
-                m_MenuWidth + 2 * m_ShadowMargin, menuHeight + 2 * m_ShadowMargin);
+    setGeometry(cx - scaledShadow, cy - scaledShadow, scaledWidth + 2 * scaledShadow,
+                scaledHeight + 2 * scaledShadow);
 }
 
 void OverlayMenuPanel::navigateToLevel(int level)
@@ -1711,6 +2183,7 @@ void OverlayMenuPanel::navigateToLevel(int level)
 
 void OverlayMenuPanel::beginInteraction()
 {
+    m_UserInteracted = true;
     m_CloseWhenPointerOutside = false;
     m_LeaveTimer.stop();
 }
@@ -1739,6 +2212,12 @@ void OverlayMenuPanel::closeMenu()
     if (!m_Visible) return;
     if (m_Closing) return;  // already animating close
 
+    if (m_TitlePressed) {
+        m_TitlePressed = false;
+        m_TitleDragging = false;
+        setMouseGrabEnabled(false);
+    }
+
     m_Visible = false;
     m_Closing = true;
     m_HoveredIndex = -1;
@@ -1760,8 +2239,9 @@ void OverlayMenuPanel::closeMenu()
     m_ContentOffset = 0;
 
     // Animate away from the edge that opened the menu.
-    const bool verticalSlide = m_AnchorMode == AnchorMode::TopEdge;
-    const int slideDirection = (m_AnchorMode == AnchorMode::LeftEdge || verticalSlide) ? -1 : 1;
+    const QPoint slide = slideVector();
+    const bool verticalSlide = slide.y() != 0;
+    const int slideDirection = verticalSlide ? slide.y() : slide.x();
     const int slideDistance = 8;
     const int startCoordinate = verticalSlide ? y() : x();
     m_SlideAnim->setPropertyName(verticalSlide ? QByteArrayLiteral("y") : QByteArrayLiteral("x"));
@@ -1795,6 +2275,12 @@ void OverlayMenuPanel::closeMenu()
 
 QRect OverlayMenuPanel::tabRect(int visibleIndex, int contentWidth) const
 {
+    if (m_Layout == OverlayMenu::Layout::SidePanel) {
+        // A vertical rail under the title bar
+        return QRect(1, m_TitleHeight + m_Padding + visibleIndex * railTabHeight(), m_RailWidth - 2,
+                     railTabHeight());
+    }
+
     // Equal-width tabs across the bar; the last one takes the remainder
     const int count = qMax(1, static_cast<int>(m_TabLevels.size()));
     const int innerWidth = contentWidth - 2;
@@ -1822,7 +2308,8 @@ int OverlayMenuPanel::itemAtPos(const QPoint& pos) const
         }
         return -1;
     }
-    if (ly < titleH + m_TabBarHeight) {
+    if (m_Layout == OverlayMenu::Layout::SidePanel ? lx < m_RailWidth
+                                                   : ly < titleH + m_TabBarHeight) {
         for (int i = 0; i < static_cast<int>(m_TabLevels.size()); i++) {
             if (tabRect(i, m_MenuWidth).contains(lx, ly)) {
                 return kTabHitBase - i;
@@ -1830,6 +2317,8 @@ int OverlayMenuPanel::itemAtPos(const QPoint& pos) const
         }
         return -1;
     }
+    if (lx < rowsLeft())
+        return -1;
     int localY = ly - contentTop();
     if (localY < 0) return -1;
     int idx = localY / m_ItemHeight;
@@ -1847,8 +2336,10 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
     p.setRenderHint(QPainter::Antialiasing, false);
     p.setRenderHint(QPainter::TextAntialiasing);
 
-    int w = width();
-    int h = height();
+    // Paint in layout units; the window is m_Scale times as large
+    p.scale(m_Scale, m_Scale);
+    int w = qRound(width() / m_Scale);
+    int h = qRound(height() / m_Scale);
     int sm = m_ShadowMargin;
     int cw = w - 2 * sm;   // content width
     int ch = h - 2 * sm;   // content height
@@ -1908,9 +2399,34 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
     // --- Tab bar: the active tab (or the one a sub-level belongs to) is
     // underlined in the accent. It stays put while the content slides. ---
     const int activeTabLevel = tabRootLevel();
-    p.fillRect(QRect(1, titleH + m_TabBarHeight - 1, cw - 2, 1), MenuLine);
+    const bool rail = m_Layout == OverlayMenu::Layout::SidePanel;
+    if (rail) {
+        // Side panel: the tabs are a column left of the rows
+        p.fillRect(QRect(m_RailWidth - 1, titleH, 1, ch - titleH - 1), MenuLine);
+    } else {
+        p.fillRect(QRect(1, titleH + m_TabBarHeight - 1, cw - 2, 1), MenuLine);
+    }
     p.setFont(m_TabFont);
-    for (int i = 0; i < static_cast<int>(m_TabLevels.size()); i++) {
+    for (int i = 0; rail && i < static_cast<int>(m_TabLevels.size()); i++) {
+        const QRect tab = tabRect(i, cw);
+        const MenuTab menuTab = *m_MenuLevels[m_TabLevels[i]].tab;
+        const bool active = m_TabLevels[i] == activeTabLevel;
+        const bool hovered = m_HoveredIndex == kTabHitBase - i;
+        if (active || hovered) {
+            p.fillRect(tab, MenuHover);
+        }
+        if (active) {
+            p.fillRect(QRect(tab.x(), tab.y() + 6, 3, tab.height() - 12), MenuAccent);
+        }
+        p.setPen(active || hovered ? MenuText : MenuDim);
+        p.drawText(tab.adjusted(14, 0, -14, 0), Qt::AlignLeft | Qt::AlignVCenter,
+                   tabTitle(menuTab).toUpper());
+        if (m_RemoteUsbNeedsActivation &&
+            menuTab == tabForAction(MenuAction::OpenRemoteUsbDevices)) {
+            p.fillRect(QRect(tab.right() - 8, tab.center().y() - 2, 4, 4), MenuAccent);
+        }
+    }
+    for (int i = 0; !rail && i < static_cast<int>(m_TabLevels.size()); i++) {
         const QRect tab = tabRect(i, cw);
         const MenuTab menuTab = *m_MenuLevels[m_TabLevels[i]].tab;
         const bool active = m_TabLevels[i] == activeTabLevel;
@@ -1938,6 +2454,9 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
     if (m_ContentOffset != 0) {
         p.translate(m_ContentOffset, 0);
     }
+    // The rows (and the gamepad hints) sit right of the tab rail
+    p.translate(rowsLeft(), 0);
+    const int rw = cw - rowsLeft();
 
     const auto& items = level.items;
     const int itemsTop = contentTop();
@@ -1949,6 +2468,8 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
             return QStringLiteral("menu-bitrate");
         case MenuAction::OpenMenuPosition:
             return QStringLiteral("menu-position");
+        case MenuAction::OpenMenuLayout:
+            return QStringLiteral("tb-settings");
         case MenuAction::OpenRemoteUsbDevices:
             return QStringLiteral("cat-peripherals");
         case MenuAction::OpenStreamQuality:
@@ -1991,7 +2512,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
 
         // Square focus/hover outline and the shared 4px accent marker.
         if (i == m_HoveredIndex && item.enabled) {
-            const QRect row(4, itemY + 1, cw - 8, m_ItemHeight - 2);
+            const QRect row(4, itemY + 1, rw - 8, m_ItemHeight - 2);
             p.fillRect(row, MenuHover);
             p.setPen(QPen(MenuAccent, 1));
             p.drawRect(row.adjusted(0, 0, -1, -1));
@@ -2015,30 +2536,37 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
         if (item.type == MenuItemType::SubMenu) {
             p.setFont(m_LabelFont);
             p.setPen(activationPrompt ? MenuAccent : item.enabled ? MenuText : MenuFaint);
-            QRect lr(labelX, itemY, cw - labelX - 36, m_ItemHeight);
+            // Detail text (e.g., "20 Mbps") right before the arrow, the
+            // label in the rest of the row
+            const int arrowSpace = textPad + 20;
+            const int detailWidth = item.detail.isEmpty()
+                                        ? 0
+                                        : QFontMetrics(m_DetailFont).horizontalAdvance(item.detail);
+            QRect lr(labelX, itemY,
+                     rw - labelX - arrowSpace - (detailWidth > 0 ? detailWidth + 12 : 0),
+                     m_ItemHeight);
             p.drawText(lr, Qt::AlignLeft | Qt::AlignVCenter, item.label);
 
-            // Detail text (e.g., "20 Mbps")
             if (!item.detail.isEmpty()) {
                 p.setFont(m_DetailFont);
                 p.setPen(activationPrompt ? MenuAccent : MenuDim);
-                QRect dr(cw / 2, itemY, cw / 2 - textPad - 20, m_ItemHeight);
+                QRect dr(rw - arrowSpace - detailWidth, itemY, detailWidth, m_ItemHeight);
                 p.drawText(dr, Qt::AlignRight | Qt::AlignVCenter, item.detail);
             }
 
             drawIcon(QStringLiteral("menu-next"),
-                     QRect(cw - textPad - 16, itemY + (m_ItemHeight - 16) / 2, 16, 16), 0.85);
+                     QRect(rw - textPad - 16, itemY + (m_ItemHeight - 16) / 2, 16, 16), 0.85);
         }
         // --- Toggle item ---
         else if (item.type == MenuItemType::Toggle) {
             p.setFont(m_LabelFont);
             p.setPen(item.enabled ? MenuText : MenuFaint);
-            QRect lr(labelX, itemY, cw - labelX - 52, m_ItemHeight);
+            QRect lr(labelX, itemY, rw - labelX - 52, m_ItemHeight);
             p.drawText(lr, Qt::AlignLeft | Qt::AlignVCenter, item.label);
 
             // Square track and square thumb, matching HardSwitch.qml.
             const int trackW = 40, trackH = 20;
-            const int trackX = cw - textPad - trackW;
+            const int trackX = rw - textPad - trackW;
             const int trackY = itemY + (m_ItemHeight - trackH) / 2;
             const QRect track(trackX, trackY, trackW, trackH);
             p.fillRect(track, item.toggleState ? MenuAccent : MenuHover);
@@ -2049,7 +2577,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
         }
         // --- Slider item (bitrate scrubber) ---
         else if (item.type == MenuItemType::Slider) {
-            const SliderRowRects r = sliderRowRects(cw, itemY);
+            const SliderRowRects r = sliderRowRects(rw, itemY);
             const bool sliderFocused = i == m_HoveredIndex && item.enabled;
 
             // Current value in the shared brand accent.
@@ -2104,12 +2632,12 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
 
             if (hasLongDetail) {
                 int topH = qRound(m_ItemHeight * 0.58);
-                QRect lb(labelX, itemY, cw - labelX - textPad, topH);
+                QRect lb(labelX, itemY, rw - labelX - textPad, topH);
                 p.drawText(lb, Qt::AlignLeft | Qt::AlignBottom, item.label);
 
                 p.setFont(m_DetailFont);
                 p.setPen(activationPrompt ? MenuAccent : MenuDim);
-                QRect sr(labelX, itemY + topH, cw - labelX - textPad, m_ItemHeight - topH);
+                QRect sr(labelX, itemY + topH, rw - labelX - textPad, m_ItemHeight - topH);
                 p.drawText(sr, Qt::AlignLeft | Qt::AlignTop, item.detail);
             } else {
                 int detailWidth = 0;
@@ -2119,8 +2647,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
                 }
 
                 const int detailGap = hasShortDetail ? 8 : 0;
-                QRect lr(labelX, itemY,
-                         cw - labelX - textPad - detailWidth - detailGap,
+                QRect lr(labelX, itemY, rw - labelX - textPad - detailWidth - detailGap,
                          m_ItemHeight);
                 p.drawText(lr, Qt::AlignLeft | Qt::AlignVCenter, item.label);
 
@@ -2128,8 +2655,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
                     // Short status text or checkmark in the shared brand accent.
                     p.setFont(m_DetailFont);
                     p.setPen(MenuAccent);
-                    QRect cr(cw - textPad - detailWidth, itemY,
-                             detailWidth, m_ItemHeight);
+                    QRect cr(rw - textPad - detailWidth, itemY, detailWidth, m_ItemHeight);
                     p.drawText(cr, Qt::AlignRight | Qt::AlignVCenter, item.detail);
                 }
             }
@@ -2138,7 +2664,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
         else if (item.type == MenuItemType::Back) {
             p.setFont(m_DetailFont);
             p.setPen(MenuDim);
-            QRect lr(labelX, itemY, cw - labelX - textPad, m_ItemHeight);
+            QRect lr(labelX, itemY, rw - labelX - textPad, m_ItemHeight);
             p.drawText(lr, Qt::AlignLeft | Qt::AlignVCenter, item.label);
         }
 
@@ -2146,7 +2672,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
         if (item.separatorAfter && i < (int)items.size() - 1) {
             p.setPen(QPen(MenuLine, 1));
             int sepY = itemY + m_ItemHeight - 1;
-            p.drawLine(labelX, sepY, cw - textPad, sepY);
+            p.drawLine(labelX, sepY, rw - textPad, sepY);
         }
     }
 
@@ -2157,19 +2683,11 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
     if (m_HasGamepads) {
         const int hintTop = ch - m_Padding - kGamepadHintBarHeight;
         p.setPen(QPen(MenuLine, 1));
-        p.drawLine(textPad, hintTop, cw - textPad, hintTop);
+        p.drawLine(textPad, hintTop, rw - textPad, hintTop);
         p.setFont(m_DetailFont);
         p.setPen(MenuDim);
-        const QString hint = gamepadLeftShoulderName(m_GamepadUiStyle) + QStringLiteral("/") +
-                             gamepadRightShoulderName(m_GamepadUiStyle) + QStringLiteral(" ") +
-                             tr("Tabs") + QStringLiteral("    ") +
-                             QStringLiteral("\xe2\x86\x91\xe2\x86\x93 ") + tr("Move") +
-                             QStringLiteral("    ") +
-                             gamepadFaceButtonGlyph(m_GamepadUiStyle, m_SwapFaceButtons ? 1 : 0) +
-                             QStringLiteral(" ") + tr("Select") + QStringLiteral("    ") +
-                             gamepadFaceButtonGlyph(m_GamepadUiStyle, m_SwapFaceButtons ? 0 : 1) +
-                             QStringLiteral(" ") + tr("Back");
-        p.drawText(QRect(textPad, hintTop + 1, cw - textPad * 2, kGamepadHintBarHeight - 1),
+        const QString hint = gamepadHintText();
+        p.drawText(QRect(textPad, hintTop + 1, rw - textPad * 2, kGamepadHintBarHeight - 1),
                    Qt::AlignLeft | Qt::AlignVCenter, hint);
     }
 
@@ -2184,10 +2702,29 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
 void OverlayMenuPanel::mouseMoveEvent(QMouseEvent* event)
 {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    const QPoint pos = event->position().toPoint();
+    const QPoint pos = layoutPosition(event->position());
 #else
-    const QPoint pos = event->pos();
+    const QPoint pos = layoutPosition(event->pos());
 #endif
+
+    if (m_TitlePressed) {
+        // The title bar drags the panel once the pointer really moves
+        const QPoint delta = parentPosition(event) - m_TitlePressPosition;
+        if (!m_TitleDragging && delta.manhattanLength() > 4) {
+            m_TitleDragging = true;
+            beginInteraction();
+        }
+        if (m_TitleDragging) {
+            const int shadow = qRound(m_ShadowMargin * m_Scale);
+            const QSize content(width() - 2 * shadow, height() - 2 * shadow);
+            const QRect bounds =
+                m_Bounds.isValid() ? m_Bounds : QRect(m_ParentX, m_ParentY, m_ParentW, m_ParentH);
+            const QPoint contentTopLeft = OverlayMenu::clampToBounds(
+                m_TitlePressWindowPos + delta + QPoint(shadow, shadow), content, bounds);
+            setPosition(contentTopLeft - QPoint(shadow, shadow));
+        }
+        return;
+    }
 
     if (m_SliderDragging) {
         // Keep scrubbing even when the pointer leaves the panel (mouse grab).
@@ -2195,9 +2732,9 @@ void OverlayMenuPanel::mouseMoveEvent(QMouseEvent* event)
         for (int i = 0; i < (int)items.size(); i++) {
             if (items[i].type != MenuItemType::Slider) continue;
             const int itemY = contentTop() + i * m_ItemHeight;
-            const SliderRowRects r = sliderRowRects(width() - 2 * m_ShadowMargin, itemY);
-            const double frac = (pos.x() - m_ShadowMargin - r.track.x())
-                                    / double(r.track.width());
+            const SliderRowRects r = sliderRowRects(rowsWidth(), itemY);
+            const double frac =
+                (pos.x() - m_ShadowMargin - rowsLeft() - r.track.x()) / double(r.track.width());
             setBitrateFromFraction(frac);
             break;
         }
@@ -2223,9 +2760,9 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
     beginInteraction();
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    const QPoint pos = event->position().toPoint();
+    const QPoint pos = layoutPosition(event->position());
 #else
-    const QPoint pos = event->pos();
+    const QPoint pos = layoutPosition(event->pos());
 #endif
     int idx = itemAtPos(pos);
 
@@ -2234,9 +2771,16 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-    // Title bar click → navigate back
-    if (idx == -2) {
-        navigateToLevel(tabRootLevel());
+    // The title bar (and the back button in it) drags the panel. A press
+    // that doesn't move is a click: back, on release.
+    const int titleY = pos.y() - m_ShadowMargin;
+    if (idx == -2 || (idx == -1 && titleY >= 0 && titleY < m_TitleHeight)) {
+        m_TitlePressed = true;
+        m_TitleDragging = false;
+        m_TitlePressIndex = idx;
+        m_TitlePressPosition = parentPosition(event);
+        m_TitlePressWindowPos = position();
+        setMouseGrabEnabled(true);
         return;
     }
 
@@ -2288,11 +2832,11 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
         }
         else if (zone == SliderZone::Track) {
             const int itemY = contentTop() + idx * m_ItemHeight;
-            const SliderRowRects r = sliderRowRects(width() - 2 * m_ShadowMargin, itemY);
+            const SliderRowRects r = sliderRowRects(rowsWidth(), itemY);
             m_SliderDragging = true;
             setMouseGrabEnabled(true);
-            const double frac = (pos.x() - m_ShadowMargin - r.track.x())
-                                    / double(r.track.width());
+            const double frac =
+                (pos.x() - m_ShadowMargin - rowsLeft() - r.track.x()) / double(r.track.width());
             setBitrateFromFraction(frac);
         }
         forceRepaint();
@@ -2313,9 +2857,40 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
     }
 }
 
+void OverlayMenuPanel::finishTitleDrag()
+{
+    const int shadow = qRound(m_ShadowMargin * m_Scale);
+    const QSize content(width() - 2 * shadow, height() - 2 * shadow);
+    const QRect bounds =
+        m_Bounds.isValid() ? m_Bounds : QRect(m_ParentX, m_ParentY, m_ParentW, m_ParentH);
+    const QPointF normalized =
+        OverlayMenu::normalizedPosition(position() + QPoint(shadow, shadow), content, bounds);
+
+    // Reopen (and lay out again) where it was left
+    m_AnchorMode = AnchorMode::Placed;
+    m_Placement = OverlayMenu::Placement::Dragged;
+    m_DraggedPosition = normalized;
+    if (m_DragFinishedCallback) {
+        m_DragFinishedCallback(normalized);
+    }
+}
+
 void OverlayMenuPanel::mouseReleaseEvent(QMouseEvent* event)
 {
-    Q_UNUSED(event);
+    if (m_TitlePressed && event->button() == Qt::LeftButton) {
+        const bool dragged = m_TitleDragging;
+        const int pressIndex = m_TitlePressIndex;
+        m_TitlePressed = false;
+        m_TitleDragging = false;
+        setMouseGrabEnabled(false);
+        if (dragged) {
+            finishTitleDrag();
+        } else if (pressIndex == -2) {
+            navigateToLevel(tabRootLevel());
+        }
+        return;
+    }
+
     if (!m_SliderDragging && m_SliderPressedZone == SliderZone::None) return;
 
     if (m_SliderDragging) {
@@ -2338,9 +2913,9 @@ void OverlayMenuPanel::wheelEvent(QWheelEvent* event)
     // QWheelEvent::pos() is unavailable on the SteamLink Qt 5.14 build;
     // position() exists everywhere from 5.14 on.
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-    const QPoint pos = event->position().toPoint();
+    const QPoint pos = layoutPosition(event->position());
 #else
-    const QPoint pos = event->pos();
+    const QPoint pos = layoutPosition(event->pos());
 #endif
     const int idx = itemAtPos(pos);
     if (idx < 0 || idx >= (int)m_MenuLevels[m_CurrentLevel].items.size()
@@ -2473,6 +3048,18 @@ void OverlayMenuPanel::gamepadSelect()
 void OverlayMenuPanel::gamepadBack()
 {
     if (!m_Visible) return;
+
+    if (m_EscapeAction == OverlayMenu::EscapeAction::Close) {
+        closeMenu();
+    } else {
+        goBack();
+    }
+}
+
+void OverlayMenuPanel::goBack()
+{
+    if (!m_Visible)
+        return;
 
     if (!isTabRootLevel(m_CurrentLevel)) {
         navigateToLevel(tabRootLevel());

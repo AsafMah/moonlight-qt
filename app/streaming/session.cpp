@@ -15,6 +15,7 @@
 #include "streaming/input/gamepadglyphs.h"
 #endif
 #include "streaming/video/overlaystatscontroller.h"
+#include "settings/overlaymenusettings.h"
 #include "backend/richpresencemanager.h"
 #include "backend/nvhttp.h"
 #include "streaming/hostcommandrunner.h"
@@ -2899,6 +2900,8 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     // Flush stale mouse motion events from relative mode
     SDL_FlushEvent(SDL_MOUSEMOTION);
 
+    const OverlayMenu::Placement menuPlacement = applyOverlayMenuOptionsToPanel();
+
     // Rebuild for the current gamepad set before applying dynamic menu state.
     GamepadUiStyle gamepadUiStyle = m_InputHandler->getGamepadUiStyle();
     m_MenuPanel->setGamepadHints(
@@ -2920,8 +2923,12 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     m_MenuPanel->updateBitrateState(m_Preferences->bitrateKbps);
     updateStreamQualityMenuState();
     m_MenuPanel->updateGamepadMouseState(m_InputHandler->isMouseEmulationActive());
+    // Tick the placement option, else the position preference
     m_MenuPanel->updateMenuPositionState(
-            menuPlacementActionForPreference(m_Preferences->overlayMenuPosition));
+        menuPlacement == OverlayMenu::Placement::Auto
+            ? menuPlacementActionForPreference(m_Preferences->overlayMenuPosition)
+            : OverlayMenuPanel::actionForPlacement(menuPlacement));
+    m_MenuPanel->updateMenuStyleState();
     if (m_StatsOverlay) {
         m_MenuPanel->updateStatsOverlayState(m_StatsOverlay->preset(),
                                              m_StatsOverlay->usesCompositorWindow());
@@ -2930,7 +2937,13 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     updateRemoteUsbMenuState();
     updateHostActionsMenuState();
 
-    // Show menu based on user preference
+    // A placement option, else as the position preference says
+    if (showQtOverlayMenuWithPlacement(parentRect, pointerGlobalPosition,
+                                       closeWhenPointerOutside)) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Qt overlay menu shown at a placement option");
+        return;
+    }
+
     switch (m_Preferences->overlayMenuPosition) {
     case StreamingPreferences::OMP_LEFT_EDGE:
         m_MenuPanel->showAtLeftEdge(parentRect.x(), parentRect.y(),
@@ -3045,7 +3058,7 @@ void Session::syncQtOverlayWindowsWithSdlWindowState()
         return;
     }
 
-    if (m_Preferences->overlayMenuPosition != StreamingPreferences::OMP_BUTTON ||
+    if (!m_OverlayMenuOptions.buttonEnabled ||
         (m_MenuPanel && (m_MenuPanel->isMenuVisible() || m_MenuPanel->isClosing()))) {
         m_MenuButton->hideButton();
         return;
@@ -3061,8 +3074,14 @@ void Session::syncQtOverlayWindowsWithSdlWindowState()
 void Session::dispatchQtMenuAction(OverlayMenuPanel::MenuAction action)
 {
     if (const auto placement = menuPlacementForAction(action)) {
+        // The original positions also bring back their own placement
         m_Preferences->setOverlayMenuPosition(*placement);
         m_Preferences->save();
+        OverlayMenuSettings().setPlacement(int(OverlayMenu::Placement::Auto));
+        reloadOverlayMenuOptions();
+        return;
+    }
+    if (handleOverlayMenuOptionAction(action)) {
         return;
     }
     if (handleStatsOverlayMenuAction(action)) {
@@ -4774,8 +4793,6 @@ void Session::start()
     // NB: m_InputHandler must be initialized before starting the connection.
     m_InputHandler = new SdlInputHandler(*m_Preferences, m_StreamConfig.width,
                                          m_StreamConfig.height, enablePhysicalDualSenseHaptics);
-    m_InputHandler->getShortcutDispatcher().setHandler(
-        QLatin1String(ShortcutActions::ToggleOverlayMenu), [this] { toggleQtOverlayMenu(); });
     setupStatsOverlayShortcuts();
     registerHostActionShortcuts();
     updateDualSenseHapticsControllerTarget();
@@ -5374,7 +5391,9 @@ void Session::exec()
         showQtOverlayMenu(globalPosition, closeWhenPointerOutside);
     });
 
-    if (m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_BUTTON) {
+    reloadOverlayMenuOptions();
+    setupOverlayMenuShortcut();
+    if (m_OverlayMenuOptions.buttonEnabled) {
         // Show button at initial position
         const QRect parentRect = qtOverlayParentGeometry();
         if (parentRect.isValid()) {
@@ -5524,6 +5543,7 @@ void Session::exec()
         if (m_StatsOverlay) {
             m_StatsOverlay->tick();
         }
+        updateOverlayMenuEdgeTrigger();
 #ifdef Q_OS_WIN32
         processClientSdrWhiteUpdate();
 #endif
@@ -5560,6 +5580,9 @@ void Session::exec()
         if (const int statsDelayMs = m_StatsOverlay ? m_StatsOverlay->nextEventDelayMs() : -1;
             statsDelayMs >= 0) {
             waitTimeoutMs = qMin(waitTimeoutMs, qMax(statsDelayMs, 1));
+        }
+        if (const int menuEdgeDelayMs = overlayMenuEdgeTriggerDelayMs(); menuEdgeDelayMs >= 0) {
+            waitTimeoutMs = qMin(waitTimeoutMs, qMax(menuEdgeDelayMs, 1));
         }
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         if (const int replayDelayMs = m_StylusReplayTest ?
@@ -5960,8 +5983,7 @@ void Session::exec()
             // fixed overlay control remains usable even when Qt receives no
             // mouse events for its X11 surface.
             if (m_MenuButton && event.button.button == SDL_BUTTON_LEFT &&
-                m_WaylandStreamWindow == nullptr &&
-                m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_BUTTON) {
+                m_WaylandStreamWindow == nullptr && m_OverlayMenuOptions.buttonEnabled) {
                 const QPoint pointerPosition =
                     qtOverlayPositionForSdlPoint(event.button.x, event.button.y);
                 const bool handled =
@@ -5988,8 +6010,7 @@ void Session::exec()
                 qtWaylandOverlay ? qtOverlayPositionForSdlPoint(event.motion.x, event.motion.y)
                                  : QPoint();
 
-            if (m_MenuButton && !qtWaylandOverlay &&
-                m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_BUTTON &&
+            if (m_MenuButton && !qtWaylandOverlay && m_OverlayMenuOptions.buttonEnabled &&
                 m_MenuButton->handleExternalMouseMove(
                     qtOverlayPositionForSdlPoint(event.motion.x, event.motion.y),
                     (event.motion.state & SDL_BUTTON_LMASK) != 0)) {
@@ -6009,8 +6030,7 @@ void Session::exec()
             // pointer location, so it must never be interpreted as an edge hit.
             if (m_MenuPanel && (!qtWaylandOverlay || !SDL_GetRelativeMouseMode()) &&
                 !m_MenuPanel->isMenuVisible() && !m_MenuPanel->isClosing() &&
-                m_Preferences->overlayMenuPosition != StreamingPreferences::OMP_DISABLED &&
-                m_Preferences->overlayMenuPosition != StreamingPreferences::OMP_BUTTON) {
+                m_OverlayMenuOptions.legacyEdgeTrigger) {
                 Uint32 elapsed = SDL_GetTicks() - m_MenuCloseTicks;
                 if (elapsed > 500) {
                     bool atEdge = false;
@@ -6143,7 +6163,7 @@ void Session::exec()
         case SDL_FINGERMOTION:
         case SDL_FINGERUP:
             if (m_MenuButton && m_WaylandStreamWindow == nullptr &&
-                m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_BUTTON) {
+                m_OverlayMenuOptions.buttonEnabled) {
                 const QRect parentRect = qtOverlayParentGeometry();
                 const QPoint pointerPosition(
                     parentRect.x() + qRound(event.tfinger.x * parentRect.width()),

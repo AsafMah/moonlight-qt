@@ -267,6 +267,7 @@ SOURCES += \
     streaming/bandwidth.cpp \
     gui/computermodel.cpp \
     gui/appmodel.cpp \
+    streaming/streamquality.cpp \
     streaming/streamutils.cpp \
     backend/autoupdatechecker.cpp \
     backend/portableupdateinstaller.cpp \
@@ -343,6 +344,7 @@ HEADERS += \
     gui/appmodel.h \
     streaming/video/decoder.h \
     streaming/bandwidth.h \
+    streaming/streamquality.h \
     streaming/streamutils.h \
     backend/autoupdatechecker.h \
     backend/portableupdateinstaller.h \

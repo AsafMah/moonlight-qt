@@ -228,6 +228,7 @@ macx {
 SOURCES += \
     backend/nvaddress.cpp \
     backend/nvapp.cpp \
+    backend/supercmds.cpp \
     cli/pair.cpp \
     main.cpp \
     backend/computerseeker.cpp \
@@ -252,10 +253,14 @@ SOURCES += \
     streaming/input/input.cpp \
     streaming/input/keyboard.cpp \
     streaming/input/shortcuts.cpp \
+    streaming/input/hostkeys.cpp \
+    streaming/input/hostkeysender.cpp \
     streaming/input/mouse.cpp \
     streaming/input/touchpad.cpp \
     streaming/input/reltouch.cpp \
     streaming/session.cpp \
+    streaming/sessionhostactions.cpp \
+    streaming/hostcommandrunner.cpp \
     streaming/filemappingclient.cpp \
     streaming/filemappingwebsocket.cpp \
     streaming/filemappingprotocoladapter.cpp \
@@ -268,6 +273,7 @@ SOURCES += \
     streaming/bandwidth.cpp \
     gui/computermodel.cpp \
     gui/shortcutmodel.cpp \
+    gui/keymacromodel.cpp \
     gui/appmodel.cpp \
     streaming/stats/statsmath.cpp \
     streaming/stats/streamstatsmodel.cpp \
@@ -307,6 +313,7 @@ HEADERS += \
     SDL_compat.h \
     backend/nvaddress.h \
     backend/nvapp.h \
+    backend/supercmds.h \
     backend/usbforwardingenvironment.h \
     backend/usbforwardingbackend.h \
     backend/usbforwardinglocalserver.h \
@@ -337,6 +344,7 @@ HEADERS += \
     streaming/input/gamepadsensorrate.h \
     streaming/input/keyboardstate.h \
     streaming/session.h \
+    streaming/hostcommandrunner.h \
     streaming/filemappingclient.h \
     streaming/filemappingwebsocket.h \
     streaming/filemappingprotocoladapter.h \
@@ -351,7 +359,9 @@ HEADERS += \
     streaming/audio/renderers/sdl.h \
     gui/computermodel.h \
     gui/shortcutmodel.h \
+    gui/keymacromodel.h \
     streaming/input/shortcuts.h \
+    streaming/input/hostkeys.h \
     gui/appmodel.h \
     streaming/video/decoder.h \
     streaming/bandwidth.h \

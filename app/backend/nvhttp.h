@@ -190,6 +190,11 @@ public:
     void
     quitApp();
 
+    // Foundation Sunshine only: runs a super command of the running app
+    // (GET /supercmd?cmdId=<id>). Returns the host's verdict, i.e. whether
+    // <supercmd> is non-zero. Throws on transport or status errors.
+    bool sendSuperCmd(const QString& cmdId);
+
     void
     startApp(QString verb,
              bool isGfe,

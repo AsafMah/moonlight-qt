@@ -141,6 +141,9 @@ constexpr const char ToggleKeyboardGrab[] = "toggle-keyboard-grab";
 constexpr const char ToggleOverlayMenu[] = "toggle-overlay-menu";
 constexpr const char CycleOverlayPreset[] = "cycle-overlay-preset";
 constexpr const char EditOverlayPosition[] = "edit-overlay-position";
+// Host actions; no default binding
+constexpr const char SendCtrlAltDel[] = "send-ctrl-alt-del";
+constexpr const char OpenHostCommands[] = "open-host-commands";
 }
 
 struct ShortcutAction

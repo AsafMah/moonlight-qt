@@ -17,6 +17,7 @@
 #include "streaming/video/overlaystatscontroller.h"
 #include "backend/richpresencemanager.h"
 #include "backend/nvhttp.h"
+#include "streaming/hostcommandrunner.h"
 #include "backend/identitymanager.h"
 #include "backend/usbforwardingbackend.h"
 #include "backend/usbforwardingenvironment.h"
@@ -2809,6 +2810,7 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     }
     updateFileMappingMenuState();
     updateRemoteUsbMenuState();
+    updateHostActionsMenuState();
 
     // Show menu based on user preference
     switch (m_Preferences->overlayMenuPosition) {
@@ -4435,6 +4437,7 @@ void Session::start()
     m_InputHandler->getShortcutDispatcher().setHandler(
         QLatin1String(ShortcutActions::ToggleOverlayMenu), [this] { toggleQtOverlayMenu(); });
     setupStatsOverlayShortcuts();
+    registerHostActionShortcuts();
     updateDualSenseHapticsControllerTarget();
 
     // Kick off the async connection thread then return to the caller to pump the event loop
@@ -4974,6 +4977,11 @@ void Session::exec()
         // actually accepted (see startRuntimeBitrateWorker()).
         requestRuntimeBitrateChange(bitrateKbps);
     });
+    m_MenuPanel->setPayloadActionCallback(
+        [this](OverlayMenuPanel::MenuAction action, const QString& payload) {
+            dispatchQtMenuPayloadAction(action, payload);
+        });
+    m_HostCommandRunner = new HostCommandRunner(this);
     updateRemoteUsbMenuState();
     m_MenuPanel->setCloseCallback([this]() {
         // Record close timestamp for edge-trigger debounce
@@ -5052,6 +5060,7 @@ void Session::exec()
         return m_WaylandStreamWindow != nullptr ||
                (m_MenuPanel && m_MenuPanel->needsEventProcessing()) ||
                (m_MenuButton && m_MenuButton->needsEventProcessing()) ||
+               (m_HostCommandRunner && m_HostCommandRunner->isBusy()) ||
                (m_Toast && m_Toast->needsEventProcessing()) ||
                (m_StatsOverlay && m_StatsOverlay->needsEventProcessing()) ||
                m_UsbCapabilityPending || m_UsbLocalServer != nullptr || m_UsbTunnel != nullptr ||

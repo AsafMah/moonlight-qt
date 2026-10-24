@@ -20,6 +20,7 @@
 
 #include "streaming/input/gamepadglyphs.h"
 #include "streaming/input/shortcuts.h"
+#include "overlaystatspreset.h"
 #include "overlaywindowpolicy.h"
 
 /**
@@ -43,7 +44,8 @@ class OverlayMenuPanel : public OverlayRasterWindow
 {
     Q_OBJECT
 public:
-    enum class MenuAction {
+    enum class MenuAction
+    {
         // Quick actions (keyboard shortcuts)
         Quit,
         QuitAndExit,
@@ -70,6 +72,15 @@ public:
         SetMenuPlacementLeft,
         SetMenuPlacementButton,
         SetMenuPlacementDisabled,
+        // Performance overlay (OverlayStatsController). OpenStatsOverlay marks
+        // the submenu entry; it is never dispatched.
+        OpenStatsOverlay,
+        SetStatsPresetOff,
+        SetStatsPresetMinimal,
+        SetStatsPresetCompact,
+        SetStatsPresetDetailed,
+        SetStatsPresetCustom,
+        EditStatsOverlayPosition,
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         OpenStylusReplayPanel,
 #endif
@@ -172,6 +183,12 @@ public:
     void updateMicrophoneState(bool enabled);
     void updateBitrateState(int bitrateKbps);
     void updateMenuPositionState(MenuAction activePlacementAction);
+    // Marks the active performance overlay preset. canEditPosition is false
+    // where the overlay falls back to the in-renderer text.
+    void updateStatsOverlayState(StatsOverlay::Preset preset, bool canEditPosition);
+
+    // Overlay preset behind a SetStatsPreset* action
+    static std::optional<StatsOverlay::Preset> statsPresetForAction(MenuAction action);
     void updateGamepadMouseState(bool enabled);
     void updateFileMappingState(FileMappingState state, const QString& detail);
     void updateRemoteUsbState(bool available,
@@ -264,6 +281,7 @@ private:
     };
 
     void buildMenuLevels();
+    void applyStatsOverlayState();
     QString shortcutDetail(MenuAction action) const; // live key binding text
     void navigateToLevel(int level);
     void repositionWindow();
@@ -284,6 +302,12 @@ private:
     void selectBitratePreset(const MenuItem& item); // snap to preset + commit now
     void commitBitrateNow();                        // flush pending change to callback
     void refreshBitrateDetails();                   // level-0 detail + preset checkmarks
+
+    // Index of the performance overlay level. It is appended after the
+    // fixed levels, so it is looked up rather than hard-coded.
+    int m_StatsOverlayLevel = -1;
+    StatsOverlay::Preset m_StatsOverlayPreset = StatsOverlay::Preset::Off;
+    bool m_StatsOverlayEditable = true;
 
     std::vector<MenuLevel> m_MenuLevels;
     int  m_CurrentLevel;

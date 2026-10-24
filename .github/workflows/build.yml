@@ -272,6 +272,8 @@ jobs:
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat pyrowave_color pyrowave_color
         if errorlevel 1 exit /b %ERRORLEVEL%
+        call scripts\run-test.bat pyrowave_pacing pyrowave_pacing
+        if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat file_mapping_websocket_framing file_mapping_websocket_framing
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat shared_helpers shared_helpers

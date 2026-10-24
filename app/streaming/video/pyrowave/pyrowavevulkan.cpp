@@ -978,9 +978,11 @@ bool PyrowaveVulkanRenderer::createPresentation(PyrowaveFailure& failure)
         });
 
     // Double-buffered for the lowest display latency, like PlVkRenderer.
-    // TODO(PW-4): PlVkRenderer's switch to triple buffering after delayed
-    // presents, and frame pacing.
-    m_Swapchain = PlVkShared::createSwapchain(m_Vulkan, surface, m_PresentMode, 1);
+    // submitFrame() switches to triple buffering after delayed presents.
+    m_SwapchainDepth = PyrowavePacing::SwapchainDepth();
+    m_SwapchainDepth.configure(m_Params.frameRate, m_Params.displayFps);
+    m_Swapchain =
+        PlVkShared::createSwapchain(m_Vulkan, surface, m_PresentMode, m_SwapchainDepth.depth());
     if (m_Swapchain == nullptr) {
         failure.reason = tr("Couldn't create a swapchain for the stream window.");
         return false;
@@ -1220,8 +1222,41 @@ PyrowaveVulkanRenderer::submitFrame(const uint8_t* data, size_t length,
     }
     if (result == FrameResult::Failed) {
         failure = presentFailure;
+        return result;
+    }
+
+    // Acquire, render and submit together: PyroWave presents on the thread
+    // that decodes, so a present that keeps waiting delays every frame.
+    if (result == FrameResult::Presented && m_SwapchainDepth.recordPresent(timings.renderUs) &&
+        !switchToTripleBuffering(failure)) {
+        return FrameResult::Failed;
     }
     return result;
+}
+
+bool PyrowaveVulkanRenderer::switchToTripleBuffering(PyrowaveFailure& failure)
+{
+    // Like PlVkRenderer with PLVK_USE_DYNAMIC_SWAPCHAIN_DEPTH, but on every
+    // platform: here a late present holds up the next decode too.
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "PyroWave: switching to a triple-buffered swapchain after delayed presents");
+    {
+        // Hold DRM master in case the Vulkan implementation wants to restore DRM state
+        DrmMasterLocker locker;
+        pl_swapchain_destroy(&m_Swapchain);
+    }
+
+    m_Swapchain = PlVkShared::createSwapchain(m_Vulkan, m_Instance.surface(), m_PresentMode,
+                                              m_SwapchainDepth.depth());
+    if (m_Swapchain == nullptr) {
+        failure.stage = PyrowaveStage::Present;
+        failure.reason = tr("Couldn't create a swapchain for the stream window.");
+        return false;
+    }
+
+    // The new swapchain starts without the stream's color space
+    hintSwapchainColorspace();
+    return true;
 }
 
 PyrowaveVulkanRenderer::FrameResult

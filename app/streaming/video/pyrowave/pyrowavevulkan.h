@@ -32,6 +32,7 @@ const char* pyrowaveStageName(PyrowaveStage stage);
 
 #include "pyrowaveabi.h"
 #include "pyrowavecolor.h"
+#include "pyrowavepacing.h"
 #include "streaming/video/ffmpeg-renderers/plvk.h"
 
 #include <memory>
@@ -88,6 +89,10 @@ struct PyrowavePresentParams
     int hdrMode = 0;
     bool enableVsync = false;
     bool ignoreAspectRatio = false;
+    // Stream and display rates, for when presents count as delayed. 0 when
+    // unknown.
+    int frameRate = 0;
+    int displayFps = 0;
 };
 
 // Client-thread time spent on one frame (decoder design, section 8). Neither
@@ -174,6 +179,7 @@ private:
     bool decodeToPlanes(PyrowaveFailure& failure);
     FrameResult present(const pl_swapchain_frame& swapchainFrame, bool decoded,
                         PyrowaveFailure& failure);
+    bool switchToTripleBuffering(PyrowaveFailure& failure);
     void destroy();
 
     PyrowaveVulkanInstance& m_Instance;
@@ -243,6 +249,9 @@ private:
     // Presentation
     VkPresentModeKHR m_PresentMode = VK_PRESENT_MODE_FIFO_KHR;
     pl_swapchain m_Swapchain = nullptr;
+    // Double-buffered for the lowest latency until presents keep running
+    // late, then triple-buffered for the rest of this renderer's life.
+    PyrowavePacing::SwapchainDepth m_SwapchainDepth;
     pl_renderer m_Renderer = nullptr;
     PlVkOverlays m_Overlays;
 

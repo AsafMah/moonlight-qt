@@ -3287,6 +3287,14 @@
         <source>Reset all</source>
         <translation>全部重置</translation>
     </message>
+    <message>
+        <source>Works while the key is held down. A modifier key on its own works too, e.g. Right Alt; it then no longer reaches the host, so AltGr typing stops there.</source>
+        <translation>按住按键期间生效。也可以只用一个修饰键，例如右 Alt；这样它将不再发送到主机，AltGr 输入也会因此失效。</translation>
+    </message>
+    <message>
+        <source>Use a modifier key on its own, or Ctrl, Alt or the Windows/Command key with another key.</source>
+        <translation>请单独使用一个修饰键，或用 Ctrl、Alt、Windows/Command 键配合其他键。</translation>
+    </message>
 </context>
 <context>
     <name>Shortcuts</name>
@@ -3349,6 +3357,10 @@
     <message>
         <source>Type clipboard text on the host</source>
         <translation>在主机上输入剪贴板文本</translation>
+    </message>
+    <message>
+        <source>Hold to release mouse</source>
+        <translation>按住以释放鼠标</translation>
     </message>
 </context>
 <context>

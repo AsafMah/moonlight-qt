@@ -86,6 +86,7 @@ static QString getStartupApplicationDir(const char* argv0)
 #include "gui/computermodel.h"
 #include "gui/appmodel.h"
 #include "gui/shortcutmodel.h"
+#include "gui/keymacromodel.h"
 #include "backend/autoupdatechecker.h"
 #include "backend/computermanager.h"
 #include "backend/systemproperties.h"
@@ -1361,6 +1362,9 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonType<ShortcutModel>(
         "ShortcutModel", 1, 0, "ShortcutModel",
         [](QQmlEngine*, QJSEngine*) -> QObject* { return new ShortcutModel(); });
+    qmlRegisterSingletonType<KeyMacroModel>(
+        "KeyMacroModel", 1, 0, "KeyMacroModel",
+        [](QQmlEngine*, QJSEngine*) -> QObject* { return new KeyMacroModel(); });
     qmlRegisterSingletonType<SystemProperties>("SystemProperties", 1, 0,
                                                "SystemProperties",
                                                [](QQmlEngine*, QJSEngine*) -> QObject* {

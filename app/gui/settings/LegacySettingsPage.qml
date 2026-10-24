@@ -454,6 +454,10 @@ Column {
         visible: settingsPage.category === "input" && hasVisibleContent
     }
 
+    KeyMacroSettingsCard {
+        visible: settingsPage.category === "input" && hasVisibleContent
+    }
+
     SettingsCard {
         visible: settingsPage.category === "input" && hasVisibleContent
         title: qsTr("Touch input")

@@ -675,7 +675,9 @@ void OverlayStatsController::updateTooltip()
     }
     if (!m_Tooltip->isVisible()) {
         m_Tooltip->show();
-        m_Tooltip->raise();
     }
+    // Every time, not just on show: the panel raises itself when edit mode
+    // ends (its window flags change) and would cover a visible tooltip.
+    m_Tooltip->raise();
     m_Tooltip->repaintNow();
 }

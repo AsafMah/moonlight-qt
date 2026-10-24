@@ -725,6 +725,30 @@
         <source>Reset</source>
         <translation>重設</translation>
     </message>
+    <message>
+        <source>Show summary after streaming</source>
+        <translation>串流結束後顯示摘要</translation>
+    </message>
+    <message>
+        <source>When a stream ends normally, show its duration, frame times, lows, drops, bitrate and latency.</source>
+        <translation>串流正常結束時，顯示本次的時長、影格時間、低影格、丟影格、位元率與延遲。</translation>
+    </message>
+    <message>
+        <source>Record session stats to CSV</source>
+        <translation>將工作階段統計記錄為 CSV</translation>
+    </message>
+    <message>
+        <source>Writes one row per second of stream statistics to a CSV file in %1.</source>
+        <translation>串流期間每秒將一列統計資料寫入 %1 中的 CSV 檔案。</translation>
+    </message>
+    <message>
+        <source>Session stats folder</source>
+        <translation>工作階段統計資料夾</translation>
+    </message>
+    <message>
+        <source>Open CSV folder</source>
+        <translation>開啟 CSV 資料夾</translation>
+    </message>
 </context>
 <context>
     <name>FileMappingClient</name>
@@ -1746,6 +1770,14 @@
     <message>
         <source>Edit position</source>
         <translation>調整位置</translation>
+    </message>
+    <message>
+        <source>Session</source>
+        <translation>工作階段</translation>
+    </message>
+    <message>
+        <source>No stats yet</source>
+        <translation>尚無統計</translation>
     </message>
 </context>
 <context>
@@ -2934,6 +2966,181 @@
     <message>
         <source>Drag the overlay to move it. Press Esc when done.</source>
         <translation>拖曳浮層即可移動，完成後按 Esc。</translation>
+    </message>
+    <message>
+        <source>Duration</source>
+        <translation>時長</translation>
+    </message>
+    <message>
+        <source>Average FPS</source>
+        <translation>平均影格率</translation>
+    </message>
+    <message>
+        <source>1% / 0.1% low</source>
+        <translation>1% / 0.1% 低影格</translation>
+    </message>
+    <message>
+        <source>%1 / %2 FPS</source>
+        <translation>%1 / %2 FPS</translation>
+    </message>
+    <message>
+        <source>Frame time, 99th percentile</source>
+        <translation>影格時間（第 99 百分位）</translation>
+    </message>
+    <message>
+        <source>%1 ms</source>
+        <translation>%1 ms</translation>
+    </message>
+    <message>
+        <source>Network loss</source>
+        <translation>網路丟影格</translation>
+    </message>
+    <message>
+        <source>%1% (%2 frames)</source>
+        <translation>%1%（%2 影格）</translation>
+    </message>
+    <message>
+        <source>Pacer drops</source>
+        <translation>影格同步丟影格</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>位元率</translation>
+    </message>
+    <message>
+        <source>%1 Mbps</source>
+        <translation>%1 Mbps</translation>
+    </message>
+    <message>
+        <source>Latency</source>
+        <translation>延遲</translation>
+    </message>
+    <message>
+        <source>%1 recovered, %2 unrecoverable</source>
+        <translation>已修復 %1，無法修復 %2</translation>
+    </message>
+    <message>
+        <source>Not reported</source>
+        <translation>未回報</translation>
+    </message>
+    <message>
+        <source>FEC frames</source>
+        <translation>FEC 影格</translation>
+    </message>
+</context>
+<context>
+    <name>SessionSummaryDialog</name>
+    <message>
+        <source>Session summary</source>
+        <translation>工作階段摘要</translation>
+    </message>
+    <message>
+        <source>Duration</source>
+        <translation>時長</translation>
+    </message>
+    <message>
+        <source>Stream</source>
+        <translation>畫面</translation>
+    </message>
+    <message>
+        <source>%1×%2 at %3 FPS, %4</source>
+        <translation>%1×%2，%3 FPS，%4</translation>
+    </message>
+    <message>
+        <source>Average FPS</source>
+        <translation>平均影格率</translation>
+    </message>
+    <message>
+        <source>1% / 0.1% low</source>
+        <translation>1% / 0.1% 低影格</translation>
+    </message>
+    <message>
+        <source>%1 / %2 FPS</source>
+        <translation>%1 / %2 FPS</translation>
+    </message>
+    <message>
+        <source>Frame time</source>
+        <translation>影格時間</translation>
+    </message>
+    <message>
+        <source>%1 ms average, %2 ms 99th percentile, %3 ms max</source>
+        <translation>平均 %1 ms，第 99 百分位 %2 ms，最大 %3 ms</translation>
+    </message>
+    <message>
+        <source>Network loss</source>
+        <translation>網路丟影格</translation>
+    </message>
+    <message>
+        <source>%1% (%2 frames)</source>
+        <translation>%1%（%2 影格）</translation>
+    </message>
+    <message>
+        <source>Pacer drops</source>
+        <translation>影格同步丟影格</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>位元率</translation>
+    </message>
+    <message>
+        <source>%1 Mbps average, %2 Mbps peak</source>
+        <translation>平均 %1 Mbps，峰值 %2 Mbps</translation>
+    </message>
+    <message>
+        <source>Latency</source>
+        <translation>延遲</translation>
+    </message>
+    <message>
+        <source>%1 ms average</source>
+        <translation>平均 %1 ms</translation>
+    </message>
+    <message>
+        <source>Round trip</source>
+        <translation>往返時間</translation>
+    </message>
+    <message>
+        <source>%1 ms average, %2 ms max, %3 ms jitter</source>
+        <translation>平均 %1 ms，最大 %2 ms，抖動 %3 ms</translation>
+    </message>
+    <message>
+        <source>FEC</source>
+        <translation>FEC</translation>
+    </message>
+    <message>
+        <source>%1 frames recovered, %2 unrecoverable</source>
+        <translation>已修復 %1 影格，%2 影格無法修復</translation>
+    </message>
+    <message>
+        <source>%1 of %2 packets, frame results not reported by the host</source>
+        <translation>%2 個封包中有 %1 個 FEC 封包，主機未回報影格修復結果</translation>
+    </message>
+    <message>
+        <source>Moonlight session summary</source>
+        <translation>Moonlight 工作階段摘要</translation>
+    </message>
+    <message>
+        <source>%1 on %2</source>
+        <translation>%2 上的 %1</translation>
+    </message>
+    <message>
+        <source>CSV</source>
+        <translation>CSV</translation>
+    </message>
+    <message>
+        <source>Recorded to %1</source>
+        <translation>已記錄到 %1</translation>
+    </message>
+    <message>
+        <source>Copy summary</source>
+        <translation>複製摘要</translation>
+    </message>
+    <message>
+        <source>Open CSV folder</source>
+        <translation>開啟 CSV 資料夾</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>已複製</translation>
     </message>
 </context>
 <context>

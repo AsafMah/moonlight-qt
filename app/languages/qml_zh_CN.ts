@@ -955,6 +955,18 @@
         <source>Enable V-Sync to use frame pacing.</source>
         <translation>开启垂直同步后才能使用帧平滑。</translation>
     </message>
+    <message>
+        <source>Not used while variable refresh rate is on.</source>
+        <translation>可变刷新率开启时不使用此项。</translation>
+    </message>
+    <message>
+        <source>Variable refresh rate (G-Sync / FreeSync)</source>
+        <translation>可变刷新率（G-Sync / FreeSync）</translation>
+    </message>
+    <message>
+        <source>Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). For the smoothest result, stream a few FPS below the display&apos;s refresh rate.</source>
+        <translation>每一帧到达后立即显示，让支持 VRR 的显示器跟着串流的节奏刷新：延迟低且不撕裂。开启后取代垂直同步和帧平滑。需要 G-Sync 或 FreeSync 显示器、在显卡驱动中开启 VRR，并使用“全屏”或“无边框窗口”显示模式（只有驱动为窗口化程序开启了 VRR 时，“窗口”模式才有效）。想要最流畅的效果，请把串流帧率设得比显示器刷新率低几帧。</translation>
+    </message>
 </context>
 <context>
     <name>EcosystemPlatformCatalog</name>
@@ -3165,6 +3177,10 @@
     <message>
         <source>Unable to initialize video decoder. Please check your streaming settings and try again.</source>
         <translation>无法初始化视频解码器。请检查你的流式传输设置，然后重试。</translation>
+    </message>
+    <message>
+        <source>VRR: this %1 FPS stream is faster than the %2 Hz display can follow, so some frames are dropped. Stream at %3 FPS or lower for the smoothest VRR.</source>
+        <translation>VRR：%1 FPS 的串流超出了 %2 Hz 显示器能跟随的范围，部分帧会被丢弃。将串流帧率设为 %3 FPS 或更低，VRR 效果最流畅。</translation>
     </message>
 </context>
 <context>

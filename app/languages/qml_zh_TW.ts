@@ -669,6 +669,18 @@
         <source>Enable V-Sync to use frame pacing.</source>
         <translation>開啟垂直同步後才能使用影格平滑。</translation>
     </message>
+    <message>
+        <source>Not used while variable refresh rate is on.</source>
+        <translation>可變更新率開啟時不使用此項。</translation>
+    </message>
+    <message>
+        <source>Variable refresh rate (G-Sync / FreeSync)</source>
+        <translation>可變更新率（G-Sync / FreeSync）</translation>
+    </message>
+    <message>
+        <source>Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). For the smoothest result, stream a few FPS below the display&apos;s refresh rate.</source>
+        <translation>每一影格到達後立即顯示，讓支援 VRR 的顯示器跟著串流的節奏更新：延遲低且不撕裂。開啟後取代垂直同步和影格平滑。需要 G-Sync 或 FreeSync 顯示器、在顯示卡驅動程式中開啟 VRR，並使用「全螢幕」或「無邊框視窗」顯示模式（只有驅動程式為視窗化程式開啟 VRR 時，「視窗」模式才有效）。想要最流暢的效果，請把串流影格率設得比顯示器更新率低幾格。</translation>
+    </message>
 </context>
 <context>
     <name>FileMappingClient</name>
@@ -2731,6 +2743,10 @@
         <location filename="../streaming/session.cpp" line="4143"/>
         <source>Unable to initialize video decoder. Please check your streaming settings and try again.</source>
         <translation>無法初始化畫面解碼器。請檢查您的串流設定並再試一次。</translation>
+    </message>
+    <message>
+        <source>VRR: this %1 FPS stream is faster than the %2 Hz display can follow, so some frames are dropped. Stream at %3 FPS or lower for the smoothest VRR.</source>
+        <translation>VRR：%1 FPS 的串流超出了 %2 Hz 顯示器能跟隨的範圍，部分影格會被捨棄。將串流影格率設為 %3 FPS 或更低，VRR 效果最流暢。</translation>
     </message>
 </context>
 <context>

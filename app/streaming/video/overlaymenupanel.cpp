@@ -1396,11 +1396,10 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
 
         if (hasIcons) {
             // The overlay level is appended, so it has no fixed index to switch on
-            const QString icon = item.action == MenuAction::OpenStatsOverlay
-                                     ? QStringLiteral("cat-display")
-                                 : item.action == MenuAction::OpenSessionStats
-                                     ? QStringLiteral("menu-bitrate")
-                                     : iconForItem(item);
+            const QString icon =
+                item.action == MenuAction::OpenStatsOverlay   ? QStringLiteral("cat-display")
+                : item.action == MenuAction::OpenSessionStats ? QStringLiteral("menu-bitrate")
+                                                              : iconForItem(item);
             drawIcon(icon, QRect(textPad, itemY + (m_ItemHeight - 20) / 2, 20, 20),
                      item.enabled ? (i == m_HoveredIndex ? 1.0 : 0.85) : 0.4);
         }

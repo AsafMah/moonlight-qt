@@ -30,13 +30,12 @@ std::vector<std::pair<QString, QString>> Session::sessionStatsMenuRows() const
 
     std::vector<std::pair<QString, QString>> rows;
     rows.emplace_back(tr("Duration"), formatDuration(s.sessionDurationUs));
-    rows.emplace_back(tr("Average FPS"),
-                      hasFrames ? QString::number(frames.fps, 'f', 1) : unknown);
-    rows.emplace_back(tr("1% / 0.1% low"),
-                      hasFrames ? tr("%1 / %2 FPS")
-                                      .arg(frames.onePercentLowFps, 0, 'f', 1)
-                                      .arg(frames.pointOnePercentLowFps, 0, 'f', 1)
-                                : unknown);
+    rows.emplace_back(tr("Average FPS"), hasFrames ? QString::number(frames.fps, 'f', 1) : unknown);
+    rows.emplace_back(tr("1% / 0.1% low"), hasFrames
+                                               ? tr("%1 / %2 FPS")
+                                                     .arg(frames.onePercentLowFps, 0, 'f', 1)
+                                                     .arg(frames.pointOnePercentLowFps, 0, 'f', 1)
+                                               : unknown);
     rows.emplace_back(tr("Frame time, 99th percentile"),
                       hasFrames ? tr("%1 ms").arg(frames.p99Ms, 0, 'f', 2) : unknown);
 
@@ -48,16 +47,15 @@ std::vector<std::pair<QString, QString>> Session::sessionStatsMenuRows() const
         s.sessionFramesDecoded > 0
             ? 100.0 * s.sessionFramesPacerDropped / static_cast<double>(s.sessionFramesDecoded)
             : 0;
-    rows.emplace_back(tr("Network loss"),
-                      s.valid ? tr("%1% (%2 frames)")
-                                    .arg(lossPercent, 0, 'f', 2)
-                                    .arg(s.sessionFramesNetworkDropped)
-                              : unknown);
-    rows.emplace_back(tr("Pacer drops"),
-                      s.valid ? tr("%1% (%2 frames)")
-                                    .arg(dropPercent, 0, 'f', 2)
-                                    .arg(s.sessionFramesPacerDropped)
-                              : unknown);
+    rows.emplace_back(
+        tr("Network loss"),
+        s.valid
+            ? tr("%1% (%2 frames)").arg(lossPercent, 0, 'f', 2).arg(s.sessionFramesNetworkDropped)
+            : unknown);
+    rows.emplace_back(
+        tr("Pacer drops"),
+        s.valid ? tr("%1% (%2 frames)").arg(dropPercent, 0, 'f', 2).arg(s.sessionFramesPacerDropped)
+                : unknown);
 
     rows.emplace_back(tr("Bitrate"), s.valid && !std::isnan(s.bitrateMbps)
                                          ? tr("%1 Mbps").arg(s.bitrateMbps, 0, 'f', 1)

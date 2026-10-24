@@ -148,6 +148,9 @@ public:
 
     const std::string& deviceName() const { return m_DeviceName; }
 
+    // How frames are decoded: "Vulkan compute", "Vulkan fragment" or "CPU
+    // staging". English.
+    QString decodePathName() const;
     // For the stats overlay, e.g. "PyroWave (Vulkan compute)". English.
     QString decoderDescription() const;
 

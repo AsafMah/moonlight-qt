@@ -1,6 +1,7 @@
 #include "pyrowavestatus.h"
 #include "pyrowavecapabilities.h"
 #include "pyrowavehoststore.h"
+#include "pyrowavepreflightstore.h"
 #include "pyrowaveruntime.h"
 #include "pyrowavevideodecoder.h"
 
@@ -51,7 +52,7 @@ PyrowaveStatus* PyrowaveStatus::get()
 
 PyrowaveStatus::PyrowaveStatus(QObject* parent)
     : QObject(parent), m_HasLastHost(false), m_LastHostOffer(HostOfferUnknown),
-      m_GpuCheckState(GpuCheckNotRun)
+      m_HasLastPreflight(false), m_LastPreflightOk(false), m_GpuCheckState(GpuCheckNotRun)
 {
     refreshHostStatus();
 }
@@ -82,6 +83,33 @@ void PyrowaveStatus::refreshHostStatus()
     if (entry.lastConnected.isValid()) {
         const QDateTime local = entry.lastConnected.toLocalTime();
         m_LastHostSeen = QLocale().toString(local, QLocale::ShortFormat);
+    }
+
+    const PyrowavePreflightStore::Entry preflight = PyrowavePreflightStore::last();
+    m_HasLastPreflight = preflight.valid;
+    m_LastPreflightOk = preflight.ok;
+    m_LastPreflightText.clear();
+    if (preflight.valid) {
+        const QString when =
+            QLocale().toString(preflight.time.toLocalTime(), QLocale::ShortFormat);
+        const QString signal = preflight.hdrMode == 2   ? QStringLiteral("HLG")
+                               : preflight.hdrMode == 1 ? QStringLiteral("HDR10")
+                                                        : QStringLiteral("SDR");
+        const QString stream = tr("%1x%2 at %3 FPS, %4")
+                                   .arg(preflight.width)
+                                   .arg(preflight.height)
+                                   .arg(preflight.frameRate)
+                                   .arg(signal);
+        if (preflight.ok) {
+            m_LastPreflightText = tr("Last stream check (%1): passed on %2 with %3 decoding (%4).")
+                                      .arg(when, preflight.gpu, preflight.decodePath, stream);
+        } else if (!preflight.gpu.isEmpty()) {
+            m_LastPreflightText = tr("Last stream check (%1): failed on %2 (%3). %4")
+                                      .arg(when, preflight.gpu, stream, preflight.reason);
+        } else {
+            m_LastPreflightText = tr("Last stream check (%1): failed (%2). %3")
+                                      .arg(when, stream, preflight.reason);
+        }
     }
 
     emit hostStatusChanged();

@@ -394,13 +394,17 @@ bool PyrowaveVulkanRenderer::initialize(const PyrowavePresentParams& params,
     return true;
 }
 
-QString PyrowaveVulkanRenderer::decoderDescription() const
+QString PyrowaveVulkanRenderer::decodePathName() const
 {
     if (m_CpuStaging) {
-        return QStringLiteral("PyroWave (CPU staging)");
+        return QStringLiteral("CPU staging");
     }
-    return m_FragmentPath ? QStringLiteral("PyroWave (Vulkan fragment)")
-                          : QStringLiteral("PyroWave (Vulkan compute)");
+    return m_FragmentPath ? QStringLiteral("Vulkan fragment") : QStringLiteral("Vulkan compute");
+}
+
+QString PyrowaveVulkanRenderer::decoderDescription() const
+{
+    return QStringLiteral("PyroWave (%1)").arg(decodePathName());
 }
 
 #define PYROWAVE_LOAD_INSTANCE_FN(member, name)                                                    \

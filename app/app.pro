@@ -400,6 +400,7 @@ SOURCES += \
     streaming/video/pyrowave/pyrowavecolor.cpp \
     streaming/video/pyrowave/pyrowavehoststore.cpp \
     streaming/video/pyrowave/pyrowavepacing.cpp \
+    streaming/video/pyrowave/pyrowavepreflightstore.cpp \
     streaming/video/pyrowave/pyrowaveruntime.cpp \
     streaming/video/pyrowave/pyrowavestatus.cpp \
     streaming/video/pyrowave/pyrowavevideodecoder.cpp \
@@ -410,6 +411,7 @@ HEADERS += \
     streaming/video/pyrowave/pyrowavecolor.h \
     streaming/video/pyrowave/pyrowavehoststore.h \
     streaming/video/pyrowave/pyrowavepacing.h \
+    streaming/video/pyrowave/pyrowavepreflightstore.h \
     streaming/video/pyrowave/pyrowaveruntime.h \
     streaming/video/pyrowave/pyrowavestatus.h \
     streaming/video/pyrowave/pyrowavevideodecoder.h \

@@ -6,6 +6,8 @@
 #include <QFileInfo>
 #include <QLibrary>
 
+#include "streaming/video/ffmpeg-renderers/plvk.h"
+
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
@@ -112,6 +114,9 @@ QStringList PyrowaveGpuCapabilities::missingPrerequisites() const
 {
     QStringList missing;
 
+    if (softwareRenderer) {
+        missing.append(tr("a hardware GPU (this is a software renderer)"));
+    }
     if (apiVersion < k_RequiredDeviceApiVersion) {
         missing.append(tr("Vulkan 1.3 (this GPU reports %1)").arg(versionString(apiVersion)));
     }
@@ -147,16 +152,7 @@ QStringList PyrowaveGpuCapabilities::missingPrerequisites() const
 
 bool PyrowaveCapabilityReport::anyDeviceMeetsPrerequisites() const
 {
-    if (failure != Failure::None) {
-        return false;
-    }
-
-    for (const PyrowaveGpuCapabilities& device : devices) {
-        if (device.meetsPrerequisites()) {
-            return true;
-        }
-    }
-    return false;
+    return failure == Failure::None && streamDevice >= 0;
 }
 
 QString PyrowaveCapabilityReport::summary() const
@@ -178,10 +174,9 @@ QString PyrowaveCapabilityReport::summary() const
         break;
     }
 
-    for (const PyrowaveGpuCapabilities& device : devices) {
-        if (device.meetsPrerequisites()) {
-            return tr("%1 meets the basic requirements.").arg(device.name);
-        }
+    if (streamDevice >= 0 && streamDevice < devices.size()) {
+        return tr("Streams will use %1, which meets the basic requirements.")
+            .arg(devices.at(streamDevice).name);
     }
 
     if (devices.isEmpty()) {
@@ -217,6 +212,9 @@ QString PyrowaveCapabilityReport::toText() const
 
         lines.append(QString());
         lines.append(tr("GPU %1: %2 (%3)").arg(i + 1).arg(gpu.name, gpu.deviceType));
+        if (i == streamDevice) {
+            lines.append(indent + tr("Streams will use this GPU."));
+        }
         lines.append(indent + tr("Vulkan version: %1").arg(versionString(gpu.apiVersion)));
         lines.append(indent + tr("Subgroup size: %1").arg(gpu.subgroupSize));
         lines.append(indent + tr("Subgroup operations: %1 (compute shaders: %2)")
@@ -367,6 +365,9 @@ PyrowaveGpuCapabilities readDevice(const InstanceFunctions& vk, VkPhysicalDevice
     vk.getPhysicalDeviceProperties(device, &properties);
     gpu.name = QString::fromUtf8(properties.deviceName);
     gpu.deviceType = deviceTypeName(properties.deviceType);
+    // As PlVkShared::isSoftwareDeviceRejected(), without its log line
+    gpu.softwareRenderer = properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU &&
+                           qgetenv("PLVK_ALLOW_SOFTWARE") != "1";
     gpu.apiVersion = properties.apiVersion;
     gpu.maxTexelBufferElements = properties.limits.maxTexelBufferElements;
 
@@ -590,21 +591,25 @@ PyrowaveCapabilityReport probePyrowaveCapabilities()
 
     uint32_t deviceCount = 0;
     result = vk.enumeratePhysicalDevices(vk.instance, &deviceCount, nullptr);
-    std::vector<VkPhysicalDevice> devices(deviceCount);
-    if (result == VK_SUCCESS && deviceCount > 0) {
-        result = vk.enumeratePhysicalDevices(vk.instance, &deviceCount, devices.data());
-        devices.resize(deviceCount);
-    }
-
     if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
         report.failure = Failure::QueryFailed;
         report.vkResult = static_cast<int>(result);
-    } else if (devices.empty()) {
-        report.failure = Failure::NoDevices;
     } else {
+        // The order a stream tries the GPUs in, so the first one that meets
+        // the prerequisites is the one a stream will use (if the window and
+        // formats work out; the stream preflight checks those).
+        const std::vector<VkPhysicalDevice> devices = PlVkShared::devicesInPreferenceOrder(
+            vk.instance, vk.enumeratePhysicalDevices, vk.getPhysicalDeviceProperties);
+        if (devices.empty()) {
+            report.failure = Failure::NoDevices;
+        }
+
         // Each GPU is judged on its own; features are never combined.
         for (VkPhysicalDevice device : devices) {
             report.devices.append(readDevice(vk, device));
+            if (report.streamDevice < 0 && report.devices.last().meetsPrerequisites()) {
+                report.streamDevice = report.devices.size() - 1;
+            }
         }
     }
 

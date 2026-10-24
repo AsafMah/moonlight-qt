@@ -200,12 +200,22 @@ Column {
         text: panel.hostNote()
     }
 
+    // Names the GPU streams will use when the check passed
     Note {
-        visible: PyrowaveStatus.gpuCheckState === PyrowaveStatus.GpuCheckFailed ||
+        visible: PyrowaveStatus.gpuCheckState === PyrowaveStatus.GpuCheckPassed ||
+                 PyrowaveStatus.gpuCheckState === PyrowaveStatus.GpuCheckFailed ||
                  PyrowaveStatus.gpuCheckState === PyrowaveStatus.GpuCheckUnavailable
         text: PyrowaveStatus.gpuCheckSummary
         color: PyrowaveStatus.gpuCheckState === PyrowaveStatus.GpuCheckFailed ? Theme.danger
-                                                                              : panel.warnColor
+             : PyrowaveStatus.gpuCheckState === PyrowaveStatus.GpuCheckUnavailable ? panel.warnColor
+             : Theme.textSettingsSubtitle
+    }
+
+    // What the last stream's preflight found on the real window and GPU
+    Note {
+        visible: PyrowaveStatus.hasLastPreflight
+        text: PyrowaveStatus.lastPreflightText
+        color: PyrowaveStatus.lastPreflightOk ? Theme.textSettingsSubtitle : Theme.danger
     }
 
     Note {
@@ -318,9 +328,12 @@ Column {
                 font.family: Theme.fontMono
                 font.pointSize: Theme.fontBody
                 background: Item {}
-                text: PyrowaveStatus.gpuCheckState === PyrowaveStatus.GpuCheckRunning
-                      ? PyrowaveStatus.gpuCheckSummary
-                      : PyrowaveStatus.capabilityReport
+                text: (PyrowaveStatus.gpuCheckState === PyrowaveStatus.GpuCheckRunning
+                       ? PyrowaveStatus.gpuCheckSummary
+                       : PyrowaveStatus.capabilityReport) +
+                      (PyrowaveStatus.hasLastPreflight
+                       ? "\n\n" + PyrowaveStatus.lastPreflightText
+                       : "")
             }
         }
     }

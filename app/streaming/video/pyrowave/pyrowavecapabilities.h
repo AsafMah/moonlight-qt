@@ -31,6 +31,9 @@ public:
     uint32_t maxTexelBufferElements = 0;
     bool shaderInt16 = false;
     bool graphicsComputeQueue = false;
+    // A CPU (software) Vulkan device, which streams skip unless
+    // PLVK_ALLOW_SOFTWARE=1, as for every Vulkan renderer.
+    bool softwareRenderer = false;
 
     // Translated names of the prerequisites this GPU lacks. Empty when the
     // basic checks pass. Passing is necessary but not sufficient: the stream
@@ -61,7 +64,11 @@ public:
     int vkResult = 0;
     uint32_t loaderVersion = 0;
     QString loaderPath;
+    // In the order a stream tries them (PlVkShared::devicesInPreferenceOrder)
     QList<PyrowaveGpuCapabilities> devices;
+    // The first of devices that meets the prerequisites, which a stream
+    // will try first; -1 if none does.
+    int streamDevice = -1;
 
     bool anyDeviceMeetsPrerequisites() const;
 

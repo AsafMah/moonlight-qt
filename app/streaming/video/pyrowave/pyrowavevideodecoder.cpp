@@ -1,4 +1,5 @@
 #include "pyrowavevideodecoder.h"
+#include "pyrowavepreflightstore.h"
 #include "pyrowaveruntime.h"
 #include "pyrowavevulkan.h"
 
@@ -111,6 +112,23 @@ PyrowaveVideoDecoder::PyrowaveVideoDecoder(bool testOnly, const PyrowaveSessionC
 
 PyrowavePreflightResult PyrowaveVideoDecoder::preflight(const PyrowavePreflightRequest& request)
 {
+    const PyrowavePreflightResult result = runPreflight(request);
+
+    PyrowavePreflightStore::Entry entry;
+    entry.ok = result.ok;
+    entry.gpu = result.deviceName;
+    entry.decodePath = result.decodePath;
+    entry.reason = result.reason;
+    entry.width = request.width;
+    entry.height = request.height;
+    entry.frameRate = request.frameRate;
+    entry.hdrMode = request.hdrMode;
+    PyrowavePreflightStore::record(entry);
+    return result;
+}
+
+PyrowavePreflightResult PyrowaveVideoDecoder::runPreflight(const PyrowavePreflightRequest& request)
+{
     PyrowavePreflightResult result;
     result.ok = false;
 
@@ -160,6 +178,7 @@ PyrowavePreflightResult PyrowaveVideoDecoder::preflight(const PyrowavePreflightR
     params.hdrMode = request.hdrMode;
     if (!renderer.initialize(params, failure)) {
         result.reason = failure.reason;
+        result.deviceName = QString::fromStdString(renderer.deviceName());
 
         // Say so when only HDR is the problem. The same GPU and window are
         // tried in SDR just to tell, never to stream SDR instead.
@@ -177,10 +196,13 @@ PyrowavePreflightResult PyrowaveVideoDecoder::preflight(const PyrowavePreflightR
         return result;
     }
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave preflight passed on '%s' (%dx%d, %s)",
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave preflight passed on '%s' (%dx%d, %s, %s)",
                 renderer.deviceName().c_str(), request.width, request.height,
-                PyrowaveColor::Contract(request.hdrMode, false).signalName());
+                PyrowaveColor::Contract(request.hdrMode, false).signalName(),
+                qUtf8Printable(renderer.decodePathName()));
     result.ok = true;
+    result.deviceName = QString::fromStdString(renderer.deviceName());
+    result.decodePath = renderer.decodePathName();
     return result;
 #endif
 }

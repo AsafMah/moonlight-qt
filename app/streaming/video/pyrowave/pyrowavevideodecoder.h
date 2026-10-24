@@ -49,6 +49,10 @@ struct PyrowavePreflightResult
     bool ok;
     // Translated reason shown instead of connecting when ok is false.
     QString reason;
+    // The GPU that passed, or the one that failed (empty if none got that
+    // far), and how it decodes ("Vulkan compute", "CPU staging", ...).
+    QString deviceName;
+    QString decodePath;
 };
 
 // What the session negotiated that the decoder must follow. Session fills
@@ -125,7 +129,8 @@ public:
 
     // Creates and releases a candidate device, decoder and swapchain at the
     // requested size on the request's window. Runs before ANNOUNCE, so a GPU
-    // or window that can't do it fails here with a specific reason.
+    // or window that can't do it fails here with a specific reason. The
+    // result is kept for Settings (PyrowavePreflightStore).
     static PyrowavePreflightResult preflight(const PyrowavePreflightRequest& request);
 
     // Adds PyroWave to the formats and capabilities that Session gives
@@ -167,6 +172,7 @@ public:
     virtual void notifyOverlayUpdated(Overlay::OverlayType type) override;
 
 private:
+    static PyrowavePreflightResult runPreflight(const PyrowavePreflightRequest& request);
     static int decoderThreadProc(void* context);
 
     int processFrame(PDECODE_UNIT du);

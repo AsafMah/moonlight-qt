@@ -5,6 +5,7 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QPoint>
+#include <QSize>
 #include <QFont>
 #include <QIcon>
 #include <QHash>
@@ -39,6 +40,8 @@
  *   Then:             USB Devices (when enabled), Send Keys (special keys and
  *                      key macros), Host Commands (Foundation Sunshine only).
  *                      These levels have no fixed index; see m_SendKeysLevel.
+ *   Then:             Stream Quality (resolution / FPS presets, no fixed
+ *                      index; see m_StreamQualityLevel).
  *
  * Sub-level navigation uses a title bar with back button (◂ Title).
  * Square industrial theme matching Theme.qml, with hard shadows and brand accents.
@@ -94,6 +97,14 @@ public:
         OpenHostCommands,
         SendHostKeys,   // payload: HostKeys payload ("special:<id>" or "keys:<combo>")
         RunHostCommand, // payload: Foundation Sunshine super command id
+        // Stream quality. OpenStreamQuality tags the level's SubMenu row; the
+        // Select* rows carry "WxH" / FPS in MenuItem::payload and only change
+        // the pending choice. Apply/Save go out through the quality callback.
+        OpenStreamQuality,
+        SelectStreamResolution,
+        SelectStreamFps,
+        ApplyStreamQuality,
+        SaveStreamQualityAsDefault,
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         OpenStylusReplayPanel,
 #endif
@@ -161,6 +172,25 @@ public:
     // The menu closes first, like for any other action.
     using PayloadActionCallback = std::function<void(MenuAction, const QString&)>;
 
+    // What the stream runs at, and the client display, for the Stream
+    // Quality level's presets.
+    struct StreamQualityState
+    {
+        QSize resolution;
+        int fps = 0;
+        QSize nativeResolution;
+        int displayHz = 0;
+    };
+    // A requested resolution/FPS. saveAsDefault also stores it in the
+    // streaming preferences; otherwise it lasts for this session only.
+    struct StreamQualityRequest
+    {
+        QSize resolution;
+        int fps = 0;
+        bool saveAsDefault = false;
+    };
+    using StreamQualityCallback = std::function<void(const StreamQualityRequest&)>;
+
     explicit OverlayMenuPanel(QWindow* parent = nullptr,
                               OverlayWindowMode windowMode = OverlayWindowMode::Detached);
     ~OverlayMenuPanel() override;
@@ -175,6 +205,10 @@ public:
     }
     void setBitrateChangeCallback(BitrateChangeCallback cb) {
         m_BitrateChangeCallback = std::move(cb);
+    }
+    void setStreamQualityCallback(StreamQualityCallback cb)
+    {
+        m_StreamQualityCallback = std::move(cb);
     }
     void setPayloadActionCallback(PayloadActionCallback cb)
     {
@@ -229,6 +263,8 @@ public:
 
     // Overlay preset behind a SetStatsPreset* action
     static std::optional<StatsOverlay::Preset> statsPresetForAction(MenuAction action);
+    // Resets the pending Stream Quality choice to what the stream runs at.
+    void updateStreamQualityState(const StreamQualityState& state);
     void updateGamepadMouseState(bool enabled);
     void updateFileMappingState(FileMappingState state, const QString& detail);
     void updateRemoteUsbState(bool available,
@@ -334,6 +370,8 @@ private:
     void buildMenuLevels();
     void applyStatsOverlayState();
     QString shortcutDetail(MenuAction action) const; // live key binding text
+    MenuLevel buildStreamQualityLevel() const;
+    bool handleStreamQualityItem(const MenuItem& item); // true when consumed
     void navigateToLevel(int level);
     void repositionWindow();
     void showInternal();     // shared show logic after geometry is set
@@ -397,6 +435,14 @@ private:
     RemoteUsbReleaseCallback m_RemoteUsbReleaseCallback;
     BitrateChangeCallback m_BitrateChangeCallback;
     PayloadActionCallback m_PayloadActionCallback;
+    StreamQualityCallback m_StreamQualityCallback;
+
+    // Stream Quality level: running state, the pending choice, and the level
+    // index in m_MenuLevels (-1 before the first build).
+    StreamQualityState m_StreamQuality;
+    QSize m_PendingStreamResolution;
+    int m_PendingStreamFps = 0;
+    int m_StreamQualityLevel = -1;
 
     // Bitrate slider state. m_BitrateKbps is the on-screen value;
     // m_CommittedBitrateKbps is the last value sent to the callback.

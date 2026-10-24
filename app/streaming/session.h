@@ -24,6 +24,7 @@
 #include "backend/usbforwardingtunnel.h"
 #include "video/overlaytoast.h"
 #include "backend/supercmds.h"
+#include "streamquality.h"
 #ifndef STEAM_LINK
 #include "micstream.h"
 #endif
@@ -211,9 +212,26 @@ private:
 
     bool startConnectionAsync();
 
+    enum class ReconnectReason
+    {
+        ConnectionLost,      // unexpected network interruption
+        StreamQualityChange, // user picked a new resolution/FPS mid-stream
+    };
+
     // Attempt to silently re-establish a streaming session after an
-    // unexpected network interruption. Returns true if streaming resumed.
-    bool tryReconnect();
+    // unexpected network interruption, or restart it with a new
+    // m_StreamConfig. Returns true if streaming resumed.
+    bool tryReconnect(ReconnectReason reason = ReconnectReason::ConnectionLost);
+
+    // In-stream "Stream Quality" menu (resolution/FPS for this session).
+    void requestStreamQualityChange(const OverlayMenuPanel::StreamQualityRequest& request);
+    // Runs on the stream loop. Returns false when the stream could not be
+    // restarted and the session has to end.
+    bool applyPendingStreamQualityChange();
+    // Seam for switching resolution without reconnecting. Returns false when
+    // the host can't, which is always the case today.
+    bool tryApplyStreamQualityLive(const StreamQuality::Settings& target);
+    void updateStreamQualityMenuState();
 
     void handleSdlUserEvent(const SDL_UserEvent& event);
 
@@ -474,6 +492,11 @@ private:
     // applies the newest value so HTTP never blocks the stream loop.
     std::atomic_int m_PendingRuntimeBitrateKbps { 0 };
     std::atomic_bool m_RuntimeBitrateInFlight { false };
+    // Stream Quality: the request waiting for the stream loop, and the
+    // resolution/FPS this session switched to (sent to the host on resume
+    // instead of the preferences). Neither is saved unless asked.
+    std::optional<OverlayMenuPanel::StreamQualityRequest> m_PendingStreamQuality;
+    std::optional<StreamQuality::Settings> m_StreamQualityOverride;
     OverlayMenuPanel* m_MenuPanel; // Qt-based overlay menu window
     OverlayMenuButton* m_MenuButton = nullptr; // Qt-based floating menu button
     OverlayToast* m_Toast;           // Qt-based toast notification

@@ -35,6 +35,7 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | overlay_button_native_wake | 悬浮按钮原生唤醒 | Windows + macOS + Linux(xvfb) |
 | overlay_toast_event_state | 悬浮 toast 事件状态 | Windows |
 | overlay_menu_navigation | 悬浮菜单键盘/鼠标导航(QTest 事件,需 offscreen) | Windows |
+| stream_quality | 串流画质菜单的分辨率/帧率预设生成、配置差异与切换路径判定 | Windows |
 | settings_localization | 中文翻译 .qm + 设置页布局(qmltestrunner) | Windows |
 | linux_display_event_monitor | Linux 显示事件唤醒 | Linux |
 

@@ -40,20 +40,23 @@ using MenuTab = OverlayMenuPanel::MenuTab;
 static QPoint rowCenter(const OverlayMenuPanel &panel, int row)
 {
     const QRect rect = panel.rowGeometry(row);
-    if (rect.isEmpty()) qFatal("row %d is not on the shown level", row);
+    if (rect.isEmpty())
+        qFatal("row %d is not on the shown level", row);
     return QPoint(140, rect.center().y());
 }
 
 static int rowOf(const OverlayMenuPanel &panel, MenuAction action, const QString &payload = {})
 {
     const int row = panel.rowOfAction(action, payload);
-    if (row < 0) qFatal("action %d is not on the shown level", int(action));
+    if (row < 0)
+        qFatal("action %d is not on the shown level", int(action));
     return row;
 }
 
 static void waitClosed(const OverlayMenuPanel &panel)
 {
-    for (int i = 0; i < 40 && panel.isVisible(); i++) QTest::qWait(50);
+    for (int i = 0; i < 40 && panel.isVisible(); i++)
+        QTest::qWait(50);
 }
 
 int main(int argc, char **argv)
@@ -113,7 +116,8 @@ int main(int argc, char **argv)
     if (panel.currentTab() != MenuTab::Quick || !panel.isAtTabRoot())
         qFatal("menu did not open on the Quick tab");
     const int initialHeight = panel.height();
-    if (!panel.showLevel(MenuAction::OpenRemoteUsbDevices)) qFatal("USB submenu missing");
+    if (!panel.showLevel(MenuAction::OpenRemoteUsbDevices))
+        qFatal("USB submenu missing");
     if (panel.height() >= initialHeight) qFatal("USB submenu did not open");
     QTest::qWait(700);
     if (!panel.isVisible()) qFatal("submenu closed while moving toward its devices");
@@ -121,7 +125,8 @@ int main(int argc, char **argv)
                                devices, {}, QStringLiteral("1 available"));
     QTest::qWait(700);
     if (!panel.isVisible()) qFatal("device refresh dismissed submenu");
-    if (panel.isAtTabRoot()) qFatal("device refresh left the USB submenu");
+    if (panel.isAtTabRoot())
+        qFatal("device refresh left the USB submenu");
     // Device rows follow the device list order.
     QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, rowCenter(panel, 0));
     if (selected != QStringLiteral("1-1")) qFatal("device selection was not dispatched");
@@ -174,18 +179,22 @@ int main(int argc, char **argv)
     panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
     QTest::qWait(240);
     // Enter Bitrate from its entry in the Display tab, then tap 5 Mbps.
-    if (!panel.showTab(MenuTab::Display)) qFatal("Display tab missing");
+    if (!panel.showTab(MenuTab::Display))
+        qFatal("Display tab missing");
     QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
                       rowCenter(panel, rowOf(panel, MenuAction::OpenBitrate)));
-    if (panel.isAtTabRoot()) qFatal("Bitrate entry did not open its level");
-    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
-                      rowCenter(panel, rowOf(panel, MenuAction::SetBitrate, QStringLiteral("5000"))));
+    if (panel.isAtTabRoot())
+        qFatal("Bitrate entry did not open its level");
+    QTest::mouseClick(
+        &panel, Qt::LeftButton, Qt::NoModifier,
+        rowCenter(panel, rowOf(panel, MenuAction::SetBitrate, QStringLiteral("5000"))));
     if (lastBitrate != 5000 || bitrateCommits != 1) qFatal("preset tap did not commit");
     if (!panel.isMenuVisible()) qFatal("preset tap closed the menu");
     // D-pad right scrubs upward (not a tab switch inside the slider's level)
     // but must wait out the commit debounce.
     panel.gamepadMoveHorizontal(1);
-    if (panel.isAtTabRoot()) qFatal("d-pad right in the slider level switched tabs");
+    if (panel.isAtTabRoot())
+        qFatal("d-pad right in the slider level switched tabs");
     if (bitrateCommits != 1 || lastBitrate != 5000) qFatal("scrub committed before debounce");
     QTest::qWait(600);
     if (bitrateCommits != 2 || lastBitrate <= 5000) qFatal("scrub never committed");
@@ -193,31 +202,27 @@ int main(int argc, char **argv)
     // The scrubber is the level's first row.
     const QPoint sliderRow = rowCenter(panel, 0);
     // One wheel notch on the slider row steps again; A flushes immediately.
-    QWheelEvent wheelUp(QPointF(sliderRow), QPointF(),
-                        QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier,
-                        Qt::NoScrollPhase, false);
+    QWheelEvent wheelUp(QPointF(sliderRow), QPointF(), QPoint(), QPoint(0, 120), Qt::NoButton,
+                        Qt::NoModifier, Qt::NoScrollPhase, false);
     QCoreApplication::sendEvent(&panel, &wheelUp);
     panel.gamepadSelect();
     if (bitrateCommits != 3 || lastBitrate <= afterScrub) qFatal("wheel step not flushed");
     if (!panel.isMenuVisible()) qFatal("slider interaction closed the menu");
     // Saturating the wheel must clamp at the Sunshine /bitrate cap (800 Mbps).
     for (int i = 0; i < 250; i++) {
-        QWheelEvent wheelMax(QPointF(sliderRow), QPointF(),
-                             QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier,
-                             Qt::NoScrollPhase, false);
+        QWheelEvent wheelMax(QPointF(sliderRow), QPointF(), QPoint(), QPoint(0, 120), Qt::NoButton,
+                             Qt::NoModifier, Qt::NoScrollPhase, false);
         QCoreApplication::sendEvent(&panel, &wheelMax);
     }
     panel.gamepadSelect();
     if (lastBitrate != 800000) qFatal("scrubber did not clamp at 800000 Kbps");
     // Track press scrubs to the click position (window → content coords):
     // near the left end lands near the minimum, near the right end at the cap.
-    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
-                      QPoint(8 + 102 + 4, sliderRow.y()));
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, QPoint(8 + 102 + 4, sliderRow.y()));
     panel.gamepadSelect();
     if (bitrateCommits != 5 || lastBitrate > 2000)
         qFatal("track press near minimum failed: commits=%d last=%d", bitrateCommits, lastBitrate);
-    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
-                      QPoint(8 + 252, sliderRow.y()));
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, QPoint(8 + 252, sliderRow.y()));
     panel.gamepadSelect();
     if (bitrateCommits != 6 || lastBitrate != 800000)
         qFatal("track press near maximum failed: commits=%d last=%d", bitrateCommits, lastBitrate);
@@ -280,8 +285,9 @@ int main(int argc, char **argv)
         qFatal("setup hint row was clickable");
     // A refresh keeps the open level, and a command row reports its id.
     panel.updateHostCommands(true, { { QStringLiteral("7"), QStringLiteral("Restart Steam") } });
-    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
-                      rowCenter(panel, rowOf(panel, MenuAction::RunHostCommand, QStringLiteral("7"))));
+    QTest::mouseClick(
+        &panel, Qt::LeftButton, Qt::NoModifier,
+        rowCenter(panel, rowOf(panel, MenuAction::RunHostCommand, QStringLiteral("7"))));
     if (payloadAction != OverlayMenuPanel::MenuAction::RunHostCommand ||
         payloadValue != QStringLiteral("7"))
         qFatal("host command row did not dispatch its id");
@@ -307,36 +313,50 @@ int main(int argc, char **argv)
     panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
     QTest::qWait(240);
     // Session has no entries in this build, so it is hidden.
-    const std::vector<MenuTab> expectedTabs { MenuTab::Quick, MenuTab::Display, MenuTab::Input,
-                                              MenuTab::Host };
-    if (panel.visibleTabs() != expectedTabs) qFatal("unexpected visible tabs");
-    if (!panel.tabGeometry(MenuTab::Session).isEmpty()) qFatal("empty Session tab is drawn");
-    if (panel.showTab(MenuTab::Session)) qFatal("empty Session tab opened");
-    if (panel.currentTab() != MenuTab::Host) qFatal("last tab not remembered after an action");
+    const std::vector<MenuTab> expectedTabs{ MenuTab::Quick, MenuTab::Display, MenuTab::Input,
+                                             MenuTab::Host };
+    if (panel.visibleTabs() != expectedTabs)
+        qFatal("unexpected visible tabs");
+    if (!panel.tabGeometry(MenuTab::Session).isEmpty())
+        qFatal("empty Session tab is drawn");
+    if (panel.showTab(MenuTab::Session))
+        qFatal("empty Session tab opened");
+    if (panel.currentTab() != MenuTab::Host)
+        qFatal("last tab not remembered after an action");
     const int tabHeight = panel.height();
     // LB/RB step through the visible tabs and wrap at both ends.
     panel.gamepadSwitchTab(1);
-    if (panel.currentTab() != MenuTab::Quick || !panel.isAtTabRoot()) qFatal("RB did not wrap");
+    if (panel.currentTab() != MenuTab::Quick || !panel.isAtTabRoot())
+        qFatal("RB did not wrap");
     panel.gamepadSwitchTab(-1);
-    if (panel.currentTab() != MenuTab::Host) qFatal("LB did not wrap");
-    if (panel.height() != tabHeight) qFatal("switching tabs resized the panel");
+    if (panel.currentTab() != MenuTab::Host)
+        qFatal("LB did not wrap");
+    if (panel.height() != tabHeight)
+        qFatal("switching tabs resized the panel");
     // Keyboard: Tab / Shift+Tab / PageUp / PageDown switch tabs.
     if (!panel.handleNavigationKey(Qt::Key_Tab) || panel.currentTab() != MenuTab::Quick)
         qFatal("Tab did not switch to the next tab");
     panel.handleNavigationKey(Qt::Key_Tab, Qt::ShiftModifier);
-    if (panel.currentTab() != MenuTab::Host) qFatal("Shift+Tab did not switch back");
+    if (panel.currentTab() != MenuTab::Host)
+        qFatal("Shift+Tab did not switch back");
     panel.handleNavigationKey(Qt::Key_PageDown);
-    if (panel.currentTab() != MenuTab::Quick) qFatal("PageDown did not switch tabs");
+    if (panel.currentTab() != MenuTab::Quick)
+        qFatal("PageDown did not switch tabs");
     panel.handleNavigationKey(Qt::Key_PageUp);
-    if (panel.currentTab() != MenuTab::Host) qFatal("PageUp did not switch tabs");
+    if (panel.currentTab() != MenuTab::Host)
+        qFatal("PageUp did not switch tabs");
     // D-pad / arrow left/right on a tab root switches tabs.
     panel.gamepadMoveHorizontal(1);
-    if (panel.currentTab() != MenuTab::Quick) qFatal("d-pad right did not switch tabs");
+    if (panel.currentTab() != MenuTab::Quick)
+        qFatal("d-pad right did not switch tabs");
     panel.handleNavigationKey(Qt::Key_Right);
-    if (panel.currentTab() != MenuTab::Display) qFatal("arrow right did not switch tabs");
+    if (panel.currentTab() != MenuTab::Display)
+        qFatal("arrow right did not switch tabs");
     panel.handleNavigationKey(Qt::Key_Left);
-    if (panel.currentTab() != MenuTab::Quick) qFatal("arrow left did not switch tabs");
-    if (panel.handleNavigationKey(Qt::Key_A)) qFatal("non-menu key was consumed");
+    if (panel.currentTab() != MenuTab::Quick)
+        qFatal("arrow left did not switch tabs");
+    if (panel.handleNavigationKey(Qt::Key_A))
+        qFatal("non-menu key was consumed");
     // Mouse: clicking a tab shows it.
     QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
                       panel.tabGeometry(MenuTab::Input).center());
@@ -345,9 +365,11 @@ int main(int argc, char **argv)
     // Keyboard into a sub-level: Down to the Send Keys entry, Enter opens it,
     // Backspace returns to the same tab.
     const int sendKeysRow = rowOf(panel, MenuAction::OpenSendKeys);
-    for (int i = 0; i <= sendKeysRow; i++) panel.handleNavigationKey(Qt::Key_Down);
+    for (int i = 0; i <= sendKeysRow; i++)
+        panel.handleNavigationKey(Qt::Key_Down);
     panel.handleNavigationKey(Qt::Key_Return);
-    if (panel.isAtTabRoot()) qFatal("Enter did not open the Send Keys level");
+    if (panel.isAtTabRoot())
+        qFatal("Enter did not open the Send Keys level");
     // Inside a sub-level the bar still shows its tab; arrows don't switch.
     panel.handleNavigationKey(Qt::Key_Right);
     if (panel.isAtTabRoot() || panel.currentTab() != MenuTab::Input)
@@ -356,8 +378,10 @@ int main(int argc, char **argv)
     if (!panel.isAtTabRoot() || panel.currentTab() != MenuTab::Input)
         qFatal("Backspace did not return to the Input tab");
     // RB from a sub-level goes to the next tab's root.
-    if (!panel.showLevel(MenuAction::OpenBitrate)) qFatal("Bitrate level missing");
-    if (panel.currentTab() != MenuTab::Display) qFatal("Bitrate level is not under Display");
+    if (!panel.showLevel(MenuAction::OpenBitrate))
+        qFatal("Bitrate level missing");
+    if (panel.currentTab() != MenuTab::Display)
+        qFatal("Bitrate level is not under Display");
     panel.gamepadSwitchTab(1);
     if (panel.currentTab() != MenuTab::Input || !panel.isAtTabRoot())
         qFatal("RB in a sub-level did not go to the next tab");
@@ -368,8 +392,10 @@ int main(int argc, char **argv)
     if (actionCount != 1 || lastAction != MenuAction::ToggleStatsOverlay)
         qFatal("Enter did not dispatch the Performance Stats action");
     waitClosed(panel);
-    if (panel.isVisible()) qFatal("action did not close the menu");
-    if (panel.handleNavigationKey(Qt::Key_Down)) qFatal("hidden menu consumed a key");
+    if (panel.isVisible())
+        qFatal("action did not close the menu");
+    if (panel.handleNavigationKey(Qt::Key_Down))
+        qFatal("hidden menu consumed a key");
     panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
     QTest::qWait(240);
     if (panel.currentTab() != MenuTab::Quick || !panel.isAtTabRoot())
@@ -377,6 +403,7 @@ int main(int argc, char **argv)
     // B / Escape at a tab root closes the menu.
     panel.handleNavigationKey(Qt::Key_Escape);
     waitClosed(panel);
-    if (panel.isVisible()) qFatal("Escape at a tab root did not close the menu");
+    if (panel.isVisible())
+        qFatal("Escape at a tab root did not close the menu");
     return 0;
 }

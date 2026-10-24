@@ -134,7 +134,7 @@ constexpr TabAssignment kTabAssignments[] = {
     // Host: features the host offers
     { MenuAction::OpenHostCommands, MenuTab::Host },
     { MenuAction::ShowHostFiles, MenuTab::Host },
-    // Session: the running session
+// Session: the running session
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
     { MenuAction::OpenStylusReplayPanel, MenuTab::Session },
 #endif
@@ -415,10 +415,10 @@ void OverlayMenuPanel::buildMenuLevels()
 {
     // Level indices change between builds; follow an open sub-level by the
     // action of the entry that opened it.
-    const MenuAction openLevelAction = m_CurrentLevel >= 0 &&
-                                               m_CurrentLevel < static_cast<int>(m_MenuLevels.size())
-                                           ? m_MenuLevels[m_CurrentLevel].openAction
-                                           : MenuAction::MenuActionMax;
+    const MenuAction openLevelAction =
+        m_CurrentLevel >= 0 && m_CurrentLevel < static_cast<int>(m_MenuLevels.size())
+            ? m_MenuLevels[m_CurrentLevel].openAction
+            : MenuAction::MenuActionMax;
 
     m_MenuLevels.clear();
     m_TabLevels.clear();
@@ -446,7 +446,8 @@ void OverlayMenuPanel::buildMenuLevels()
     entries.push_back({ tr("Mouse Mode"), shortcutDetail(MenuAction::ToggleMouseMode),
                         MenuItemType::Action, MenuAction::ToggleMouseMode, 0, true, false, false });
     entries.push_back({ tr("Toggle Fullscreen"), shortcutDetail(MenuAction::ToggleFullScreen),
-                        MenuItemType::Action, MenuAction::ToggleFullScreen, 0, true, false, false });
+                        MenuItemType::Action, MenuAction::ToggleFullScreen, 0, true, false,
+                        false });
     entries.push_back({ tr("Minimize"), shortcutDetail(MenuAction::ToggleMinimize),
                         MenuItemType::Action, MenuAction::ToggleMinimize, 0, true, false, true });
     entries.push_back({ tr("Microphone"), QString(), MenuItemType::Toggle,
@@ -458,20 +459,21 @@ void OverlayMenuPanel::buildMenuLevels()
     // Display. SubMenu target levels are filled in once the levels exist.
     entries.push_back({ tr("Performance Overlay"), QString(), MenuItemType::SubMenu,
                         MenuAction::OpenStatsOverlay, 0, true, false, false });
-    entries.push_back({ tr("Bitrate"), QString(), MenuItemType::SubMenu, MenuAction::OpenBitrate,
-                        0, true, false, false });
+    entries.push_back({ tr("Bitrate"), QString(), MenuItemType::SubMenu, MenuAction::OpenBitrate, 0,
+                        true, false, false });
     entries.push_back({ tr("Menu Position"), QString(), MenuItemType::SubMenu,
                         MenuAction::OpenMenuPosition, 0, true, false, false });
     // Input
-    entries.push_back({ tr("Send Keys"), QString(), MenuItemType::SubMenu,
-                        MenuAction::OpenSendKeys, 0, true, false, true });
+    entries.push_back({ tr("Send Keys"), QString(), MenuItemType::SubMenu, MenuAction::OpenSendKeys,
+                        0, true, false, true });
     // Only show Gamepad Mouse toggle when a gamepad is actually connected
     if (m_HasGamepads) {
         entries.push_back({ tr("Gamepad Mouse"), QString(), MenuItemType::Toggle,
                             MenuAction::ToggleGamepadMouse, 0, true, false, false });
     }
     entries.push_back({ tr("Show/Hide Cursor"), shortcutDetail(MenuAction::ToggleCursorHide),
-                        MenuItemType::Action, MenuAction::ToggleCursorHide, 0, true, false, false });
+                        MenuItemType::Action, MenuAction::ToggleCursorHide, 0, true, false,
+                        false });
     entries.push_back({ tr("Ungrab Mouse"), shortcutDetail(MenuAction::UngrabInput),
                         MenuItemType::Action, MenuAction::UngrabInput, 0, true, false, false });
     entries.push_back({ tr("Pointer Region Lock"),
@@ -1141,9 +1143,8 @@ void OverlayMenuPanel::gamepadSwitchTab(int direction)
     beginInteraction();
     const int count = static_cast<int>(m_TabLevels.size());
     const auto current = std::find(m_TabLevels.cbegin(), m_TabLevels.cend(), tabRootLevel());
-    const int index = current == m_TabLevels.cend()
-                          ? 0
-                          : static_cast<int>(current - m_TabLevels.cbegin());
+    const int index =
+        current == m_TabLevels.cend() ? 0 : static_cast<int>(current - m_TabLevels.cbegin());
     const int step = direction > 0 ? 1 : -1;
     showTabLevel(m_TabLevels[((index + step) % count + count) % count], step);
 }
@@ -1154,9 +1155,9 @@ void OverlayMenuPanel::gamepadMoveHorizontal(int direction)
         return;
     }
     const auto& items = m_MenuLevels[m_CurrentLevel].items;
-    const bool hasSlider =
-        std::any_of(items.cbegin(), items.cend(),
-                    [](const MenuItem& item) { return item.type == MenuItemType::Slider; });
+    const bool hasSlider = std::any_of(items.cbegin(), items.cend(), [](const MenuItem& item) {
+        return item.type == MenuItemType::Slider;
+    });
     if (hasSlider) {
         gamepadAdjustSlider(direction);
     } else if (isTabRootLevel(m_CurrentLevel)) {
@@ -1394,7 +1395,7 @@ void OverlayMenuPanel::repositionWindow()
             itemCount = std::max(itemCount, static_cast<int>(m_MenuLevels[level].items.size()));
         }
     }
-    int titleH     = m_TitleHeight + m_TabBarHeight;
+    int titleH = m_TitleHeight + m_TabBarHeight;
     int menuHeight = titleH + itemCount * m_ItemHeight + m_Padding * 2;
     if (m_HasGamepads) {
         menuHeight += kGamepadHintBarHeight;
@@ -1722,23 +1723,36 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
     // Sub-levels have no fixed index, so entries match by action
     auto itemIcon = [](const MenuItem& item) -> QString {
         switch (item.action) {
-        case MenuAction::OpenBitrate: return QStringLiteral("menu-bitrate");
-        case MenuAction::OpenMenuPosition: return QStringLiteral("menu-position");
-        case MenuAction::OpenRemoteUsbDevices: return QStringLiteral("cat-peripherals");
+        case MenuAction::OpenBitrate:
+            return QStringLiteral("menu-bitrate");
+        case MenuAction::OpenMenuPosition:
+            return QStringLiteral("menu-position");
+        case MenuAction::OpenRemoteUsbDevices:
+            return QStringLiteral("cat-peripherals");
         case MenuAction::OpenStatsOverlay:
-        case MenuAction::ToggleFullScreen: return QStringLiteral("cat-display");
-        case MenuAction::ToggleStatsOverlay: return QStringLiteral("tb-network");
-        case MenuAction::OpenSendKeys: return QStringLiteral("cat-input");
-        case MenuAction::OpenHostCommands: return QStringLiteral("cat-host");
-        case MenuAction::ShowHostFiles: return QStringLiteral("menu-files");
-        case MenuAction::ToggleMicrophone: return QStringLiteral("menu-microphone");
-        case MenuAction::ToggleGamepadMouse: return QStringLiteral("cat-gamepad");
+        case MenuAction::ToggleFullScreen:
+            return QStringLiteral("cat-display");
+        case MenuAction::ToggleStatsOverlay:
+            return QStringLiteral("tb-network");
+        case MenuAction::OpenSendKeys:
+            return QStringLiteral("cat-input");
+        case MenuAction::OpenHostCommands:
+            return QStringLiteral("cat-host");
+        case MenuAction::ShowHostFiles:
+            return QStringLiteral("menu-files");
+        case MenuAction::ToggleMicrophone:
+            return QStringLiteral("menu-microphone");
+        case MenuAction::ToggleGamepadMouse:
+            return QStringLiteral("cat-gamepad");
         case MenuAction::Quit:
-        case MenuAction::QuitAndExit: return QStringLiteral("menu-close");
+        case MenuAction::QuitAndExit:
+            return QStringLiteral("menu-close");
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
-        case MenuAction::OpenStylusReplayPanel: return QStringLiteral("tb-settings");
+        case MenuAction::OpenStylusReplayPanel:
+            return QStringLiteral("tb-settings");
 #endif
-        default: return {};
+        default:
+            return {};
         }
     };
     // Icon column: only on tab roots
@@ -1762,8 +1776,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
             m_RemoteUsbNeedsActivation &&
             ((hasIcons && item.action == MenuAction::OpenRemoteUsbDevices) ||
              (m_CurrentLevel == levelForOpenAction(MenuAction::OpenRemoteUsbDevices) &&
-              item.action == MenuAction::SelectRemoteUsbDevice &&
-              item.enabled));
+              item.action == MenuAction::SelectRemoteUsbDevice && item.enabled));
         if (activationPrompt) {
             p.fillRect(QRect(4, itemY + 4, 4, m_ItemHeight - 8), MenuAccent);
         }
@@ -1973,8 +1986,8 @@ void OverlayMenuPanel::mouseMoveEvent(QMouseEvent* event)
         m_SliderHotZone = hotZone;
         setCursor((m_HoveredIndex >= 0 || m_HoveredIndex == -2 || m_HoveredIndex == -3 ||
                    m_HoveredIndex <= kTabHitBase)
-                          ? Qt::PointingHandCursor
-                          : Qt::ArrowCursor);
+                      ? Qt::PointingHandCursor
+                      : Qt::ArrowCursor);
         forceRepaint();
     }
 }
@@ -2005,13 +2018,10 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
     if (idx <= kTabHitBase) {
         const int tabIndex = kTabHitBase - idx;
         if (tabIndex < static_cast<int>(m_TabLevels.size())) {
-            const auto active =
-                std::find(m_TabLevels.cbegin(), m_TabLevels.cend(), tabRootLevel());
+            const auto active = std::find(m_TabLevels.cbegin(), m_TabLevels.cend(), tabRootLevel());
             const int activeIndex = static_cast<int>(active - m_TabLevels.cbegin());
             const int level = m_TabLevels[tabIndex];
-            showTabLevel(level, level == m_CurrentLevel     ? 0
-                                : tabIndex > activeIndex ? 1
-                                                         : -1);
+            showTabLevel(level, level == m_CurrentLevel ? 0 : tabIndex > activeIndex ? 1 : -1);
         }
         return;
     }

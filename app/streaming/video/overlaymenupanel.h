@@ -95,8 +95,8 @@ public:
         OpenHostCommands,
         SendHostKeys,   // payload: HostKeys payload ("special:<id>" or "keys:<combo>")
         RunHostCommand, // payload: Foundation Sunshine super command id
-        // Tags of the top-level SubMenu entries for the fixed sub-levels.
-        // Never dispatched.
+                        // Tags of the top-level SubMenu entries for the fixed sub-levels.
+                        // Never dispatched.
         OpenBitrate,
         OpenMenuPosition,
         OpenRemoteUsbDevices,

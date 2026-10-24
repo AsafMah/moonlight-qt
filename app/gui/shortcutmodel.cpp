@@ -1,7 +1,12 @@
 #include "shortcutmodel.h"
 
 ShortcutModel::ShortcutModel(QObject* parent)
-    : QAbstractListModel(parent), m_Profile(ShortcutProfile::loadFromSettings())
+    : QAbstractListModel(parent), m_Profile(ShortcutProfile::loadFromSettings()),
+#ifdef Q_OS_WIN32
+      m_ModifierRecorder(true)
+#else
+      m_ModifierRecorder(false)
+#endif
 {
 }
 
@@ -65,6 +70,8 @@ QVariant ShortcutModel::data(const QModelIndex& index, int role) const
         return conflictText(action->id, role - Conflict1Role);
     case CustomizedRole:
         return m_Profile.isCustomized(action->id);
+    case HoldRole:
+        return action->hold;
     default:
         return QVariant();
     }
@@ -83,6 +90,7 @@ QHash<int, QByteArray> ShortcutModel::roleNames() const
     roles[Conflict1Role] = "conflict1";
     roles[Conflict2Role] = "conflict2";
     roles[CustomizedRole] = "customized";
+    roles[HoldRole] = "hold";
 
     return roles;
 }
@@ -116,6 +124,17 @@ int ShortcutModel::captureKey(int row, int slot, int qtKey, int qtModifiers, qui
     }
 
     const int scancode = ShortcutKeys::fromQtKeyEvent(qtKey, nativeScanCode);
+    if (row != m_RecorderRow || slot != m_RecorderSlot) {
+        m_ModifierRecorder.reset();
+        m_RecorderRow = row;
+        m_RecorderSlot = slot;
+    }
+    if (action->hold) {
+        // A modifier may become the binding when it comes up, see
+        // captureKeyRelease()
+        m_ModifierRecorder.press(scancode, ShortcutBinding::fromQtModifiers(qtModifiers));
+    }
+
     switch (qtKey) {
     case Qt::Key_Control:
     case Qt::Key_Shift:
@@ -145,7 +164,27 @@ int ShortcutModel::captureKey(int row, int slot, int qtKey, int qtModifiers, qui
     }
 
     const ShortcutBinding binding(modifiers, scancode);
-    if (!binding.isValid() || !m_Profile.setBinding(action->id, slot, binding)) {
+    if (!action->accepts(binding) || !m_Profile.setBinding(action->id, slot, binding)) {
+        return CaptureInvalid;
+    }
+
+    commit();
+    return CaptureAccepted;
+}
+
+int ShortcutModel::captureKeyRelease(int row, int slot, int qtKey, quint32 nativeScanCode)
+{
+    const ShortcutAction* action = actionAt(row);
+    if (action == nullptr || !action->hold || row != m_RecorderRow || slot != m_RecorderSlot) {
+        return CaptureIgnored;
+    }
+
+    const ShortcutBinding binding =
+        m_ModifierRecorder.release(ShortcutKeys::fromQtKeyEvent(qtKey, nativeScanCode));
+    if (binding.isNull()) {
+        return CaptureIgnored;
+    }
+    if (!m_Profile.setBinding(action->id, slot, binding)) {
         return CaptureInvalid;
     }
 

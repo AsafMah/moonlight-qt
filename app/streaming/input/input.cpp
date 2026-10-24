@@ -215,6 +215,10 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
                                             [this, combo] { performSpecialKeyCombo(combo); });
         }
     }
+    if (hasDesktopEnvironment) {
+        m_ShortcutDispatcher.setHoldHandler(QString::fromLatin1(ShortcutActions::HoldReleaseMouse),
+                                            [this](bool held) { holdReleaseMouse(held); });
+    }
     reloadShortcuts();
 
     m_OldIgnoreDevices = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES);
@@ -793,6 +797,11 @@ void SdlInputHandler::notifyFocusLost()
         setCaptureActive(false);
     }
 
+    // A hold in progress never sees its key-up now, so it must not capture
+    // the mouse again later
+    m_MouseHoldReleased = false;
+    m_ShortcutMatcher.reset();
+
     // Raise all keys that are currently pressed. If we don't do this, certain keys
     // used in shortcuts that cause focus loss (such as Alt+Tab) may get stuck down.
     raiseAllKeys();
@@ -807,6 +816,33 @@ void SdlInputHandler::notifyFocusGained()
         ImmAssociateContext(info.info.win.window, NULL);
     }
 #endif
+}
+
+void SdlInputHandler::holdReleaseMouse(bool held)
+{
+    if (held) {
+        // Only a captured mouse is released, and only that is captured again
+        if (isCaptureActive()) {
+            m_MouseHoldReleased = true;
+            setCaptureActive(false);
+        }
+        return;
+    }
+
+    if (!m_MouseHoldReleased) {
+        return;
+    }
+    m_MouseHoldReleased = false;
+    if (m_Window != nullptr && (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_INPUT_FOCUS)) {
+        setCaptureActive(true);
+    }
+}
+
+bool SdlInputHandler::cancelMouseHoldRelease()
+{
+    const bool wasReleased = m_MouseHoldReleased;
+    m_MouseHoldReleased = false;
+    return wasReleased;
 }
 
 bool SdlInputHandler::isCaptureActive()

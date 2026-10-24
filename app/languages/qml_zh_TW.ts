@@ -3479,6 +3479,14 @@
         <source>Reset all</source>
         <translation>全部重設</translation>
     </message>
+    <message>
+        <source>Works while the key is held down. A modifier key on its own works too, e.g. Right Alt; it then no longer reaches the host, so AltGr typing stops there.</source>
+        <translation>按住按鍵期間生效。也可以只用一個修飾鍵，例如右 Alt；這樣它將不再傳送到主機，AltGr 輸入也會因此失效。</translation>
+    </message>
+    <message>
+        <source>Use a modifier key on its own, or Ctrl, Alt or the Windows/Command key with another key.</source>
+        <translation>請單獨使用一個修飾鍵，或用 Ctrl、Alt、Windows/Command 鍵搭配其他鍵。</translation>
+    </message>
 </context>
 <context>
     <name>Shortcuts</name>
@@ -3562,6 +3570,10 @@
         <source>Open the host commands menu</source>
         <translation>開啟超級指令選單</translation>
     </message>
+    <message>
+        <source>Hold to release mouse</source>
+        <translation>按住以釋放滑鼠</translation>
+    </message>
 </context>
 <context>
     <name>StatsOverlaySettings</name>
@@ -3640,6 +3652,7 @@
     <message>
         <source>Latency breakdown bar</source>
         <translation>延遲分解條</translation>
+||||||| 63c55391
     </message>
 </context>
 <context>

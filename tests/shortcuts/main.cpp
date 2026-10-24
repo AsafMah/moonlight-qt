@@ -76,12 +76,26 @@ bool testParseAndFormat(QTextStream& err)
                       ShortcutBinding(ShortcutBinding::ModNone, ShortcutKeys::F13),
                   QStringLiteral("bare key did not parse"), err);
 
-    const char* const malformed[] = { "",        "ctrl+",          "ctrl+Bogus", "hyper+S",
-                                      "ctrl++S", "ctrl+alt+sc224", "+S" };
+    const char* const malformed[] = { "",        "ctrl+",        "ctrl+Bogus", "hyper+S",
+                                      "ctrl++S", "ctrl+alt+sc0", "+S" };
     for (const char* string : malformed) {
         ok &= require(ShortcutBinding::fromString(QLatin1String(string)).isNull(),
                       QStringLiteral("malformed binding '%1' was accepted").arg(string), err);
     }
+
+    // Modifier keys parse, by side; whether an action takes them is checked
+    // separately (ShortcutAction::accepts())
+    const ShortcutBinding rightAlt(ShortcutBinding::ModNone, ShortcutKeys::RightAlt);
+    ok &= require(ShortcutBinding::fromString(QStringLiteral("RightAlt")) == rightAlt &&
+                      rightAlt.toString() == QLatin1String("RightAlt") &&
+                      ShortcutBinding::fromString(QStringLiteral("ctrl+LeftShift")) ==
+                          ShortcutBinding(ShortcutBinding::ModCtrl, ShortcutKeys::LeftShift),
+                  QStringLiteral("modifier key bindings did not parse"), err);
+#if !defined(Q_OS_DARWIN)
+    ok &= require(rightAlt.toDisplayString() == QLatin1String("Right Alt"),
+                  QStringLiteral("Right Alt display string: %1").arg(rightAlt.toDisplayString()),
+                  err);
+#endif
 
     ok &= require(ShortcutBinding().toString().isEmpty(),
                   QStringLiteral("null binding has a string form"), err);
@@ -120,6 +134,194 @@ bool testValidity(QTextStream& err)
     ok &= require(!ShortcutBinding(k_CtrlAltShift, ShortcutKeys::LeftCtrl).isValid(),
                   QStringLiteral("a modifier key was accepted as the key"), err);
     ok &= require(!ShortcutBinding().isValid(), QStringLiteral("null binding was valid"), err);
+
+    // Hold actions also take a modifier key, alone or with other modifiers
+    const ShortcutBinding rightAlt(ShortcutBinding::ModNone, ShortcutKeys::RightAlt);
+    ok &= require(!rightAlt.isValid() && rightAlt.isValidHold(),
+                  QStringLiteral("bare Right Alt validity"), err);
+    ok &=
+        require(ShortcutBinding(ShortcutBinding::ModCtrl, ShortcutKeys::RightAlt).isValidHold() &&
+                    !ShortcutBinding(ShortcutBinding::ModAlt, ShortcutKeys::RightAlt).isValidHold(),
+                QStringLiteral("a modifier key with its own modifier was accepted"), err);
+    ok &= require(key(ShortcutBinding::ModCtrl, 'S').isValidHold() &&
+                      !key(ShortcutBinding::ModNone, 'S').isValidHold(),
+                  QStringLiteral("hold validity of ordinary keys"), err);
+    ok &= require(
+        ShortcutBinding::modifierForKey(ShortcutKeys::RightAlt) == ShortcutBinding::ModAlt &&
+            ShortcutBinding::modifierForKey(ShortcutKeys::LeftGui) == ShortcutBinding::ModGui &&
+            ShortcutBinding::modifierForKey(ShortcutKeys::letter('A')) == ShortcutBinding::ModNone,
+        QStringLiteral("modifierForKey"), err);
+
+    return ok;
+}
+
+bool testHoldActions(QTextStream& err)
+{
+    bool ok = true;
+
+    const QString holdId = QLatin1String(ShortcutActions::HoldReleaseMouse);
+    const QString stats = QLatin1String(ShortcutActions::ToggleStatsOverlay);
+    const ShortcutAction* hold = ShortcutRegistry::instance().find(holdId);
+    ok &=
+        require(hold != nullptr && hold->hold && hold->defaults.isEmpty(),
+                QStringLiteral("hold-release-mouse is missing, not a hold action, or bound"), err);
+
+    const int ralt = ShortcutKeys::RightAlt;
+    const int lalt = ShortcutKeys::LeftAlt;
+    const int lctrl = ShortcutKeys::LeftCtrl;
+    const int a = ShortcutKeys::letter('A');
+    const int s = ShortcutKeys::letter('S');
+    const int none = ShortcutKeys::Unknown;
+    const quint8 noMods = ShortcutBinding::ModNone;
+    const quint8 alt = ShortcutBinding::ModAlt;
+    const quint8 ctrl = ShortcutBinding::ModCtrl;
+
+    ShortcutProfile profile;
+    const ShortcutBinding rightAlt(noMods, ralt);
+    ok &= require(profile.bindings(holdId) == QVector<ShortcutBinding>(2),
+                  QStringLiteral("hold-release-mouse has a default binding"), err);
+    ok &=
+        require(profile.setBinding(holdId, 0, rightAlt) && !profile.setBinding(stats, 0, rightAlt),
+                QStringLiteral("only the hold action may take a bare modifier key"), err);
+
+    // Persisted and loaded back
+    {
+        QTemporaryDir dir;
+        QSettings settings(dir.filePath(QStringLiteral("hold.ini")), QSettings::IniFormat);
+        profile.save(settings);
+        ShortcutProfile loaded;
+        loaded.load(settings);
+        ok &= require(loaded.bindings(holdId)[0] == rightAlt,
+                      QStringLiteral("hold binding did not round-trip"), err);
+    }
+
+    QVector<bool> events;
+    ShortcutDispatcher dispatcher;
+    dispatcher.setHoldHandler(holdId, [&](bool held) { events.append(held); });
+    ok &= require(dispatcher.hasHandler(holdId) && !dispatcher.trigger(holdId) &&
+                      dispatcher.actionIds().contains(holdId),
+                  QStringLiteral("hold handler registration"), err);
+
+    ShortcutMatcher matcher;
+    matcher.setProfile(profile);
+
+    // Right Alt reports Alt as held when it goes down; that must not matter
+    ok &= require(matcher.processKeyEvent(ralt, none, alt, true, false, dispatcher) &&
+                      events == QVector<bool>({ true }),
+                  QStringLiteral("hold press did not fire"), err);
+    ok &= require(matcher.processKeyEvent(ralt, none, alt, true, true, dispatcher) &&
+                      events.size() == 1,
+                  QStringLiteral("hold repeat was not swallowed or fired again"), err);
+
+    // Other keys while held go to the host, without the held key's modifier
+    ok &= require(matcher.suppressedModifiers() == alt,
+                  QStringLiteral("held Right Alt does not suppress Alt"), err);
+    ok &= require(!matcher.processKeyEvent(a, a, alt, true, false, dispatcher) &&
+                      !matcher.processKeyEvent(a, a, alt, false, false, dispatcher),
+                  QStringLiteral("a key pressed during the hold was swallowed"), err);
+
+    // ... and the held key's modifier does not make other shortcuts match
+    int statsCount = 0;
+    matcher.reset();
+    dispatcher.setHandler(stats, [&] { statsCount++; });
+    profile.setBinding(stats, 0, ShortcutBinding(ctrl | ShortcutBinding::ModShift, s));
+    matcher.setProfile(profile);
+    events.clear();
+    matcher.processKeyEvent(ralt, none, alt, true, false, dispatcher);
+    ok &= require(matcher.processKeyEvent(s, s, ctrl | alt | ShortcutBinding::ModShift, true, false,
+                                          dispatcher) &&
+                      statsCount == 1,
+                  QStringLiteral("held Right Alt changed another shortcut's modifiers"), err);
+    matcher.processKeyEvent(s, s, alt, false, false, dispatcher);
+
+    // The release ends the hold, whatever else is down by then
+    ok &= require(matcher.processKeyEvent(ralt, none, ctrl, false, false, dispatcher) &&
+                      events == QVector<bool>({ true, false }) &&
+                      matcher.suppressedModifiers() == noMods,
+                  QStringLiteral("hold release did not fire"), err);
+    ok &= require(!matcher.processKeyEvent(ralt, none, noMods, false, false, dispatcher),
+                  QStringLiteral("second hold key-up was swallowed"), err);
+
+    // Left and right are different keys, and extra modifiers don't match
+    events.clear();
+    ok &= require(!matcher.processKeyEvent(lalt, none, alt, true, false, dispatcher) &&
+                      !matcher.processKeyEvent(lalt, none, noMods, false, false, dispatcher) &&
+                      !matcher.processKeyEvent(ralt, none, alt | ctrl, true, false, dispatcher) &&
+                      !matcher.processKeyEvent(ralt, none, ctrl, false, false, dispatcher) &&
+                      events.isEmpty(),
+                  QStringLiteral("Left Alt or Ctrl+Right Alt matched bare Right Alt"), err);
+
+    // reset() (focus loss) forgets the hold without calling the handler
+    matcher.processKeyEvent(ralt, none, alt, true, false, dispatcher);
+    matcher.reset();
+    ok &= require(events == QVector<bool>({ true }) &&
+                      !matcher.processKeyEvent(ralt, none, noMods, false, false, dispatcher) &&
+                      matcher.suppressedModifiers() == noMods,
+                  QStringLiteral("reset did not drop the hold quietly"), err);
+
+    // AltGr on Windows: a fake Left Ctrl, then Right Alt with Ctrl and Alt set
+    events.clear();
+    ok &= require(matcher.processAltGrControl(true, dispatcher),
+                  QStringLiteral("AltGr's fake Ctrl was not swallowed"), err);
+    ok &= require(matcher.processKeyEvent(ralt, none, ctrl | alt, true, false, dispatcher) &&
+                      events == QVector<bool>({ true }),
+                  QStringLiteral("AltGr did not match bare Right Alt"), err);
+    ok &= require(matcher.suppressedModifiers() == (ctrl | alt),
+                  QStringLiteral("AltGr hold does not suppress Ctrl and Alt"), err);
+    ok &= require(matcher.processAltGrControl(false, dispatcher) &&
+                      matcher.processKeyEvent(ralt, none, noMods, false, false, dispatcher) &&
+                      events == QVector<bool>({ true, false }),
+                  QStringLiteral("AltGr release"), err);
+    ok &= require(!matcher.processAltGrControl(false, dispatcher),
+                  QStringLiteral("a real Ctrl key-up after AltGr was swallowed"), err);
+
+    // Without a Right Alt binding, AltGr reaches the host untouched
+    dispatcher.removeHandler(holdId);
+    ok &= require(!matcher.processAltGrControl(true, dispatcher) &&
+                      !matcher.processKeyEvent(ralt, none, ctrl | alt, true, false, dispatcher) &&
+                      !matcher.processAltGrControl(false, dispatcher),
+                  QStringLiteral("AltGr was swallowed with nothing bound to Right Alt"), err);
+    ok &= require(!matcher.processKeyEvent(lctrl, none, ctrl, true, false, dispatcher),
+                  QStringLiteral("plain Ctrl was swallowed"), err);
+
+    return ok;
+}
+
+bool testModifierRecorder(QTextStream& err)
+{
+    bool ok = true;
+    const quint8 alt = ShortcutBinding::ModAlt;
+    const quint8 ctrl = ShortcutBinding::ModCtrl;
+    const ShortcutBinding rightAlt(ShortcutBinding::ModNone, ShortcutKeys::RightAlt);
+
+    ModifierKeyRecorder recorder;
+    recorder.press(ShortcutKeys::RightAlt, alt);
+    ok &= require(recorder.release(ShortcutKeys::RightAlt) == rightAlt,
+                  QStringLiteral("lone Right Alt was not recorded"), err);
+    ok &= require(recorder.release(ShortcutKeys::RightAlt).isNull(),
+                  QStringLiteral("recorder did not reset"), err);
+
+    // With another modifier held first
+    recorder.press(ShortcutKeys::LeftCtrl, ctrl);
+    recorder.press(ShortcutKeys::RightAlt, ctrl | alt);
+    ok &= require(recorder.release(ShortcutKeys::LeftCtrl).isNull() &&
+                      recorder.release(ShortcutKeys::RightAlt) ==
+                          ShortcutBinding(ctrl, ShortcutKeys::RightAlt),
+                  QStringLiteral("Ctrl+Right Alt was not recorded"), err);
+
+    // A key in between means it was a combo, not a lone modifier
+    recorder.press(ShortcutKeys::LeftCtrl, ctrl);
+    recorder.press(ShortcutKeys::letter('A'), ctrl);
+    ok &= require(recorder.release(ShortcutKeys::LeftCtrl).isNull(),
+                  QStringLiteral("Ctrl after Ctrl+A was recorded"), err);
+
+    // Windows AltGr: the fake Left Ctrl is ignored
+    ModifierKeyRecorder windows(true);
+    windows.press(ShortcutKeys::LeftCtrl, ctrl);
+    windows.press(ShortcutKeys::RightAlt, ctrl | alt);
+    ok &= require(windows.release(ShortcutKeys::LeftCtrl).isNull() &&
+                      windows.release(ShortcutKeys::RightAlt) == rightAlt,
+                  QStringLiteral("AltGr was not recorded as Right Alt"), err);
 
     return ok;
 }
@@ -502,6 +704,8 @@ int main(int argc, char* argv[])
     ok &= testProfile(err);
     ok &= testPersistence(err);
     ok &= testMatcher(err);
+    ok &= testHoldActions(err);
+    ok &= testModifierRecorder(err);
 
     out << (ok ? "PASS" : "FAILED") << '\n';
     return ok ? 0 : 1;

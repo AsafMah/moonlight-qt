@@ -175,6 +175,11 @@ int Pacer::renderThread(void* context)
                 break;
             }
 
+            me->waitForVrrPresentSlot();
+            if (me->m_Stopping) {
+                break;
+            }
+
             frame = me->m_RenderQueue.dequeue();
         }
 
@@ -271,7 +276,7 @@ void Pacer::handleVsync(int timeUntilNextVsyncMillis)
     enqueueFrameForRenderingAndUnlock(m_PacingQueue.dequeue());
 }
 
-bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing)
+bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, bool enableVrr)
 {
 #ifdef HAS_QT_SDL_WAYLAND_BRIDGE
     m_Window = window;
@@ -330,6 +335,23 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing)
 
     if (m_VsyncSource != nullptr) {
         m_VsyncThread = SDL_CreateThread(Pacer::vsyncThread, "PacerVsync", this);
+    }
+
+    if (enableVrr) {
+        // VRR presents each frame on arrival. The only wait is a cap just below
+        // the refresh rate so presents stay inside the display's VRR range.
+        SDL_assert(m_VsyncSource == nullptr);
+        if (m_VsyncRenderer->isRenderThreadSupported()) {
+            m_VrrLimiter = VrrPolicy::FrameLimiter(VrrPolicy::frameCapFps(m_DisplayFps));
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR mode: presenting on arrival, capped at %d FPS for a %d Hz display",
+                        VrrPolicy::frameCapFps(m_DisplayFps), m_DisplayFps);
+        } else {
+            // Never block the main thread to space out presents
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION,
+                "VRR mode: presenting on arrival without a frame rate cap (main thread renderer)");
+        }
     }
 
     if (m_VsyncRenderer->isRenderThreadSupported()) {
@@ -407,6 +429,30 @@ void Pacer::renderFrame(AVFrame* frame)
         av_frame_free(&frame);
         frameQueueLocker.relock();
     }
+}
+
+// Called on the render thread with m_FrameQueueLock held and a frame queued.
+// In VRR mode, holds that frame until the present-rate cap allows it. Frames
+// arriving meanwhile stay queued; renderFrame() drops the excess if the stream
+// stays above the cap.
+void Pacer::waitForVrrPresentSlot()
+{
+    if (!m_VrrLimiter.isEnabled()) {
+        return;
+    }
+
+    for (;;) {
+        uint64_t waitUs = m_VrrLimiter.waitUs(LiGetMicroseconds());
+        if (waitUs == 0 || m_Stopping) {
+            break;
+        }
+
+        // Round up so the frame is never presented early. The destructor's
+        // wakeAll() ends the wait on shutdown.
+        m_RenderQueueNotEmpty.wait(&m_FrameQueueLock, (unsigned long)((waitUs + 999) / 1000));
+    }
+
+    m_VrrLimiter.onPresented(LiGetMicroseconds());
 }
 
 void Pacer::dropFrameForEnqueue(QQueue<AVFrame*>& queue)

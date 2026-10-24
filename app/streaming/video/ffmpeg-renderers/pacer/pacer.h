@@ -2,6 +2,7 @@
 
 #include "../../decoder.h"
 #include "../renderer.h"
+#include "../../vrrpolicy.h"
 
 #include <QQueue>
 #include <QMutex>
@@ -39,7 +40,7 @@ public:
 
     void submitFrame(AVFrame* frame);
 
-    bool initialize(SDL_Window* window, int maxVideoFps, bool enablePacing);
+    bool initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, bool enableVrr = false);
 
     void signalVsync();
 
@@ -57,6 +58,8 @@ private:
     void renderFrame(AVFrame* frame);
 
     void dropFrameForEnqueue(QQueue<AVFrame*>& queue);
+
+    void waitForVrrPresentSlot();
 
 #ifdef HAS_QT_SDL_WAYLAND_BRIDGE
     SDL_Window* m_Window = nullptr;
@@ -80,4 +83,7 @@ private:
     int m_DisplayFps;
     PVIDEO_STATS m_VideoStats;
     int m_RendererAttributes;
+
+    // Present-rate cap for VRR mode (disabled otherwise)
+    VrrPolicy::FrameLimiter m_VrrLimiter;
 };

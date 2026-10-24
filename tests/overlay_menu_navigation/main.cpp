@@ -87,8 +87,8 @@ int main(int argc, char **argv)
     panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), true);
     QTest::qWait(20);
     const int initialHeight = panel.height();
-    // Shadow + title + padding + four preceding rows + row center.
-    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, QPoint(140, 8 + 32 + 4 + 4 * 38 + 19));
+    // Shadow + title + padding + five preceding rows (Quick Actions, Menu Position, Bitrate, Performance Overlay, Host Files) + row center.
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, QPoint(140, 8 + 32 + 4 + 5 * 38 + 19));
     if (panel.height() >= initialHeight) qFatal("USB submenu did not open");
     QTest::qWait(700);
     if (!panel.isVisible()) qFatal("submenu closed while moving toward its devices");

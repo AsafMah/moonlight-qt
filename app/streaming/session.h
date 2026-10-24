@@ -17,6 +17,7 @@
 #include "video/decoder.h"
 #include "audio/renderers/renderer.h"
 #include "video/overlaymanager.h"
+#include "stats/streamstatsmodel.h"
 #include "video/overlaymenupanel.h"
 #include "video/overlaymenubutton.h"
 #include "backend/usbforwardingtunnel.h"
@@ -38,6 +39,7 @@ class MacQtEventPumpInputGuard;
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
 class StylusReplayTest;
 #endif
+class OverlayStatsController;
 
 class SupportedVideoFormatList : public QList<int>
 {
@@ -153,6 +155,8 @@ public:
         return m_OverlayManager;
     }
 
+    StreamStatsModel& getStatsModel() { return m_StatsModel; }
+
     void flushWindowEvents();
 
     void setShouldExit(bool quitHostApp = false);
@@ -241,6 +245,10 @@ private:
     void syncWaylandSdlWindowState();
 #endif
     void dispatchQtMenuAction(OverlayMenuPanel::MenuAction action);
+    // Performance overlay integration (sessionstatsoverlay.cpp)
+    void setupStatsOverlayShortcuts();
+    void createStatsOverlay(OverlayWindowMode windowMode);
+    bool handleStatsOverlayMenuAction(OverlayMenuPanel::MenuAction action);
     void requestRuntimeBitrateChange(int bitrateKbps);
     void startRuntimeBitrateWorker();
     void showStreamingToast(const QString& message, int durationMs = 2000);
@@ -423,6 +431,7 @@ private:
     Uint32 m_DropAudioEndTime;
 
     Overlay::OverlayManager m_OverlayManager;
+    StreamStatsModel m_StatsModel;
     bool m_WasCapturedBeforeMenu;  // 菜单打开前鼠标是否处于捕获状态
     bool m_DeferCaptureRestore;    // 延迟恢复鼠标捕获（全屏切换等）
     bool m_PendingMicToggle;       // 延迟麦克风切换（避免堆损坏）
@@ -444,6 +453,8 @@ private:
     OverlayMenuPanel* m_MenuPanel; // Qt-based overlay menu window
     OverlayMenuButton* m_MenuButton = nullptr; // Qt-based floating menu button
     OverlayToast* m_Toast;           // Qt-based toast notification
+    std::unique_ptr<OverlayStatsController> m_StatsOverlay; // performance overlay
+    bool m_WasCapturedBeforeStatsEdit = false;
 #ifdef Q_OS_DARWIN
     std::unique_ptr<MacQtEventPumpInputGuard> m_MacQtEventPumpInputGuard;
 #endif

@@ -14,6 +14,7 @@
 #include "streaming/input/stylusreplaytest.h"
 #include "streaming/input/gamepadglyphs.h"
 #endif
+#include "streaming/video/overlaystatscontroller.h"
 #include "backend/richpresencemanager.h"
 #include "backend/nvhttp.h"
 #include "backend/identitymanager.h"
@@ -2804,6 +2805,10 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     m_MenuPanel->updateGamepadMouseState(m_InputHandler->isMouseEmulationActive());
     m_MenuPanel->updateMenuPositionState(
             menuPlacementActionForPreference(m_Preferences->overlayMenuPosition));
+    if (m_StatsOverlay) {
+        m_MenuPanel->updateStatsOverlayState(m_StatsOverlay->preset(),
+                                             m_StatsOverlay->usesCompositorWindow());
+    }
     updateFileMappingMenuState();
     updateRemoteUsbMenuState();
 
@@ -2895,6 +2900,10 @@ bool Session::isStreamingWindowMinimized() const
 
 void Session::syncQtOverlayWindowsWithSdlWindowState()
 {
+    if (m_StatsOverlay) {
+        m_StatsOverlay->syncWithStreamWindow(isStreamingWindowVisible());
+    }
+
     if (!isStreamingWindowVisible()) {
         if (m_MenuPanel && m_MenuPanel->isMenuVisible()) {
             m_MenuPanel->closeMenu();
@@ -2936,6 +2945,9 @@ void Session::dispatchQtMenuAction(OverlayMenuPanel::MenuAction action)
     if (const auto placement = menuPlacementForAction(action)) {
         m_Preferences->setOverlayMenuPosition(*placement);
         m_Preferences->save();
+        return;
+    }
+    if (handleStatsOverlayMenuAction(action)) {
         return;
     }
 
@@ -4431,6 +4443,7 @@ void Session::start()
                                          m_StreamConfig.height, enablePhysicalDualSenseHaptics);
     m_InputHandler->getShortcutDispatcher().setHandler(
         QLatin1String(ShortcutActions::ToggleOverlayMenu), [this] { toggleQtOverlayMenu(); });
+    setupStatsOverlayShortcuts();
     updateDualSenseHapticsControllerTarget();
 
     // Kick off the async connection thread then return to the caller to pump the event loop
@@ -4939,6 +4952,7 @@ void Session::exec()
     m_MenuPanel = new OverlayMenuPanel(m_WaylandStreamWindow, overlayWindowMode);
     m_MenuButton = nullptr;
     m_Toast = new OverlayToast(m_WaylandStreamWindow, overlayWindowMode);
+    createStatsOverlay(overlayWindowMode);
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
     // Developer-only harness: Session supplies integration callbacks while
     // the test class owns the panel, picker, replay scheduler, and cleanup.
@@ -5047,8 +5061,9 @@ void Session::exec()
         return m_WaylandStreamWindow != nullptr ||
                (m_MenuPanel && m_MenuPanel->needsEventProcessing()) ||
                (m_MenuButton && m_MenuButton->needsEventProcessing()) ||
-               (m_Toast && m_Toast->needsEventProcessing()) || m_UsbCapabilityPending ||
-               m_UsbLocalServer != nullptr || m_UsbTunnel != nullptr ||
+               (m_Toast && m_Toast->needsEventProcessing()) ||
+               (m_StatsOverlay && m_StatsOverlay->needsEventProcessing()) ||
+               m_UsbCapabilityPending || m_UsbLocalServer != nullptr || m_UsbTunnel != nullptr ||
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
                (m_StylusReplayTest && m_StylusReplayTest->isPanelVisible());
 #else
@@ -5158,6 +5173,9 @@ void Session::exec()
     for (;;) {
         hideGuiWindowWhenSettled(false);
         processSunshineAbrFeedback();
+        if (m_StatsOverlay) {
+            m_StatsOverlay->tick();
+        }
 #ifdef Q_OS_WIN32
         processClientSdrWhiteUpdate();
 #endif
@@ -5190,6 +5208,10 @@ void Session::exec()
             // due, a 1 ms wake is sufficient and prevents a busy loop if the
             // native dispatcher needs one more turn to deliver the update.
             waitTimeoutMs = qMin(waitTimeoutMs, qMax(toastDelayMs, 1));
+        }
+        if (const int statsDelayMs = m_StatsOverlay ? m_StatsOverlay->nextEventDelayMs() : -1;
+            statsDelayMs >= 0) {
+            waitTimeoutMs = qMin(waitTimeoutMs, qMax(statsDelayMs, 1));
         }
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         if (const int replayDelayMs = m_StylusReplayTest ?
@@ -5520,6 +5542,14 @@ void Session::exec()
                 }
                 break;
             }
+            // Escape also ends moving the performance overlay
+            if (m_StatsOverlay && m_StatsOverlay->isEditing() &&
+                event.key.keysym.sym == SDLK_ESCAPE) {
+                if (event.type == SDL_KEYUP) {
+                    m_StatsOverlay->endEditing();
+                }
+                break;
+            }
             // The overlay menu shortcut is matched (and its key-up swallowed)
             // by the input handler's shortcut matcher.
             m_InputHandler->handleKeyEvent(&event.key);
@@ -5548,6 +5578,14 @@ void Session::exec()
                             ? qtOverlayPositionForSdlPoint(event.button.x, event.button.y)
                             : QCursor::pos();
                     m_MenuPanel->dismissOnOutsideClick(pointerPosition);
+                }
+                break;
+            }
+
+            // A click on the stream outside the overlay ends moving it
+            if (m_StatsOverlay && m_StatsOverlay->isEditing()) {
+                if (event.type == SDL_MOUSEBUTTONUP) {
+                    m_StatsOverlay->endEditing();
                 }
                 break;
             }
@@ -5829,6 +5867,8 @@ DispatchDeferredCleanup:
         delete m_MenuButton;
         m_MenuButton = nullptr;
     }
+
+    m_StatsOverlay.reset();
 
     // Destroy the Qt overlay toast
     if (m_Toast) {

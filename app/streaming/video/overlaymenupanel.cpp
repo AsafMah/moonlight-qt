@@ -257,6 +257,10 @@ QString OverlayMenuPanel::shortcutDetail(MenuAction action) const
 
 void OverlayMenuPanel::buildMenuLevels()
 {
+    // The overlay level's index can change between builds; follow it by identity
+    const bool inStatsOverlayLevel =
+        m_StatsOverlayLevel >= 0 && m_CurrentLevel == m_StatsOverlayLevel;
+
     m_MenuLevels.clear();
 
     // === Level 0: Top-level categories ===
@@ -268,6 +272,9 @@ void OverlayMenuPanel::buildMenuLevels()
                          MenuAction::MenuActionMax, 3, true, false, false});
     top.items.push_back({tr("Bitrate"),       QString(),  MenuItemType::SubMenu,
                          MenuAction::MenuActionMax, 2, true, false, false});
+    // The target level is filled in once the overlay level exists
+    top.items.push_back({ tr("Performance Overlay"), QString(), MenuItemType::SubMenu,
+                          MenuAction::OpenStatsOverlay, 0, true, false, false });
     const bool separatorAfterHostFiles =
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
             false;
@@ -442,6 +449,34 @@ void OverlayMenuPanel::buildMenuLevels()
         }
         m_MenuLevels.push_back(std::move(usb));
     }
+
+    // === Performance overlay ===
+    MenuLevel stats;
+    stats.title = tr("Performance Overlay");
+    stats.items.push_back({ tr("Off"), QString(), MenuItemType::Action,
+                            MenuAction::SetStatsPresetOff, 0, true, false, false });
+    stats.items.push_back({ tr("Minimal"), QString(), MenuItemType::Action,
+                            MenuAction::SetStatsPresetMinimal, 0, true, false, false });
+    stats.items.push_back({ tr("Compact"), QString(), MenuItemType::Action,
+                            MenuAction::SetStatsPresetCompact, 0, true, false, false });
+    stats.items.push_back({ tr("Detailed"), QString(), MenuItemType::Action,
+                            MenuAction::SetStatsPresetDetailed, 0, true, false, false });
+    stats.items.push_back({ tr("Custom"), QString(), MenuItemType::Action,
+                            MenuAction::SetStatsPresetCustom, 0, true, false, true });
+    stats.items.push_back({ tr("Edit position"), QString(), MenuItemType::Action,
+                            MenuAction::EditStatsOverlayPosition, 0, m_StatsOverlayEditable, false,
+                            false });
+    m_StatsOverlayLevel = static_cast<int>(m_MenuLevels.size());
+    m_MenuLevels.push_back(std::move(stats));
+    for (MenuItem& item : m_MenuLevels[0].items) {
+        if (item.action == MenuAction::OpenStatsOverlay) {
+            item.targetLevel = m_StatsOverlayLevel;
+        }
+    }
+    if (inStatsOverlayLevel) {
+        m_CurrentLevel = m_StatsOverlayLevel;
+    }
+    applyStatsOverlayState();
 
     if (m_CurrentLevel >= static_cast<int>(m_MenuLevels.size())) {
         m_CurrentLevel = 0;
@@ -685,6 +720,60 @@ void OverlayMenuPanel::updateMenuPositionState(MenuAction activePlacementAction)
         }
     }
     forceRepaint();
+}
+
+std::optional<StatsOverlay::Preset> OverlayMenuPanel::statsPresetForAction(MenuAction action)
+{
+    switch (action) {
+    case MenuAction::SetStatsPresetOff:
+        return StatsOverlay::Preset::Off;
+    case MenuAction::SetStatsPresetMinimal:
+        return StatsOverlay::Preset::Minimal;
+    case MenuAction::SetStatsPresetCompact:
+        return StatsOverlay::Preset::Compact;
+    case MenuAction::SetStatsPresetDetailed:
+        return StatsOverlay::Preset::Detailed;
+    case MenuAction::SetStatsPresetCustom:
+        return StatsOverlay::Preset::Custom;
+    default:
+        return std::nullopt;
+    }
+}
+
+void OverlayMenuPanel::updateStatsOverlayState(StatsOverlay::Preset preset, bool canEditPosition)
+{
+    m_StatsOverlayPreset = preset;
+    m_StatsOverlayEditable = canEditPosition;
+    applyStatsOverlayState();
+    forceRepaint();
+}
+
+void OverlayMenuPanel::applyStatsOverlayState()
+{
+    if (m_StatsOverlayLevel < 0 ||
+        m_MenuLevels.size() <= static_cast<size_t>(m_StatsOverlayLevel)) {
+        return;
+    }
+
+    QString activeLabel;
+    for (auto& item : m_MenuLevels[m_StatsOverlayLevel].items) {
+        if (item.action == MenuAction::EditStatsOverlayPosition) {
+            item.enabled = m_StatsOverlayEditable;
+            continue;
+        }
+        const bool active = statsPresetForAction(item.action) == m_StatsOverlayPreset;
+        item.detail = active ? QString::fromUtf8("\342\234\223") : QString();
+        if (active) {
+            activeLabel = item.label;
+        }
+    }
+
+    for (auto& item : m_MenuLevels[0].items) {
+        if (item.action == MenuAction::OpenStatsOverlay) {
+            item.detail = activeLabel;
+            break;
+        }
+    }
 }
 
 void OverlayMenuPanel::updateFileMappingState(FileMappingState state, const QString& detail)
@@ -1234,8 +1323,11 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
         }
 
         if (hasIcons) {
-            drawIcon(iconForItem(item),
-                     QRect(textPad, itemY + (m_ItemHeight - 20) / 2, 20, 20),
+            // The overlay level is appended, so it has no fixed index to switch on
+            const QString icon = item.action == MenuAction::OpenStatsOverlay
+                                     ? QStringLiteral("cat-display")
+                                     : iconForItem(item);
+            drawIcon(icon, QRect(textPad, itemY + (m_ItemHeight - 20) / 2, 20, 20),
                      item.enabled ? (i == m_HoveredIndex ? 1.0 : 0.85) : 0.4);
         }
 

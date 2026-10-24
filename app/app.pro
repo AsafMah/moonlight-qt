@@ -286,6 +286,11 @@ SOURCES += \
     streaming/video/overlaybuttonposition.cpp \
     streaming/video/overlaymenubutton.cpp \
     streaming/video/overlaytoast.cpp \
+    streaming/video/overlaystatspreset.cpp \
+    streaming/video/overlaystatswindow.cpp \
+    streaming/video/overlaystatscontroller.cpp \
+    streaming/sessionstatsoverlay.cpp \
+    settings/statsoverlaysettings.cpp \
     backend/systemproperties.cpp \
     backend/usbforwardingenvironment.cpp \
     backend/usbforwardingbackend.cpp \
@@ -372,6 +377,10 @@ HEADERS += \
     streaming/video/overlaymenubutton.h \
     streaming/video/overlaytoasteventstate.h \
     streaming/video/overlaytoast.h \
+    streaming/video/overlaystatspreset.h \
+    streaming/video/overlaystatswindow.h \
+    streaming/video/overlaystatscontroller.h \
+    settings/statsoverlaysettings.h \
     backend/systemproperties.h \
     imageutils.h \
     pipwbackground.h \

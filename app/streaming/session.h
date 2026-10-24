@@ -39,6 +39,7 @@ class MacQtEventPumpInputGuard;
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
 class StylusReplayTest;
 #endif
+class OverlayStatsController;
 
 class SupportedVideoFormatList : public QList<int>
 {
@@ -244,6 +245,10 @@ private:
     void syncWaylandSdlWindowState();
 #endif
     void dispatchQtMenuAction(OverlayMenuPanel::MenuAction action);
+    // Performance overlay integration (sessionstatsoverlay.cpp)
+    void setupStatsOverlayShortcuts();
+    void createStatsOverlay(OverlayWindowMode windowMode);
+    bool handleStatsOverlayMenuAction(OverlayMenuPanel::MenuAction action);
     void requestRuntimeBitrateChange(int bitrateKbps);
     void startRuntimeBitrateWorker();
     void showStreamingToast(const QString& message, int durationMs = 2000);
@@ -448,6 +453,8 @@ private:
     OverlayMenuPanel* m_MenuPanel; // Qt-based overlay menu window
     OverlayMenuButton* m_MenuButton = nullptr; // Qt-based floating menu button
     OverlayToast* m_Toast;           // Qt-based toast notification
+    std::unique_ptr<OverlayStatsController> m_StatsOverlay; // performance overlay
+    bool m_WasCapturedBeforeStatsEdit = false;
 #ifdef Q_OS_DARWIN
     std::unique_ptr<MacQtEventPumpInputGuard> m_MacQtEventPumpInputGuard;
 #endif

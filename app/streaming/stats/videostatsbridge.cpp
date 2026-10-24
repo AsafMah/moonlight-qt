@@ -128,4 +128,17 @@ int formatMetrics(const StatsSnapshot& snapshot, const VIDEO_STATS& stats, bool 
                     latency.decodeMs, latency.queueMs, latency.renderMs);
 }
 
+int formatOverlayLows(const StatsSnapshot& snapshot, const VIDEO_STATS& stats, bool sessionWide,
+                      char* output, int length)
+{
+    const FrameTimeSummary& lows = sessionWide ? snapshot.sessionFrameTimes : snapshot.frameTimes;
+    const LatencyBreakdown latency = StatsMath::estimateLatency(toStatsWindow(stats));
+
+    return snprintf(output, length,
+                    "\n {18}1%% Low **%.1f** · 0.1%% Low **%.1f** {16}|  {18}"
+                    "Jitter **%.2f**ms {16}|  {18}Latency ~**%.1f**ms ",
+                    lows.onePercentLowFps, lows.pointOnePercentLowFps, snapshot.jitterMs,
+                    latency.totalMs());
+}
+
 } // namespace VideoStatsBridge

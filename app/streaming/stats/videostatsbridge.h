@@ -25,4 +25,10 @@ void readRtpCounters(StatsWindow& window);
 int formatMetrics(const StatsSnapshot& snapshot, const VIDEO_STATS& stats, bool sessionWide,
                   char* output, int length);
 
+// The debug overlay's last line, shared by the FFmpeg and PyroWave decoders:
+// frame rate lows, jitter and the latency estimate, starting with a newline.
+// sessionWide and the return value are as for formatMetrics().
+int formatOverlayLows(const StatsSnapshot& snapshot, const VIDEO_STATS& stats, bool sessionWide,
+                      char* output, int length);
+
 } // namespace VideoStatsBridge

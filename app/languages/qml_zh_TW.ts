@@ -741,6 +741,14 @@
         <source>Reset size</source>
         <translation>重設尺寸</translation>
     </message>
+    <message>
+        <source>Detach the performance overlay</source>
+        <translation>分離效能浮層</translation>
+    </message>
+    <message>
+        <source>Show the overlay in a window of its own that you can drag anywhere, including to another screen. It opens on another screen if there is one and remembers where you leave it. Exclusive fullscreen on the same monitor covers it. Takes effect when the next stream starts.</source>
+        <translation>將浮層放進獨立視窗，可拖曳到任意位置，包括其他螢幕。若有其他螢幕，它會在那裡開啟，並記住你放下的位置。同一螢幕上的獨佔全螢幕會遮住它。下次串流開始時生效。</translation>
+    </message>
 </context>
 <context>
     <name>FileMappingClient</name>
@@ -1921,6 +1929,10 @@
     <message>
         <source>Drag to move · Drag the edges to resize · Wheel to zoom · Esc when done</source>
         <translation>拖曳移動 · 拖曳邊緣調整大小 · 滾輪縮放 · Esc 完成</translation>
+    </message>
+    <message>
+        <source>Moonlight performance overlay</source>
+        <translation>Moonlight 效能浮層</translation>
     </message>
 </context>
 <context>

@@ -1027,6 +1027,14 @@
         <source>Reset size</source>
         <translation>重置尺寸</translation>
     </message>
+    <message>
+        <source>Detach the performance overlay</source>
+        <translation>分离性能浮层</translation>
+    </message>
+    <message>
+        <source>Show the overlay in a window of its own that you can drag anywhere, including to another screen. It opens on another screen if there is one and remembers where you leave it. Exclusive fullscreen on the same monitor covers it. Takes effect when the next stream starts.</source>
+        <translation>把浮层放进一个独立窗口，可以拖到任意位置，包括其他显示器。如有其他显示器，它会在那里打开，并记住你放下的位置。同一显示器上的独占全屏会遮住它。下次串流开始时生效。</translation>
+    </message>
 </context>
 <context>
     <name>EcosystemPlatformCatalog</name>
@@ -2396,6 +2404,10 @@
     <message>
         <source>Drag to move · Drag the edges to resize · Wheel to zoom · Esc when done</source>
         <translation>拖动移动 · 拖动边缘调整大小 · 滚轮缩放 · Esc 完成</translation>
+    </message>
+    <message>
+        <source>Moonlight performance overlay</source>
+        <translation>Moonlight 性能浮层</translation>
     </message>
 </context>
 <context>

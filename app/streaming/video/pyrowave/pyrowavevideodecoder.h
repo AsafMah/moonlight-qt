@@ -96,7 +96,11 @@ struct PyrowaveFailure;
 // starts double-buffered and switches to triple buffering after delayed
 // presents.
 //
-// Not yet: dynamic HDR metadata, the SDR CPU-staging fallback.
+// An SDR session on a GPU that can't write the plane format the way PyroWave
+// needs decodes into host memory and uploads the planes instead (CPU
+// staging), at the cost of a round trip per frame.
+//
+// Not yet: dynamic HDR metadata.
 class PyrowaveVideoDecoder : public IVideoDecoder, public Overlay::IOverlayRenderer
 {
     Q_DECLARE_TR_FUNCTIONS(PyrowaveVideoDecoder)

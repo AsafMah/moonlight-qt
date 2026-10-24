@@ -151,6 +151,10 @@ public:
     // For the stats overlay, e.g. "PyroWave (Vulkan compute)". English.
     QString decoderDescription() const;
 
+    // SDR frames go through host memory because this GPU can't write the
+    // plane format the way PyroWave needs (or PYROWAVE_CPU_STAGING=1).
+    bool cpuStaging() const { return m_CpuStaging; }
+
 private:
     struct DeviceSetup;
     struct Plane
@@ -173,6 +177,8 @@ private:
     bool createPyrowaveDecoder(PyrowaveFailure& failure);
     bool createPlanes(PyrowaveFailure& failure);
     bool createPlane(Plane& plane, uint32_t width, uint32_t height, VkImageUsageFlags usage);
+    bool createStagingPlanes(PyrowaveFailure& failure);
+    bool decodeThroughCpu(PyrowaveFailure& failure);
     bool createPresentation(PyrowaveFailure& failure);
     void hintSwapchainColorspace();
     bool checkColorMetadata(PyrowaveFailure& failure);
@@ -221,6 +227,7 @@ private:
     PyrowaveAbi::PFN_pyrowave_decoder_push_packet m_PwPushPacket = nullptr;
     PyrowaveAbi::PFN_pyrowave_decoder_decode_is_ready m_PwDecodeIsReady = nullptr;
     PyrowaveAbi::PFN_pyrowave_decoder_decode_gpu_buffer m_PwDecodeGpu = nullptr;
+    PyrowaveAbi::PFN_pyrowave_decoder_decode_cpu_buffer_synchronous m_PwDecodeCpu = nullptr;
     PyrowaveAbi::PFN_pyrowave_decoder_get_color_metadata m_PwGetColorMetadata = nullptr;
     PyrowaveAbi::PFN_pyrowave_decoder_destroy m_PwDestroyDecoder = nullptr;
 
@@ -242,7 +249,11 @@ private:
 
     // Y, Cb and Cr. Owned by libplacebo between frames and held by us while
     // PyroWave writes them, with one timeline semaphore ordering the handoffs.
+    // With CPU staging they are plain libplacebo textures (no VkImage of our
+    // own) that each frame is uploaded to from m_StagingPlanes.
     Plane m_Planes[3];
+    bool m_CpuStaging = false;
+    std::vector<uint8_t> m_StagingPlanes[3];
     VkSemaphore m_PlaneSemaphore = VK_NULL_HANDLE;
     uint64_t m_PlaneTimeline = 0;
 

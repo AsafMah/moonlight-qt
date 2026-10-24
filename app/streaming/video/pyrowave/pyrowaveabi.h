@@ -155,6 +155,23 @@ struct pyrowave_gpu_sync_operation
     pyrowave_sync_point sync;
 };
 
+// Only the 4:2:0 8-bit format of the CPU path is used (SDR CPU staging).
+typedef int pyrowave_cpu_buffer_format;
+enum : int
+{
+    PYROWAVE_CPU_BUFFER_FORMAT_YUV420P = 1,
+};
+
+struct pyrowave_cpu_buffer
+{
+    void* data[3];
+    size_t row_stride_in_bytes[3];
+    size_t plane_size_in_bytes[3];
+    int width;
+    int height;
+    pyrowave_cpu_buffer_format format;
+};
+
 struct pyrowave_decoder_create_info
 {
     pyrowave_device device;
@@ -177,6 +194,8 @@ typedef bool (*PFN_pyrowave_decoder_decode_is_ready)(pyrowave_decoder, bool);
 typedef pyrowave_result (*PFN_pyrowave_decoder_decode_gpu_buffer)(
     pyrowave_decoder, const pyrowave_gpu_sync_operation*, const pyrowave_gpu_sync_operation*,
     const pyrowave_gpu_buffers*);
+typedef pyrowave_result (*PFN_pyrowave_decoder_decode_cpu_buffer_synchronous)(
+    pyrowave_decoder, const pyrowave_cpu_buffer*);
 typedef bool (*PFN_pyrowave_decoder_get_color_metadata)(pyrowave_decoder, pyrowave_color_metadata*);
 typedef void (*PFN_pyrowave_decoder_destroy)(pyrowave_decoder);
 
@@ -218,11 +237,16 @@ PYROWAVE_ABI_SAME_SIZE(pyrowave_gpu_external_reference);
 PYROWAVE_ABI_SAME_SIZE(pyrowave_gpu_buffers);
 PYROWAVE_ABI_SAME_SIZE(pyrowave_gpu_sync_operation);
 PYROWAVE_ABI_SAME_OFFSET(pyrowave_gpu_sync_operation, sync);
+PYROWAVE_ABI_SAME_SIZE(pyrowave_cpu_buffer);
+PYROWAVE_ABI_SAME_OFFSET(pyrowave_cpu_buffer, plane_size_in_bytes);
+PYROWAVE_ABI_SAME_OFFSET(pyrowave_cpu_buffer, format);
 PYROWAVE_ABI_SAME_SIZE(pyrowave_decoder_create_info);
 PYROWAVE_ABI_SAME_OFFSET(pyrowave_decoder_create_info, fragment_path);
 
 static_assert(PyrowaveAbi::PYROWAVE_YCBCR_LIMITED == ::PYROWAVE_YCBCR_LIMITED, "enum differs");
 static_assert(PyrowaveAbi::PYROWAVE_TRANSFER_BT709 == ::PYROWAVE_TRANSFER_BT709, "enum differs");
+static_assert(PyrowaveAbi::PYROWAVE_CPU_BUFFER_FORMAT_YUV420P == ::PYROWAVE_CPU_BUFFER_FORMAT_YUV420P,
+              "enum differs");
 
 #undef PYROWAVE_ABI_SAME_SIZE
 #undef PYROWAVE_ABI_SAME_OFFSET

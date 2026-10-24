@@ -1052,8 +1052,7 @@ bool PyrowaveVulkanRenderer::checkColorMetadata(PyrowaveFailure& failure)
                      "PyroWave color metadata mismatch: primaries %d, transfer %d, transform %d, "
                      "range %d, siting %u (expected %s, range %d)",
                      metadata.primaries, metadata.transfer, metadata.transform, metadata.range,
-                     metadata.chroma_siting, m_Contract.signalName(),
-                     m_Contract.expected().range);
+                     metadata.chroma_siting, m_Contract.signalName(), m_Contract.expected().range);
         failure.reason = tr("The host sent PyroWave video in a different color format than this "
                             "session uses (%1, %2 range).")
                              .arg(QString::fromLatin1(m_Contract.signalName()),

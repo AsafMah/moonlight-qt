@@ -127,8 +127,8 @@ PyrowavePreflightResult PyrowaveVideoDecoder::preflight(const PyrowavePreflightR
     // renderer below checks. When it can't, the launch fails with the reason;
     // SDR is never streamed in HDR's place.
     if (!PyrowaveColor::Contract(request.hdrMode, false).isValid()) {
-        result.reason = tr("PyroWave doesn't support the selected HDR mode (%1).")
-                            .arg(request.hdrMode);
+        result.reason =
+            tr("PyroWave doesn't support the selected HDR mode (%1).").arg(request.hdrMode);
         return result;
     }
 

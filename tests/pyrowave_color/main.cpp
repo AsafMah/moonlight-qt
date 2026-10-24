@@ -74,8 +74,10 @@ void testContractTable()
     for (const Case& c : cases) {
         for (bool fullRange : { false, true }) {
             const Contract contract(c.mode, fullRange);
-            const QString name = QStringLiteral("mode %1 %2").arg(c.mode).arg(
-                fullRange ? QStringLiteral("full") : QStringLiteral("limited"));
+            const QString name =
+                QStringLiteral("mode %1 %2")
+                    .arg(c.mode)
+                    .arg(fullRange ? QStringLiteral("full") : QStringLiteral("limited"));
             const int range = fullRange ? k_RangeFull : k_RangeLimited;
             const int otherRange = fullRange ? k_RangeLimited : k_RangeFull;
 
@@ -98,19 +100,22 @@ void testContractTable()
             // Every single mismatch is refused.
             require(!contract.matches(frame(c.primaries, c.transfer, c.transform, otherRange)),
                     name + ": wrong range refused");
-            for (int primaries : std::initializer_list<int>{ k_PrimariesBt709, k_PrimariesBt2020, 7 }) {
+            for (int primaries :
+                 std::initializer_list<int>{ k_PrimariesBt709, k_PrimariesBt2020, 7 }) {
                 if (primaries != c.primaries) {
                     require(!contract.matches(frame(primaries, c.transfer, c.transform, range)),
                             name + QStringLiteral(": primaries %1 refused").arg(primaries));
                 }
             }
-            for (int transfer : std::initializer_list<int>{ k_TransferBt709, k_TransferPq, k_TransferHlg, 9 }) {
+            for (int transfer :
+                 std::initializer_list<int>{ k_TransferBt709, k_TransferPq, k_TransferHlg, 9 }) {
                 if (transfer != c.transfer) {
                     require(!contract.matches(frame(c.primaries, transfer, c.transform, range)),
                             name + QStringLiteral(": transfer %1 refused").arg(transfer));
                 }
             }
-            for (int transform : std::initializer_list<int>{ k_TransformBt709, k_TransformBt2020, 5 }) {
+            for (int transform :
+                 std::initializer_list<int>{ k_TransformBt709, k_TransformBt2020, 5 }) {
                 if (transform != c.transform) {
                     require(!contract.matches(frame(c.primaries, c.transfer, transform, range)),
                             name + QStringLiteral(": transform %1 refused").arg(transform));
@@ -121,14 +126,14 @@ void testContractTable()
 
     // A PQ frame in an HLG session and the other way round: the case the HDR
     // checks exist for.
-    require(!Contract(k_ModeHlg, false)
-                 .matches(frame(k_PrimariesBt2020, k_TransferPq, k_TransformBt2020,
-                                k_RangeLimited)),
-            "HLG session refuses PQ");
-    require(!Contract(k_ModeHdr10, false)
-                 .matches(frame(k_PrimariesBt2020, k_TransferHlg, k_TransformBt2020,
-                                k_RangeLimited)),
-            "HDR10 session refuses HLG");
+    require(
+        !Contract(k_ModeHlg, false)
+             .matches(frame(k_PrimariesBt2020, k_TransferPq, k_TransformBt2020, k_RangeLimited)),
+        "HLG session refuses PQ");
+    require(
+        !Contract(k_ModeHdr10, false)
+             .matches(frame(k_PrimariesBt2020, k_TransferHlg, k_TransformBt2020, k_RangeLimited)),
+        "HDR10 session refuses HLG");
     require(!Contract(k_ModeSdr, true)
                  .matches(frame(k_PrimariesBt2020, k_TransferPq, k_TransformBt2020, k_RangeFull)),
             "SDR session refuses HDR10");
@@ -161,8 +166,7 @@ void testPlaneEncoding()
 
     require(QString::fromLatin1(Contract(k_ModeSdr, false).signalName()) == "BT.709 SDR",
             "SDR name");
-    require(QString::fromLatin1(Contract(k_ModeHdr10, false).signalName()) ==
-                "BT.2020 PQ (HDR10)",
+    require(QString::fromLatin1(Contract(k_ModeHdr10, false).signalName()) == "BT.2020 PQ (HDR10)",
             "HDR10 name");
     require(QString::fromLatin1(Contract(k_ModeHlg, false).signalName()) == "BT.2020 HLG",
             "HLG name");
@@ -243,8 +247,7 @@ void testSnapshot()
     require(snapshot.enabled() && !snapshot.valid(), "enabled without metadata");
     SS_HDR_METADATA zero = {};
     require(snapshot.update(true, &zero) == HdrSnapshot::Update::Missing, "all zero is missing");
-    require(!snapshot.valid() && snapshot.metadata() == HdrStaticMetadata(),
-            "no default values");
+    require(!snapshot.valid() && snapshot.metadata() == HdrStaticMetadata(), "no default values");
 
     require(snapshot.update(true, &sample) == HdrSnapshot::Update::Accepted, "accepted");
     require(snapshot.valid() && snapshot.metadata() == expected, "holds the host's values");
@@ -269,8 +272,7 @@ void testSnapshot()
     const HdrSnapshot copy = snapshot;
     require(copy == snapshot, "copies compare equal");
     require(snapshot.update(false, &sample) == HdrSnapshot::Update::Cleared, "cleared");
-    require(!snapshot.enabled() && !snapshot.valid() &&
-                snapshot.metadata() == HdrStaticMetadata(),
+    require(!snapshot.enabled() && !snapshot.valid() && snapshot.metadata() == HdrStaticMetadata(),
             "off clears everything");
     require(copy != snapshot, "cleared differs");
 

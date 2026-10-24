@@ -160,8 +160,7 @@ private:
     bool loadEntryPoints(PyrowaveFailure& failure);
     bool createDevice(PyrowaveFailure& failure);
     void checkHdrOutput(VkPhysicalDevice device,
-                        const std::vector<VkExtensionProperties>& extensions,
-                        QStringList& missing);
+                        const std::vector<VkExtensionProperties>& extensions, QStringList& missing);
     bool createLogicalDevice(VkPhysicalDevice device, uint32_t queueFamily, QString& reason);
     bool createPyrowaveDecoder(PyrowaveFailure& failure);
     bool createPlanes(PyrowaveFailure& failure);

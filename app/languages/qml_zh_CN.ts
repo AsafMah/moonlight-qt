@@ -1328,6 +1328,37 @@
     </message>
 </context>
 <context>
+    <name>HostKeys</name>
+    <message>
+        <source>Start menu</source>
+        <translation>开始菜单</translation>
+    </message>
+    <message>
+        <source>Switch windows</source>
+        <translation>切换窗口</translation>
+    </message>
+    <message>
+        <source>Security options</source>
+        <translation>安全选项</translation>
+    </message>
+    <message>
+        <source>Task Manager</source>
+        <translation>任务管理器</translation>
+    </message>
+    <message>
+        <source>Game Bar</source>
+        <translation>游戏栏</translation>
+    </message>
+    <message>
+        <source>Screenshot</source>
+        <translation>截图</translation>
+    </message>
+    <message>
+        <source>On-screen keyboard</source>
+        <translation>屏幕键盘</translation>
+    </message>
+</context>
+<context>
     <name>ImageUtils</name>
     <message>
         <source>The background image is no longer available. Please refresh it and try again.</source>
@@ -1372,6 +1403,65 @@
     <message>
         <source>Unable to decode the selected image</source>
         <translation>无法识别或读取选择的图片</translation>
+    </message>
+</context>
+<context>
+    <name>KeyMacroSettingsCard</name>
+    <message>
+        <source>Key macros</source>
+        <translation>按键宏</translation>
+    </message>
+    <message>
+        <source>Named key combinations for the Send Keys page of the in-stream menu, next to keys like Ctrl+Alt+Del and Win. Up to %1 macros.</source>
+        <translation>为串流菜单的「发送按键」页添加命名组合键，与 Ctrl+Alt+Del、Win 等按键并列。最多 %1 个。</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>删除</translation>
+    </message>
+    <message>
+        <source>Delete %1</source>
+        <translation>删除 %1</translation>
+    </message>
+    <message>
+        <source>New macro</source>
+        <translation>新建宏</translation>
+    </message>
+    <message>
+        <source>This key can&apos;t be sent to the host. Try another key.</source>
+        <translation>这个按键无法发送到主机，请换一个。</translation>
+    </message>
+    <message>
+        <source>You have %1 macros, the most allowed. Delete one to add another.</source>
+        <translation>已有 %1 个宏，达到上限。删除一个后才能添加。</translation>
+    </message>
+    <message>
+        <source>Enter a name, click the key button and press the combination. Keys the system keeps for itself, like Alt+Tab, can&apos;t be recorded here.</source>
+        <translation>输入名称，点击按键按钮后按下组合键。Alt+Tab 等被系统占用的组合键无法在此录入。</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>名称</translation>
+    </message>
+    <message>
+        <source>Macro name</source>
+        <translation>宏名称</translation>
+    </message>
+    <message>
+        <source>Press keys...</source>
+        <translation>请按下按键...</translation>
+    </message>
+    <message>
+        <source>Set keys</source>
+        <translation>设置按键</translation>
+    </message>
+    <message>
+        <source>Macro keys</source>
+        <translation>宏按键</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>添加</translation>
     </message>
 </context>
 <context>
@@ -2137,6 +2227,26 @@
     <message>
         <source>Developer</source>
         <translation>开发功能</translation>
+    </message>
+    <message>
+        <source>Send Keys</source>
+        <translation>发送按键</translation>
+    </message>
+    <message>
+        <source>Host Commands</source>
+        <translation>超级指令</translation>
+    </message>
+    <message>
+        <source>No keys</source>
+        <translation>没有按键</translation>
+    </message>
+    <message>
+        <source>No host commands</source>
+        <translation>还没有超级指令</translation>
+    </message>
+    <message>
+        <source>Set them up in Foundation Sunshine</source>
+        <translation>请在 Foundation Sunshine 中添加</translation>
     </message>
 </context>
 <context>
@@ -3166,6 +3276,30 @@
         <source>Unable to initialize video decoder. Please check your streaming settings and try again.</source>
         <translation>无法初始化视频解码器。请检查你的流式传输设置，然后重试。</translation>
     </message>
+    <message>
+        <source>Couldn&apos;t send the keys to the host</source>
+        <translation>无法向主机发送按键</translation>
+    </message>
+    <message>
+        <source>Host command sent: %1</source>
+        <translation>已发送超级指令：%1</translation>
+    </message>
+    <message>
+        <source>The host rejected the command: %1</source>
+        <translation>主机拒绝了指令：%1</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t run host command %1: %2</source>
+        <translation>无法执行超级指令 %1：%2</translation>
+    </message>
+    <message>
+        <source>Another host command is still running</source>
+        <translation>上一条超级指令仍在执行</translation>
+    </message>
+    <message>
+        <source>Host commands need a Foundation Sunshine host</source>
+        <translation>超级指令需要 Foundation Sunshine 主机</translation>
+    </message>
 </context>
 <context>
     <name>SettingsView</name>
@@ -3349,6 +3483,18 @@
     <message>
         <source>Type clipboard text on the host</source>
         <translation>在主机上输入剪贴板文本</translation>
+    </message>
+    <message>
+        <source>Send Ctrl+Alt+Del to the host</source>
+        <translation>向主机发送 Ctrl+Alt+Del</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>主机</translation>
+    </message>
+    <message>
+        <source>Open the host commands menu</source>
+        <translation>打开超级指令菜单</translation>
     </message>
 </context>
 <context>

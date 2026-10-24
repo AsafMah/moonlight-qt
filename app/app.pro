@@ -251,6 +251,7 @@ SOURCES += \
     streaming/input/gamepad.cpp \
     streaming/input/input.cpp \
     streaming/input/keyboard.cpp \
+    streaming/input/shortcuts.cpp \
     streaming/input/mouse.cpp \
     streaming/input/touchpad.cpp \
     streaming/input/reltouch.cpp \
@@ -266,6 +267,7 @@ SOURCES += \
     streaming/audio/renderers/sdlaud.cpp \
     streaming/bandwidth.cpp \
     gui/computermodel.cpp \
+    gui/shortcutmodel.cpp \
     gui/appmodel.cpp \
     streaming/streamutils.cpp \
     backend/autoupdatechecker.cpp \
@@ -340,6 +342,8 @@ HEADERS += \
     streaming/audio/dualsensehapticsstream.h \
     streaming/audio/renderers/sdl.h \
     gui/computermodel.h \
+    gui/shortcutmodel.h \
+    streaming/input/shortcuts.h \
     gui/appmodel.h \
     streaming/video/decoder.h \
     streaming/bandwidth.h \

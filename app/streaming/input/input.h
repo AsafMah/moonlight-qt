@@ -11,6 +11,8 @@
 
 #include "SDL_compat.h"
 
+#include "shortcuts.h"
+
 #include <QByteArray>
 #include <QHash>
 #include <QSet>
@@ -163,6 +165,13 @@ public:
 
     void handleKeyEvent(SDL_KeyboardEvent* event);
 
+    // Actions triggered by keyboard shortcuts, by ID. Other UI (e.g. an
+    // in-stream menu) may trigger them or register extra handlers here.
+    ShortcutDispatcher& getShortcutDispatcher() { return m_ShortcutDispatcher; }
+
+    // Re-reads the keyboard shortcut bindings from settings
+    void reloadShortcuts();
+
     void handleMouseButtonEvent(SDL_MouseButtonEvent* event);
 
     void handleMouseMotionEvent(SDL_MouseMotionEvent* event);
@@ -236,6 +245,15 @@ public:
     void notifyFocusGained();
 
     bool isCaptureActive();
+
+    // Hold to release mouse: true while its key is held and the hold released
+    // a captured mouse, which the key-up captures again
+    bool isMouseHoldReleased() const { return m_MouseHoldReleased; }
+
+    // Ends a hold to release the mouse without capturing it again, e.g. when
+    // a menu opens and takes over the pointer. Returns true if the hold had
+    // released a captured mouse, so the caller can restore capture itself.
+    bool cancelMouseHoldRelease();
 
     bool isSystemKeyCaptureActive();
 
@@ -453,6 +471,10 @@ private:
     GamepadState m_GamepadState[MAX_GAMEPADS];
     QSet<uint32_t> m_KeysDown;
     bool m_FakeMouseCaptureActive;
+
+    // hold-release-mouse handler, see isMouseHoldReleased()
+    void holdReleaseMouse(bool held);
+    bool m_MouseHoldReleased = false;
     bool m_KeyboardCaptureActive;
     QString m_OldIgnoreDevices;
     QString m_OldIgnoreDevicesExcept;
@@ -473,12 +495,8 @@ private:
     // 隐藏的去抖定时器。见 updateRemoteCursorVisibility()。
     SDL_TimerID m_RemoteCursorHideTimer;
 
-    struct {
-        KeyCombo keyCombo;
-        SDL_Keycode keyCode;
-        SDL_Scancode scanCode;
-        bool enabled;
-    } m_SpecialKeyCombos[KeyComboMax];
+    ShortcutMatcher m_ShortcutMatcher;
+    ShortcutDispatcher m_ShortcutDispatcher;
 
     SDL_TouchFingerEvent m_LastTouchDownEvent;
     SDL_TouchFingerEvent m_LastTouchUpEvent;

@@ -3046,16 +3046,16 @@
         <translation>%1：主機支援情況未知</translation>
     </message>
     <message>
-        <source>On its last connection (%1), %2 didn&apos;t offer PyroWave. The host needs Foundation Sunshine with PyroWave enabled; until then, streams use H.264.</source>
-        <translation>上次連線（%1）時，%2 未提供 PyroWave。主機需要使用已啟用 PyroWave 的 Foundation Sunshine；在此之前，串流將使用 H.264。</translation>
+        <source>On its last connection (%1), %2 didn&apos;t offer PyroWave. The host needs Foundation Sunshine with PyroWave enabled; until then, streams use the codec Automatic picks.</source>
+        <translation>上次連線（%1）時，%2 未提供 PyroWave。主機需要使用已啟用 PyroWave 的 Foundation Sunshine；在此之前，串流將使用「自動」選擇的轉碼器。</translation>
     </message>
     <message>
         <source>%1 offered PyroWave on its last connection (%2).</source>
         <translation>%1 在上次連線（%2）時提供了 PyroWave。</translation>
     </message>
     <message>
-        <source>Host support is checked when a stream starts. If the host doesn&apos;t offer PyroWave, the stream uses H.264 and says so.</source>
-        <translation>開始串流時會檢查主機是否支援。若主機未提供 PyroWave，串流將改用 H.264 並顯示提示。</translation>
+        <source>Host support is checked when a stream starts. If the host doesn&apos;t offer PyroWave, the stream uses the codec Automatic picks and says so.</source>
+        <translation>開始串流時會檢查主機是否支援。若主機未提供 PyroWave，串流將改用「自動」選擇的轉碼器並顯示提示。</translation>
     </message>
     <message>
         <source>Checking GPU...</source>
@@ -3106,24 +3106,24 @@
         <translation>YUV 4:4:4：關閉</translation>
     </message>
     <message>
-        <source>The PyroWave stream contract covers 4:2:0 only, and its H.264 fallback streams 4:2:0 too. Your saved setting is kept.</source>
-        <translation>PyroWave 串流協定僅支援 4:2:0，改用的 H.264 串流同樣使用 4:2:0。已儲存的設定會保留。</translation>
+        <source>The PyroWave stream contract covers 4:2:0 only, and its fallback codec streams 4:2:0 too. Your saved setting is kept.</source>
+        <translation>PyroWave 串流協定僅支援 4:2:0，改用的轉碼器同樣使用 4:2:0。已儲存的設定會保留。</translation>
     </message>
     <message>
         <source>Video AI-Enhancement: not used</source>
         <translation>視訊 AI 增強：不使用</translation>
     </message>
     <message>
-        <source>It runs inside the D3D11 renderer, which PyroWave doesn&apos;t use. Your saved setting is kept and still applies to other codecs, including an H.264 fallback.</source>
-        <translation>此功能在 D3D11 轉譯器中執行，而 PyroWave 不使用該轉譯器。已儲存的設定會保留，並繼續套用於其他編解碼器（包括改用的 H.264）。</translation>
+        <source>It runs inside the D3D11 renderer, which PyroWave doesn&apos;t use. Your saved setting is kept and still applies to other codecs, including the fallback codec.</source>
+        <translation>此功能在 D3D11 轉譯器中執行，而 PyroWave 不使用該轉譯器。已儲存的設定會保留，並繼續套用於其他編解碼器（包括改用的轉碼器）。</translation>
     </message>
     <message>
         <source>Hardware or software decoding: not used</source>
         <translation>硬體或軟體解碼：不使用</translation>
     </message>
     <message>
-        <source>PyroWave always decodes on the GPU with Vulkan. Your saved setting is kept and still applies to other codecs, including an H.264 fallback.</source>
-        <translation>PyroWave 一律透過 Vulkan 在 GPU 上解碼。已儲存的設定會保留，並繼續套用於其他編解碼器（包括改用的 H.264）。</translation>
+        <source>PyroWave always decodes on the GPU with Vulkan. Your saved setting is kept and still applies to other codecs, including the fallback codec.</source>
+        <translation>PyroWave 一律透過 Vulkan 在 GPU 上解碼。已儲存的設定會保留，並繼續套用於其他編解碼器（包括改用的轉碼器）。</translation>
     </message>
     <message>
         <source>Run capability check</source>

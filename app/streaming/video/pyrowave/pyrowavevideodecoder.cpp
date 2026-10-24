@@ -184,7 +184,7 @@ int PyrowaveVideoDecoder::advertisedVideoFormats(int supportedVideoFormats)
     }
 
     // moonlight-common-c tries PyroWave first and falls back to the legacy
-    // formats in supportedVideoFormats (H.264 for PyroWave sessions).
+    // formats in supportedVideoFormats (what Automatic would pick, in 4:2:0).
     return supportedVideoFormats | VIDEO_FORMAT_PYROWAVE;
 }
 

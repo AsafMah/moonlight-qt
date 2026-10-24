@@ -73,7 +73,7 @@ Column {
     function hostNote() {
         if (PyrowaveStatus.hasLastHost &&
                 PyrowaveStatus.lastHostOffer === PyrowaveStatus.HostOfferNotOffered) {
-            return qsTr("On its last connection (%1), %2 didn't offer PyroWave. The host needs Foundation Sunshine with PyroWave enabled; until then, streams use H.264.")
+            return qsTr("On its last connection (%1), %2 didn't offer PyroWave. The host needs Foundation Sunshine with PyroWave enabled; until then, streams use the codec Automatic picks.")
                     .arg(PyrowaveStatus.lastHostSeen).arg(PyrowaveStatus.lastHostName)
         }
         if (PyrowaveStatus.hasLastHost &&
@@ -81,7 +81,7 @@ Column {
             return qsTr("%1 offered PyroWave on its last connection (%2).")
                     .arg(PyrowaveStatus.lastHostName).arg(PyrowaveStatus.lastHostSeen)
         }
-        return qsTr("Host support is checked when a stream starts. If the host doesn't offer PyroWave, the stream uses H.264 and says so.")
+        return qsTr("Host support is checked when a stream starts. If the host doesn't offer PyroWave, the stream uses the codec Automatic picks and says so.")
     }
 
     function gpuChipText() {
@@ -260,17 +260,17 @@ Column {
 
     LockedSetting {
         name: qsTr("YUV 4:4:4: off")
-        reason: qsTr("The PyroWave stream contract covers 4:2:0 only, and its H.264 fallback streams 4:2:0 too. Your saved setting is kept.")
+        reason: qsTr("The PyroWave stream contract covers 4:2:0 only, and its fallback codec streams 4:2:0 too. Your saved setting is kept.")
     }
 
     LockedSetting {
         name: qsTr("Video AI-Enhancement: not used")
-        reason: qsTr("It runs inside the D3D11 renderer, which PyroWave doesn't use. Your saved setting is kept and still applies to other codecs, including an H.264 fallback.")
+        reason: qsTr("It runs inside the D3D11 renderer, which PyroWave doesn't use. Your saved setting is kept and still applies to other codecs, including the fallback codec.")
     }
 
     LockedSetting {
         name: qsTr("Hardware or software decoding: not used")
-        reason: qsTr("PyroWave always decodes on the GPU with Vulkan. Your saved setting is kept and still applies to other codecs, including an H.264 fallback.")
+        reason: qsTr("PyroWave always decodes on the GPU with Vulkan. Your saved setting is kept and still applies to other codecs, including the fallback codec.")
     }
 
     Row {

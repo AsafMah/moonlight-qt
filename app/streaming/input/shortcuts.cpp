@@ -86,20 +86,15 @@ QString generatedToken(int scancode)
 {
     if (scancode >= ShortcutKeys::A && scancode <= ShortcutKeys::Z) {
         return QString(QChar('A' + (scancode - ShortcutKeys::A)));
-    }
-    else if (scancode >= ShortcutKeys::Num1 && scancode < ShortcutKeys::Num0) {
+    } else if (scancode >= ShortcutKeys::Num1 && scancode < ShortcutKeys::Num0) {
         return QString::number(1 + (scancode - ShortcutKeys::Num1));
-    }
-    else if (scancode == ShortcutKeys::Num0) {
+    } else if (scancode == ShortcutKeys::Num0) {
         return QStringLiteral("0");
-    }
-    else if (scancode >= ShortcutKeys::F1 && scancode <= ShortcutKeys::F12) {
+    } else if (scancode >= ShortcutKeys::F1 && scancode <= ShortcutKeys::F12) {
         return QStringLiteral("F%1").arg(1 + (scancode - ShortcutKeys::F1));
-    }
-    else if (scancode >= ShortcutKeys::F13 && scancode <= ShortcutKeys::F24) {
+    } else if (scancode >= ShortcutKeys::F13 && scancode <= ShortcutKeys::F24) {
         return QStringLiteral("F%1").arg(13 + (scancode - ShortcutKeys::F13));
-    }
-    else if (scancode >= 89 && scancode <= 97) {
+    } else if (scancode >= 89 && scancode <= 97) {
         return QStringLiteral("Kp%1").arg(1 + (scancode - 89));
     }
     return QString();
@@ -115,12 +110,12 @@ struct NativeKey
 // PC scan code set 1 for 0x01-0x58. Linux evdev key codes use the same values
 // for this range, except 0x45 (Num Lock on Linux, Pause on Windows).
 const int k_PcBaseScancodes[] = {
-    0,   41,  30,  31,  32,  33,  34,  35,  36,  37,  38,  39,  45,  46,  42,  43, // 0x00
-    20,  26,  8,   21,  23,  28,  24,  12,  18,  19,  47,  48,  40,  224, 4,   22, // 0x10
-    7,   9,   10,  11,  13,  14,  15,  51,  52,  53,  225, 49,  29,  27,  6,   25, // 0x20
-    5,   17,  16,  54,  55,  56,  229, 85,  226, 44,  57,  58,  59,  60,  61,  62, // 0x30
-    63,  64,  65,  66,  67,  83,  71,  95,  96,  97,  86,  92,  93,  94,  87,  89, // 0x40
-    90,  91,  98,  99,  0,   0,   100, 68,  69, // 0x50
+    0,  41, 30, 31, 32, 33, 34,  35, 36,  37, 38,  39, 45, 46,  42, 43, // 0x00
+    20, 26, 8,  21, 23, 28, 24,  12, 18,  19, 47,  48, 40, 224, 4,  22, // 0x10
+    7,  9,  10, 11, 13, 14, 15,  51, 52,  53, 225, 49, 29, 27,  6,  25, // 0x20
+    5,  17, 16, 54, 55, 56, 229, 85, 226, 44, 57,  58, 59, 60,  61, 62, // 0x30
+    63, 64, 65, 66, 67, 83, 71,  95, 96,  97, 86,  92, 93, 94,  87, 89, // 0x40
+    90, 91, 98, 99, 0,  0,  100, 68, 69,                                // 0x50
 };
 
 int fromPcBaseScancode(quint32 code)
@@ -145,19 +140,32 @@ int lookupNative(const NativeKey* table, int count, quint32 native)
 #if defined(Q_OS_WIN32)
 // Extended (E0-prefixed) keys. Qt reports them with bit 8 set.
 const NativeKey k_WindowsExtendedKeys[] = {
-    { 0x10, ShortcutKeys::AudioPrev },  { 0x19, ShortcutKeys::AudioNext },
-    { 0x1C, 88 },                       { 0x1D, 228 },
-    { 0x20, ShortcutKeys::AudioMute },  { 0x22, ShortcutKeys::AudioPlay },
-    { 0x24, ShortcutKeys::AudioStop },  { 0x2E, ShortcutKeys::VolumeDown },
-    { 0x30, ShortcutKeys::VolumeUp },   { 0x35, 84 },
-    { 0x37, 70 },                       { 0x38, 230 },
-    { 0x45, 83 },                       { 0x47, 74 },
-    { 0x48, 82 },                       { 0x49, 75 },
-    { 0x4B, 80 },                       { 0x4D, 79 },
-    { 0x4F, 77 },                       { 0x50, 81 },
-    { 0x51, 78 },                       { 0x52, 73 },
-    { 0x53, 76 },                       { 0x5B, 227 },
-    { 0x5C, 231 },                      { 0x5D, 101 },
+    { 0x10, ShortcutKeys::AudioPrev },
+    { 0x19, ShortcutKeys::AudioNext },
+    { 0x1C, 88 },
+    { 0x1D, 228 },
+    { 0x20, ShortcutKeys::AudioMute },
+    { 0x22, ShortcutKeys::AudioPlay },
+    { 0x24, ShortcutKeys::AudioStop },
+    { 0x2E, ShortcutKeys::VolumeDown },
+    { 0x30, ShortcutKeys::VolumeUp },
+    { 0x35, 84 },
+    { 0x37, 70 },
+    { 0x38, 230 },
+    { 0x45, 83 },
+    { 0x47, 74 },
+    { 0x48, 82 },
+    { 0x49, 75 },
+    { 0x4B, 80 },
+    { 0x4D, 79 },
+    { 0x4F, 77 },
+    { 0x50, 81 },
+    { 0x51, 78 },
+    { 0x52, 73 },
+    { 0x53, 76 },
+    { 0x5B, 227 },
+    { 0x5C, 231 },
+    { 0x5D, 101 },
 };
 
 int fromNativeScanCode(quint32 native)
@@ -166,14 +174,11 @@ int fromNativeScanCode(quint32 native)
         return lookupNative(k_WindowsExtendedKeys,
                             int(sizeof(k_WindowsExtendedKeys) / sizeof(k_WindowsExtendedKeys[0])),
                             native & 0xFF);
-    }
-    else if (native == 0x45) {
+    } else if (native == 0x45) {
         return 72; // Pause
-    }
-    else if (native >= 0x64 && native <= 0x6E) {
+    } else if (native >= 0x64 && native <= 0x6E) {
         return ShortcutKeys::F13 + int(native - 0x64);
-    }
-    else if (native == 0x76) {
+    } else if (native == 0x76) {
         return ShortcutKeys::F24;
     }
     return fromPcBaseScancode(native);
@@ -332,17 +337,13 @@ int fromQtKey(int qtKey)
 {
     if (qtKey >= Qt::Key_A && qtKey <= Qt::Key_Z) {
         return ShortcutKeys::A + (qtKey - Qt::Key_A);
-    }
-    else if (qtKey >= Qt::Key_1 && qtKey <= Qt::Key_9) {
+    } else if (qtKey >= Qt::Key_1 && qtKey <= Qt::Key_9) {
         return ShortcutKeys::Num1 + (qtKey - Qt::Key_1);
-    }
-    else if (qtKey == Qt::Key_0) {
+    } else if (qtKey == Qt::Key_0) {
         return ShortcutKeys::Num0;
-    }
-    else if (qtKey >= Qt::Key_F1 && qtKey <= Qt::Key_F12) {
+    } else if (qtKey >= Qt::Key_F1 && qtKey <= Qt::Key_F12) {
         return ShortcutKeys::F1 + (qtKey - Qt::Key_F1);
-    }
-    else if (qtKey >= Qt::Key_F13 && qtKey <= Qt::Key_F24) {
+    } else if (qtKey >= Qt::Key_F13 && qtKey <= Qt::Key_F24) {
         return ShortcutKeys::F13 + (qtKey - Qt::Key_F13);
     }
     return lookupNative(k_QtKeys, int(sizeof(k_QtKeys) / sizeof(k_QtKeys[0])), quint32(qtKey));
@@ -369,9 +370,8 @@ quint8 parseModifierToken(const QString& token)
     }
     if (lower == QLatin1String("control")) {
         return ShortcutBinding::ModCtrl;
-    }
-    else if (lower == QLatin1String("meta") || lower == QLatin1String("win") ||
-             lower == QLatin1String("cmd") || lower == QLatin1String("super")) {
+    } else if (lower == QLatin1String("meta") || lower == QLatin1String("win") ||
+               lower == QLatin1String("cmd") || lower == QLatin1String("super")) {
         return ShortcutBinding::ModGui;
     }
     return ShortcutBinding::ModNone;
@@ -379,15 +379,15 @@ quint8 parseModifierToken(const QString& token)
 
 const char* const k_PrefixTokens[] = {
     "ctrl+alt+shift", // PrefixCtrlAltShift
-    "ctrl+alt", // PrefixCtrlAlt
+    "ctrl+alt",       // PrefixCtrlAlt
 };
 
 ShortcutAction makeAction(const char* id, const char* name, const char* group, char key)
 {
-    return ShortcutAction { QString::fromLatin1(id),
-                            name,
-                            group,
-                            { { true, ShortcutBinding::ModNone, ShortcutKeys::letter(key) } } };
+    return ShortcutAction{ QString::fromLatin1(id),
+                           name,
+                           group,
+                           { { true, ShortcutBinding::ModNone, ShortcutKeys::letter(key) } } };
 }
 
 QVector<ShortcutAction> builtinActions()
@@ -635,11 +635,10 @@ QString ShortcutBinding::toDisplayString() const
     QString key = generatedToken(scancode);
     if (key.startsWith(QLatin1String("Kp"))) {
         key = QStringLiteral("Num ") + key.mid(2);
-    }
-    else if (key.isEmpty()) {
+    } else if (key.isEmpty()) {
         const NamedKey* named = findNamedKey(scancode);
-        key = named != nullptr ? QString::fromUtf8(named->display)
-                               : ShortcutKeys::toToken(scancode);
+        key =
+            named != nullptr ? QString::fromUtf8(named->display) : ShortcutKeys::toToken(scancode);
     }
     parts.append(key);
 
@@ -706,8 +705,7 @@ const ShortcutAction* ShortcutRegistry::find(const QString& id) const
 }
 
 ShortcutProfile::ShortcutProfile(const ShortcutRegistry& registry)
-    : m_Registry(&registry),
-      m_Prefix(PrefixCtrlAltShift)
+    : m_Registry(&registry), m_Prefix(PrefixCtrlAltShift)
 {
 }
 
@@ -855,8 +853,7 @@ bool ShortcutProfile::setBinding(const QString& actionId, int slot, const Shortc
     // Matching the defaults means following future prefix changes again
     if (bindings == defaultBindings(actionId)) {
         m_Overrides.remove(actionId);
-    }
-    else {
+    } else {
         m_Overrides.insert(actionId, bindings);
     }
     return true;
@@ -896,8 +893,8 @@ QVector<ShortcutProfile::Conflict> ShortcutProfile::conflicts() const
     for (int i = 0; i < used.size(); i++) {
         for (int j = i + 1; j < used.size(); j++) {
             if (used[i].binding == used[j].binding) {
-                result.append({ used[i].binding, used[i].actionId, used[i].slot,
-                                used[j].actionId, used[j].slot });
+                result.append({ used[i].binding, used[i].actionId, used[i].slot, used[j].actionId,
+                                used[j].slot });
             }
         }
     }
@@ -927,8 +924,7 @@ void ShortcutDispatcher::setHandler(const QString& actionId, Handler handler)
 {
     if (handler) {
         m_Handlers.insert(actionId, std::move(handler));
-    }
-    else {
+    } else {
         m_Handlers.remove(actionId);
     }
 }

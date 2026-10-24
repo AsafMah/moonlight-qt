@@ -319,8 +319,9 @@ void OverlayMenuPanel::buildMenuLevels()
     // === Level 1: Quick Actions (keyboard shortcuts) ===
     MenuLevel shortcuts;
     shortcuts.title = tr("Quick Actions");
-    shortcuts.items.push_back({tr("Quit Moonlight"), shortcutDetail(MenuAction::QuitAndExit),
-                               MenuItemType::Action, MenuAction::QuitAndExit, 0, true, false, true});
+    shortcuts.items.push_back({ tr("Quit Moonlight"), shortcutDetail(MenuAction::QuitAndExit),
+                                MenuItemType::Action, MenuAction::QuitAndExit, 0, true, false,
+                                true });
     QString statsDetail = shortcutDetail(MenuAction::ToggleStatsOverlay);
     if (m_HasGamepads) {
         // 手柄组合键与键盘快捷键并列展示,按键名按实体手柄风格显示;
@@ -329,31 +330,31 @@ void OverlayMenuPanel::buildMenuLevels()
         if (!statsDetail.isEmpty()) {
             statsDetail += QString::fromUtf8(" \xc2\xb7 ");
         }
-        statsDetail += gamepadSelectButtonName(m_GamepadUiStyle) +
-                       QStringLiteral("+") + gamepadLeftShoulderName(m_GamepadUiStyle) +
-                       QStringLiteral("+") + gamepadRightShoulderName(m_GamepadUiStyle) +
-                       QStringLiteral("+") + gamepadFaceButtonGlyph(m_GamepadUiStyle, statsFace);
+        statsDetail += gamepadSelectButtonName(m_GamepadUiStyle) + QStringLiteral("+") +
+                       gamepadLeftShoulderName(m_GamepadUiStyle) + QStringLiteral("+") +
+                       gamepadRightShoulderName(m_GamepadUiStyle) + QStringLiteral("+") +
+                       gamepadFaceButtonGlyph(m_GamepadUiStyle, statsFace);
     }
     shortcuts.items.push_back({ tr("Performance Stats"), statsDetail, MenuItemType::Action,
                                 MenuAction::ToggleStatsOverlay, 0, true, false, true });
-    shortcuts.items.push_back({tr("Mouse Mode"), shortcutDetail(MenuAction::ToggleMouseMode),
-                               MenuItemType::Action, MenuAction::ToggleMouseMode, 0, true, false,
-                               false});
-    shortcuts.items.push_back({tr("Show/Hide Cursor"), shortcutDetail(MenuAction::ToggleCursorHide),
-                               MenuItemType::Action, MenuAction::ToggleCursorHide, 0, true, false,
-                               false});
-    shortcuts.items.push_back({tr("Minimize"), shortcutDetail(MenuAction::ToggleMinimize),
-                               MenuItemType::Action, MenuAction::ToggleMinimize, 0, true, false,
-                               true});
-    shortcuts.items.push_back({tr("Ungrab Mouse"), shortcutDetail(MenuAction::UngrabInput),
-                               MenuItemType::Action, MenuAction::UngrabInput, 0, true, false,
-                               false});
-    shortcuts.items.push_back({tr("Paste Clipboard"), shortcutDetail(MenuAction::PasteText),
-                               MenuItemType::Action, MenuAction::PasteText, 0, true, false, false});
-    shortcuts.items.push_back({tr("Pointer Region Lock"),
-                               shortcutDetail(MenuAction::TogglePointerRegionLock),
-                               MenuItemType::Action, MenuAction::TogglePointerRegionLock, 0, true,
-                               false, false});
+    shortcuts.items.push_back({ tr("Mouse Mode"), shortcutDetail(MenuAction::ToggleMouseMode),
+                                MenuItemType::Action, MenuAction::ToggleMouseMode, 0, true, false,
+                                false });
+    shortcuts.items.push_back({ tr("Show/Hide Cursor"),
+                                shortcutDetail(MenuAction::ToggleCursorHide), MenuItemType::Action,
+                                MenuAction::ToggleCursorHide, 0, true, false, false });
+    shortcuts.items.push_back({ tr("Minimize"), shortcutDetail(MenuAction::ToggleMinimize),
+                                MenuItemType::Action, MenuAction::ToggleMinimize, 0, true, false,
+                                true });
+    shortcuts.items.push_back({ tr("Ungrab Mouse"), shortcutDetail(MenuAction::UngrabInput),
+                                MenuItemType::Action, MenuAction::UngrabInput, 0, true, false,
+                                false });
+    shortcuts.items.push_back({ tr("Paste Clipboard"), shortcutDetail(MenuAction::PasteText),
+                                MenuItemType::Action, MenuAction::PasteText, 0, true, false,
+                                false });
+    shortcuts.items.push_back(
+        { tr("Pointer Region Lock"), shortcutDetail(MenuAction::TogglePointerRegionLock),
+          MenuItemType::Action, MenuAction::TogglePointerRegionLock, 0, true, false, false });
     m_MenuLevels.push_back(shortcuts);
 
     // === Level 2: Bitrate (piecewise-linear scrubber row + presets) ===

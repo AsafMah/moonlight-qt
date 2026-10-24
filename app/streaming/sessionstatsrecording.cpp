@@ -3,6 +3,7 @@
 // there stay one-liners.
 
 #include "session.h"
+#include "settings/sessionstatssettings.h"
 
 #include <Limelight.h>
 
@@ -10,7 +11,8 @@
 
 QString Session::sessionStatsDirectory()
 {
-    return SessionStatsRecorder::defaultDirectory();
+    // Moonlight V+: beside the logs, which follow portable mode
+    return SessionStatsSettings::statsDirectory();
 }
 
 void Session::startSessionStatsRecorder()

@@ -293,6 +293,7 @@ SOURCES += \
     streaming/video/overlaystatswindow.cpp \
     streaming/video/overlaystatscontroller.cpp \
     streaming/sessionstatsoverlay.cpp \
+    settings/sessionstatssettings.cpp \
     settings/statsoverlaysettings.cpp \
     backend/systemproperties.cpp \
     backend/usbforwardingenvironment.cpp \
@@ -385,6 +386,7 @@ HEADERS += \
     streaming/video/overlaystatspreset.h \
     streaming/video/overlaystatswindow.h \
     streaming/video/overlaystatscontroller.h \
+    settings/sessionstatssettings.h \
     settings/statsoverlaysettings.h \
     backend/systemproperties.h \
     imageutils.h \

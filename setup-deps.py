@@ -4,6 +4,7 @@ import platform
 import urllib.request
 import zipfile
 import shutil
+import subprocess
 
 ORGANIZATION = "moonlight-stream"
 PREBUILT_REPO = "moonlight-qt-deps"
@@ -45,7 +46,31 @@ def download_and_extract():
         zip_ref.extractall(target_dir)
 
     os.remove(archive_path)
+
+    if subfolder == "mac":
+        build_pyrowave_runtime(os.path.join(target_dir, "lib"))
+
     print(f"Dependencies successfully deployed")
+
+# PyroWave on macOS is a later phase: Granite, which the runtime builds on,
+# doesn't compile on macOS yet (TIMER_ABSTIME in util/timer.cpp). Until it
+# does, skip the runtime whatever PYROWAVE_BUILD says. The app hides PyroWave
+# when the runtime is missing.
+BUILD_PYROWAVE_ON_MACOS = False
+
+def build_pyrowave_runtime(lib_dir):
+    if not BUILD_PYROWAVE_ON_MACOS:
+        print("PyroWave runtime skipped on macOS: Granite doesn't build on macOS yet, "
+              "so PyroWave stays hidden in this build")
+        return
+
+    # Builds a universal libpyrowave-shared.101.dylib into libs/mac/lib, which
+    # app.pro copies into the bundle's Frameworks directory. PYROWAVE_BUILD
+    # (auto, require or skip) is read by the script itself.
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "build-pyrowave.sh")
+    result = subprocess.run(["bash", script, lib_dir, "universal"])
+    if result.returncode != 0:
+        sys.exit(result.returncode)
 
 if __name__ == "__main__":
     download_and_extract()

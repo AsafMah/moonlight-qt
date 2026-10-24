@@ -93,6 +93,7 @@ static QString getStartupApplicationDir(const char* argv0)
 #include "backend/usbforwardingenvironment.h"
 #include "backend/usbforwardingbackend.h"
 #include "streaming/session.h"
+#include "streaming/video/pyrowave/pyrowavestatus.h"
 #ifdef HAS_QT_SDL_WAYLAND_BRIDGE
 #include "streaming/waylandqtsdlbridge.h"
 #endif
@@ -1401,6 +1402,12 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonType<StatsOverlaySettings>(
         "StatsOverlaySettings", 1, 0, "StatsOverlaySettings",
         [](QQmlEngine*, QJSEngine*) -> QObject* { return new StatsOverlaySettings(); });
+    qmlRegisterSingletonType<PyrowaveStatus>(
+        "PyrowaveStatus", 1, 0, "PyrowaveStatus", [](QQmlEngine*, QJSEngine*) -> QObject* {
+            // Static singleton; QML must not delete it.
+            QQmlEngine::setObjectOwnership(PyrowaveStatus::get(), QQmlEngine::CppOwnership);
+            return PyrowaveStatus::get();
+        });
     qmlRegisterType<ImageUtils>("ImageUtils", 1, 0, "ImageUtils");
     qmlRegisterType<WindowPlacement>("WindowPlacement", 1, 0, "WindowPlacement");
     qmlRegisterType<WindowsWindowChrome>("WindowsWindowChrome", 1, 0, "WindowsWindowChrome");

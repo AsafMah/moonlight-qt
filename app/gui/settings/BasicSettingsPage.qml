@@ -7,6 +7,7 @@ import ".."
 
 import StreamingPreferences 1.0
 import SystemProperties 1.0
+import PyrowaveStatus 1.0
 
 // 「基本设置」——第一个迁移到新架构的分类。
 // 逻辑与旧 SettingsView 的 basicSettingsGroupBox 完全一致，只是换成卡片 + 设置行。
@@ -623,6 +624,21 @@ Column {
                 ListElement { text: qsTranslate("LegacySettingsPage", "HEVC (H.265)"); val: StreamingPreferences.VCC_FORCE_HEVC }
                 ListElement { text: qsTranslate("LegacySettingsPage", "AV1"); val: StreamingPreferences.VCC_FORCE_AV1 }
             }
+
+            // PyroWave is listed only when its runtime is installed. Without
+            // it, a saved PyroWave choice shows (and streams) as Automatic.
+            Component.onCompleted: {
+                if (PyrowaveStatus.runtimeAvailable) {
+                    model.append({ text: qsTranslate("PyrowaveCodecPanel", "PyroWave (experimental)"),
+                                   val: StreamingPreferences.VCC_FORCE_PYROWAVE })
+                    syncSelection()
+                }
+            }
+        }
+
+        PyrowaveCodecPanel {
+            visible: PyrowaveStatus.runtimeAvailable &&
+                     StreamingPreferences.videoCodecConfig === StreamingPreferences.VCC_FORCE_PYROWAVE
         }
 
     }

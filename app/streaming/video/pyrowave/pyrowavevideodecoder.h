@@ -1,0 +1,182 @@
+#pragma once
+
+#include "streaming/video/decoder.h"
+#include "streaming/video/overlaymanager.h"
+
+#include <QCoreApplication>
+#include <QString>
+
+#include <memory>
+#include <mutex>
+#include <vector>
+
+// User event that shows the one-time "PyroWave wasn't used" notice once the
+// stream window exists. data1 carries the negotiated video format. The value
+// is kept well away from the SDL_CODE_* range used in session.cpp.
+#define SDL_CODE_PYROWAVE_FALLBACK_NOTICE 200
+
+// User event that ends the stream after PyroWave failed three times in a row.
+// data1 carries the PyrowaveStage, data2 a heap-allocated QString with the
+// translated reason, which the handler deletes. See fatalErrorText().
+#define SDL_CODE_PYROWAVE_FATAL 201
+
+// Whether a host offered PyroWave (x-ss-pyrowave.* in its RTSP DESCRIBE reply)
+// on its most recent connection. Stored per host by PyrowaveHostStore.
+enum class PyrowaveHostOffer
+{
+    Unknown = 0,
+    Offered = 1,
+    NotOffered = 2,
+};
+
+struct PyrowavePreflightRequest
+{
+    SDL_Window* window;
+    int width;
+    int height;
+    int frameRate;
+    // 0 = SDR, 1 = HDR10 (PQ), 2 = HLG, as in STREAM_CONFIGURATION.hdrMode.
+    int hdrMode;
+};
+
+struct PyrowavePreflightResult
+{
+    bool ok;
+    // Translated reason shown instead of connecting when ok is false.
+    QString reason;
+};
+
+// What the session negotiated that the decoder must follow. Session fills
+// it in chooseDecoder() from its stream configuration.
+struct PyrowaveSessionContract
+{
+    // COLOR_RANGE_LIMITED or COLOR_RANGE_FULL (StreamConfig.colorRange). The
+    // host encodes with it, and every frame's native metadata must match.
+    int colorRange = COLOR_RANGE_LIMITED;
+    // 0 = SDR, 1 = HDR10, 2 = HLG (StreamConfig.hdrMode)
+    int hdrMode = 0;
+    // CAPABILITY_PULL_RENDERER was advertised: frames are pulled with
+    // LiWaitForNextVideoFrame() on our own thread instead of being pushed to
+    // submitDecodeUnit().
+    bool pullRenderer = false;
+};
+
+#ifdef HAVE_LIBPLACEBO_VULKAN
+class PyrowaveVulkanInstance;
+class PyrowaveVulkanRenderer;
+struct PyrowaveFailure;
+#endif
+
+// Decoder for the experimental PyroWave codec (see the Moonlight V+ client
+// contract, docs/pyrowave-client-contract.md in qiin2333/moonlight-vplus).
+//
+// One Vulkan device is shared by pyrowave_create_device() and libplacebo
+// (PyrowaveVulkanRenderer). Each frame is decoded into Y/Cb/Cr planes and
+// presented through a libplacebo swapchain, with the stats overlay drawn on
+// top, on the thread that receives the frame. CAPABILITY_DIRECT_SUBMIT stays
+// off because a frame can wait for the GPU and the window.
+//
+// Frame results follow the contract: an incomplete frame keeps the decoder
+// and the last image; any failure rebuilds the renderer, and three in a row
+// end the connection with an error naming the stage. The codec never changes
+// mid-stream.
+//
+// Not yet: HDR10/HLG (PW-3, refused by preflight()), the SDR CPU-staging
+// fallback, frame pacing and dynamic swapchain depth.
+class PyrowaveVideoDecoder : public IVideoDecoder, public Overlay::IOverlayRenderer
+{
+    Q_DECLARE_TR_FUNCTIONS(PyrowaveVideoDecoder)
+
+public:
+#ifdef HAVE_LIBPLACEBO_VULKAN
+    static constexpr bool k_DecoderImplemented = true;
+#else
+    // The decoder needs libplacebo's Vulkan renderer.
+    static constexpr bool k_DecoderImplemented = false;
+#endif
+
+    // Contract limit for the GPU path (both dimensions even, at most 8192).
+    static constexpr int k_MaxDimension = 8192;
+
+    // Consecutive failures before the connection ends (client contract,
+    // section 6).
+    static constexpr int k_MaxConsecutiveFailures = 3;
+
+    PyrowaveVideoDecoder(bool testOnly, const PyrowaveSessionContract& contract);
+    virtual ~PyrowaveVideoDecoder() override;
+
+    // Creates and releases a candidate device, decoder and swapchain at the
+    // requested size on the request's window. Runs before ANNOUNCE, so a GPU
+    // or window that can't do it fails here with a specific reason.
+    static PyrowavePreflightResult preflight(const PyrowavePreflightRequest& request);
+
+    // Adds PyroWave to the formats and capabilities that Session gives
+    // moonlight-common-c. Both return their input unchanged without the
+    // decoder, so such a build can never negotiate PyroWave.
+    static int advertisedVideoFormats(int supportedVideoFormats);
+    static int advertisedCapabilities(int fallbackDecoderCapabilities);
+
+    // What this connection tells us about the host's PyroWave support.
+    static PyrowaveHostOffer hostOfferFromConnection(int negotiatedVideoFormat);
+
+    // Translated texts used by Session.
+    static QString launchErrorText(const QString& reason);
+    static QString fallbackNotice(int negotiatedVideoFormat);
+    static QString videoFormatDisplayName(int videoFormat);
+    static QString fatalErrorText(int stage, const QString& reason);
+
+    virtual bool initialize(PDECODER_PARAMETERS params) override;
+    virtual bool isHardwareAccelerated() override { return true; }
+    virtual bool isAlwaysFullScreen() override { return false; }
+    // TODO(PW-3): HDR10/HLG presentation.
+    virtual bool isHdrSupported() override { return false; }
+    virtual int getDecoderCapabilities() override { return CAPABILITY_PYROWAVE; }
+    // SDR PyroWave is BT.709 (client contract, section 3).
+    virtual int getDecoderColorspace() override { return COLORSPACE_REC_709; }
+    virtual int getDecoderColorRange() override { return m_Contract.colorRange; }
+    virtual QSize getDecoderMaxResolution() override;
+    virtual int submitDecodeUnit(PDECODE_UNIT du) override;
+    virtual void renderFrameOnMainThread() override {}
+    // TODO(PW-3): apply SS_HDR_METADATA to the swapchain.
+    virtual void setHdrMode(bool) override {}
+    virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info) override;
+
+    virtual void notifyOverlayUpdated(Overlay::OverlayType type) override;
+
+private:
+    static int decoderThreadProc(void* context);
+
+    int processFrame(PDECODE_UNIT du);
+    void accountReceivedFrame(PDECODE_UNIT du);
+    void stringifyVideoStats(const VIDEO_STATS& stats, char* output, int length) const;
+
+    bool m_TestOnly;
+    PyrowaveSessionContract m_Contract;
+    int m_Width = 0;
+    int m_Height = 0;
+
+    // Video stats windows, as FFmpegVideoDecoder keeps them
+    VIDEO_STATS m_ActiveWndVideoStats = {};
+    VIDEO_STATS m_LastWndVideoStats = {};
+    VIDEO_STATS m_GlobalVideoStats = {};
+    int m_LastFrameNumber = 0;
+
+    std::vector<uint8_t> m_FrameBuffer;
+
+    SDL_Thread* m_DecoderThread = nullptr;
+    SDL_atomic_t m_DecoderThreadShouldQuit = {};
+
+#ifdef HAVE_LIBPLACEBO_VULKAN
+    bool createRenderer(PyrowaveFailure& failure);
+    void noteFailure(const PyrowaveFailure& failure);
+
+    std::unique_ptr<PyrowaveVulkanInstance> m_Instance;
+    // Serializes the decode thread, overlay updates and teardown.
+    std::mutex m_RendererLock;
+    std::unique_ptr<PyrowaveVulkanRenderer> m_Renderer;
+    bool m_EnableVsync = false;
+    bool m_IgnoreAspectRatio = false;
+    int m_ConsecutiveFailures = 0;
+    bool m_Fatal = false;
+#endif
+};

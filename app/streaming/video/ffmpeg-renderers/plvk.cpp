@@ -22,39 +22,6 @@ extern "C" {
 #define VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR ((VkVideoCodecOperationFlagBitsKHR)0x00000004)
 #endif
 
-#ifdef HAVE_DRM_MASTER_HOOKS
-extern "C" {
-void lockDrmMaster();
-void unlockDrmMaster();
-}
-#endif
-
-// Many operations like setting a display mode or creating a swapchain
-// may require the Vulkan implementation to have DRM master in a KMSDRM
-// environment. Since this will not necessarily be the case during decoder
-// probing (when the Qt UI is still rendering), we need to grab the DRM
-// master lock to prevent Qt from taking it out from under us.
-class DrmMasterLocker {
-public:
-    DrmMasterLocker() {
-#ifdef HAVE_DRM_MASTER_HOOKS
-        lockDrmMaster();
-#endif
-    }
-
-    ~DrmMasterLocker() {
-#ifdef HAVE_DRM_MASTER_HOOKS
-        unlockDrmMaster();
-#endif
-    }
-
-    // Disallow copies and moves
-    DrmMasterLocker(const DrmMasterLocker&) = delete;
-    DrmMasterLocker& operator=(const DrmMasterLocker&) = delete;
-    DrmMasterLocker(DrmMasterLocker&&) noexcept = delete;
-    DrmMasterLocker& operator=(DrmMasterLocker&&) noexcept = delete;
-};
-
 #if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(60, 26, 100)
 static const char *k_OptionalDeviceExtensions[] = {
     /* Misc or required by other extensions */
@@ -118,27 +85,9 @@ static void pl_log_cb(void*, enum pl_log_level level, const char *msg)
     }
 }
 
-void PlVkRenderer::lockQueue(struct AVHWDeviceContext *dev_ctx, uint32_t queue_family, uint32_t index)
-{
-    auto me = (PlVkRenderer*)dev_ctx->user_opaque;
-    me->m_Vulkan->lock_queue(me->m_Vulkan, queue_family, index);
-}
+namespace PlVkShared {
 
-void PlVkRenderer::unlockQueue(struct AVHWDeviceContext *dev_ctx, uint32_t queue_family, uint32_t index)
-{
-    auto me = (PlVkRenderer*)dev_ctx->user_opaque;
-    me->m_Vulkan->unlock_queue(me->m_Vulkan, queue_family, index);
-}
-
-void PlVkRenderer::overlayUploadComplete(void* opaque)
-{
-    SDL_FreeSurface((SDL_Surface*)opaque);
-}
-
-PlVkRenderer::PlVkRenderer(AVHWDeviceType hwDeviceType, IFFmpegRenderer *backendRenderer) :
-    IFFmpegRenderer(RendererType::Vulkan),
-    m_Backend(backendRenderer),
-    m_HwDeviceType(hwDeviceType)
+pl_log createLog()
 {
     bool ok;
 
@@ -153,7 +102,371 @@ PlVkRenderer::PlVkRenderer(AVHWDeviceType hwDeviceType, IFFmpegRenderer *backend
 #endif
     }
 
-    m_Log = pl_log_create(PL_API_VER, &logParams);
+    return pl_log_create(PL_API_VER, &logParams);
+}
+
+PFN_vkGetInstanceProcAddr getInstanceProcAddr()
+{
+    return (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr();
+}
+
+bool getInstanceExtensions(SDL_Window* window, std::vector<const char*>& extensions)
+{
+    unsigned int instanceExtensionCount = 0;
+    if (!SDL_Vulkan_GetInstanceExtensions(window, &instanceExtensionCount, nullptr)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "SDL_Vulkan_GetInstanceExtensions() #1 failed: %s", SDL_GetError());
+        return false;
+    }
+
+    extensions.resize(instanceExtensionCount);
+    if (!SDL_Vulkan_GetInstanceExtensions(window, &instanceExtensionCount, extensions.data())) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "SDL_Vulkan_GetInstanceExtensions() #2 failed: %s", SDL_GetError());
+        return false;
+    }
+
+    extensions.resize(instanceExtensionCount);
+    return true;
+}
+
+bool createWindowSurface(SDL_Window* window, VkInstance instance, VkSurfaceKHR* surface)
+{
+    // Don't let Qt take DRM master from us during SDL_Vulkan_CreateSurface()
+    DrmMasterLocker locker;
+
+    if (!SDL_Vulkan_CreateSurface(window, instance, surface)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_Vulkan_CreateSurface() failed: %s",
+                     SDL_GetError());
+        return false;
+    }
+
+    return true;
+}
+
+void getDrawableSize(SDL_Window* window, int* width, int* height)
+{
+    SDL_Vulkan_GetDrawableSize(window, width, height);
+}
+
+std::vector<VkPhysicalDevice>
+devicesInPreferenceOrder(VkInstance instance, PFN_vkEnumeratePhysicalDevices enumerate,
+                         PFN_vkGetPhysicalDeviceProperties getProperties)
+{
+    uint32_t physicalDeviceCount = 0;
+    enumerate(instance, &physicalDeviceCount, nullptr);
+    std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
+    enumerate(instance, &physicalDeviceCount, physicalDevices.data());
+    physicalDevices.resize(physicalDeviceCount);
+
+    std::vector<VkPhysicalDevice> ordered;
+    if (physicalDevices.empty()) {
+        return ordered;
+    }
+
+    // First, try the first device in the list to support device selection layers
+    // that put the user's preferred GPU in the first slot.
+    std::vector<bool> added(physicalDevices.size(), false);
+    ordered.push_back(physicalDevices[0]);
+    added[0] = true;
+
+    // Next, we'll try to match an integrated GPU, since we want to minimize
+    // power consumption and inter-GPU copies. Then a discrete GPU, and finally
+    // any other device.
+    const VkPhysicalDeviceType preferredTypes[] = {
+        VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
+        VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
+    };
+    for (VkPhysicalDeviceType type : preferredTypes) {
+        for (size_t i = 0; i < physicalDevices.size(); i++) {
+            if (added[i]) {
+                continue;
+            }
+
+            VkPhysicalDeviceProperties deviceProps;
+            getProperties(physicalDevices[i], &deviceProps);
+            if (deviceProps.deviceType == type) {
+                ordered.push_back(physicalDevices[i]);
+                added[i] = true;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < physicalDevices.size(); i++) {
+        if (!added[i]) {
+            ordered.push_back(physicalDevices[i]);
+        }
+    }
+
+    return ordered;
+}
+
+bool isSoftwareDeviceRejected(const VkPhysicalDeviceProperties& properties)
+{
+    if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU &&
+        qgetenv("PLVK_ALLOW_SOFTWARE") != "1") {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Vulkan device '%s' is a (probably slow) software renderer. Set "
+                    "PLVK_ALLOW_SOFTWARE=1 to allow using this device.",
+                    properties.deviceName);
+        return true;
+    }
+
+    return false;
+}
+
+VkPresentModeKHR choosePresentMode(bool enableVsync,
+                                   const std::function<bool(VkPresentModeKHR)>& isSupported)
+{
+    if (enableVsync) {
+        // FIFO mode improves frame pacing compared with Mailbox, especially for
+        // platforms like X11 that lack a VSyncSource implementation for Pacer.
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    // We want immediate mode for V-Sync disabled if possible
+    if (isSupported(VK_PRESENT_MODE_IMMEDIATE_KHR)) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Using Immediate present mode with V-Sync disabled");
+        return VK_PRESENT_MODE_IMMEDIATE_KHR;
+    }
+
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "Immediate present mode is not supported by the Vulkan driver. Latency may be "
+                "higher than normal with V-Sync disabled.");
+
+    // FIFO Relaxed can tear if the frame is running late
+    if (isSupported(VK_PRESENT_MODE_FIFO_RELAXED_KHR)) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Using FIFO Relaxed present mode with V-Sync disabled");
+        return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+    }
+    // Mailbox at least provides non-blocking behavior
+    else if (isSupported(VK_PRESENT_MODE_MAILBOX_KHR)) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Using Mailbox present mode with V-Sync disabled");
+        return VK_PRESENT_MODE_MAILBOX_KHR;
+    }
+    // FIFO is always supported
+    else {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Using FIFO present mode with V-Sync disabled");
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
+}
+
+pl_swapchain createSwapchain(pl_vulkan vulkan, VkSurfaceKHR surface, VkPresentModeKHR presentMode,
+                             int depth)
+{
+    pl_vulkan_swapchain_params vkSwapchainParams = {};
+    vkSwapchainParams.surface = surface;
+    vkSwapchainParams.present_mode = presentMode;
+    vkSwapchainParams.swapchain_depth = depth;
+#if PL_API_VER >= 338
+    vkSwapchainParams.disable_10bit_sdr =
+        true; // Some drivers don't dither 10-bit SDR output correctly
+#endif
+
+    // Don't let Qt take DRM master from us during pl_vulkan_create_swapchain()
+    DrmMasterLocker locker;
+
+    pl_swapchain swapchain = pl_vulkan_create_swapchain(vulkan, &vkSwapchainParams);
+    if (swapchain == nullptr) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "pl_vulkan_create_swapchain() failed");
+    }
+
+    return swapchain;
+}
+
+}
+
+void PlVkOverlays::uploadComplete(void* opaque)
+{
+    SDL_FreeSurface((SDL_Surface*)opaque);
+}
+
+// Takes ownership of surface in all cases!
+bool PlVkOverlays::createOverlay(pl_gpu gpu, pl_overlay* overlay, SDL_Surface* surface)
+{
+    // Find a compatible texture format
+    SDL_assert(surface->format->format == SDL_PIXELFORMAT_ARGB8888);
+    pl_fmt texFormat = pl_find_named_fmt(gpu, "bgra8");
+    if (!texFormat) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "pl_find_named_fmt(bgra8) failed");
+        SDL_FreeSurface(surface);
+        return false;
+    }
+
+    // Create a new texture for this overlay if necessary, otherwise reuse the existing texture.
+    // NB: We're guaranteed that the render thread won't be reading this concurrently because
+    // we set hasStagingOverlay to false above.
+    pl_tex_params texParams = {};
+    texParams.w = surface->w;
+    texParams.h = surface->h;
+    texParams.format = texFormat;
+    texParams.sampleable = true;
+    texParams.host_writable = true;
+    texParams.blit_src = !!(texFormat->caps & PL_FMT_CAP_BLITTABLE);
+    texParams.debug_tag = PL_DEBUG_TAG;
+    if (!pl_tex_recreate(gpu, &overlay->tex, &texParams)) {
+        pl_tex_destroy(gpu, &overlay->tex);
+        SDL_zerop(overlay);
+        SDL_FreeSurface(surface);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "pl_tex_recreate() failed");
+        return false;
+    }
+
+    // Upload the surface data to the new texture
+    SDL_assert(!SDL_MUSTLOCK(surface));
+    pl_tex_transfer_params xferParams = {};
+    xferParams.tex = overlay->tex;
+    xferParams.row_pitch = (size_t)surface->pitch;
+    xferParams.ptr = surface->pixels;
+    xferParams.callback = uploadComplete;
+    xferParams.priv = surface;
+    if (!pl_tex_upload(gpu, &xferParams)) {
+        pl_tex_destroy(gpu, &overlay->tex);
+        SDL_zerop(overlay);
+        SDL_FreeSurface(surface);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "pl_tex_upload() failed");
+        return false;
+    }
+
+    // surface is now owned by the texture upload process. It will be freed in uploadComplete()
+
+    // Initialize the rest of the overlay params
+    overlay->mode = PL_OVERLAY_NORMAL;
+    overlay->coords = PL_OVERLAY_COORDS_DST_FRAME;
+    overlay->repr = pl_color_repr_rgb;
+    overlay->color = pl_color_space_srgb;
+    return true;
+}
+
+void PlVkOverlays::notifyUpdated(pl_gpu gpu, Overlay::OverlayType type)
+{
+    SDL_Surface* newSurface = Session::get()->getOverlayManager().getUpdatedOverlaySurface(type);
+    if (newSurface == nullptr && Session::get()->getOverlayManager().isOverlayEnabled(type)) {
+        // The overlay is enabled and there is no new surface. Leave the old texture alone.
+        return;
+    }
+
+    SDL_AtomicLock(&m_Lock);
+    // We want to clear the staging overlay flag even if a staging overlay is still present,
+    // since this ensures the render thread will not read from a partially initialized pl_tex
+    // as we modify or recreate the staging overlay texture outside the overlay lock.
+    m_Overlays[type].hasStagingOverlay = false;
+    SDL_AtomicUnlock(&m_Lock);
+
+    // If there's no new staging overlay, free the old staging overlay texture.
+    // NB: This is safe to do outside the overlay lock because we're guaranteed
+    // to not have racing readers/writers if hasStagingOverlay is false.
+    if (newSurface == nullptr) {
+        pl_tex_destroy(gpu, &m_Overlays[type].stagingOverlay.tex);
+        SDL_zero(m_Overlays[type].stagingOverlay);
+        return;
+    }
+
+    // newSurface is now owned by the texture upload process
+    if (!createOverlay(gpu, &m_Overlays[type].stagingOverlay, newSurface)) {
+        return;
+    }
+
+    // Make this staging overlay visible to the render thread
+    SDL_AtomicLock(&m_Lock);
+    SDL_assert(!m_Overlays[type].hasStagingOverlay);
+    m_Overlays[type].hasStagingOverlay = true;
+    SDL_AtomicUnlock(&m_Lock);
+}
+
+void PlVkOverlays::collect(const pl_frame& targetFrame,
+                           pl_overlay_part (&parts)[Overlay::OverlayMax],
+                           std::vector<pl_overlay>& overlays,
+                           std::vector<pl_tex>& texturesToDestroy)
+{
+    // We perform minimal processing under the overlay lock to avoid blocking threads updating the
+    // overlay
+    SDL_AtomicLock(&m_Lock);
+    for (int i = 0; i < Overlay::OverlayMax; i++) {
+        // If we have a staging overlay, we need to transfer ownership to us
+        if (m_Overlays[i].hasStagingOverlay) {
+            if (m_Overlays[i].hasOverlay) {
+                texturesToDestroy.push_back(m_Overlays[i].overlay.tex);
+            }
+
+            // Copy the overlay fields from the staging area
+            m_Overlays[i].overlay = m_Overlays[i].stagingOverlay;
+
+            // We now own the staging overlay
+            m_Overlays[i].hasStagingOverlay = false;
+            SDL_zero(m_Overlays[i].stagingOverlay);
+            m_Overlays[i].hasOverlay = true;
+        }
+
+        // If we have an overlay but it's been disabled, free the overlay texture
+        if (m_Overlays[i].hasOverlay &&
+            !Session::get()->getOverlayManager().isOverlayEnabled((Overlay::OverlayType)i)) {
+            texturesToDestroy.push_back(m_Overlays[i].overlay.tex);
+            SDL_zero(m_Overlays[i].overlay);
+            m_Overlays[i].hasOverlay = false;
+        }
+
+        // We have an overlay to draw
+        if (m_Overlays[i].hasOverlay) {
+            // Position the overlay
+            parts[i].src = { 0, 0, (float)m_Overlays[i].overlay.tex->params.w,
+                             (float)m_Overlays[i].overlay.tex->params.h };
+            float centeredX =
+                targetFrame.crop.x0 +
+                SDL_max(0.0f, (targetFrame.crop.x1 - targetFrame.crop.x0 - parts[i].src.x1) / 2.0f);
+            if (i == Overlay::OverlayStatusUpdate) {
+                // Bottom center
+                parts[i].dst.x0 = centeredX;
+                parts[i].dst.y0 =
+                    SDL_max(targetFrame.crop.y0, targetFrame.crop.y1 - parts[i].src.y1);
+            } else if (i == Overlay::OverlayDebug) {
+                // Top center
+                parts[i].dst.x0 = centeredX;
+                parts[i].dst.y0 = targetFrame.crop.y0;
+            }
+            parts[i].dst.x1 = parts[i].dst.x0 + parts[i].src.x1;
+            parts[i].dst.y1 = parts[i].dst.y0 + parts[i].src.y1;
+
+            m_Overlays[i].overlay.parts = &parts[i];
+            m_Overlays[i].overlay.num_parts = 1;
+
+            overlays.push_back(m_Overlays[i].overlay);
+        }
+    }
+    SDL_AtomicUnlock(&m_Lock);
+}
+
+void PlVkOverlays::destroy(pl_gpu gpu)
+{
+    for (int i = 0; i < (int)SDL_arraysize(m_Overlays); i++) {
+        pl_tex_destroy(gpu, &m_Overlays[i].overlay.tex);
+        pl_tex_destroy(gpu, &m_Overlays[i].stagingOverlay.tex);
+        m_Overlays[i].hasOverlay = false;
+        m_Overlays[i].hasStagingOverlay = false;
+    }
+}
+
+void PlVkRenderer::lockQueue(struct AVHWDeviceContext *dev_ctx, uint32_t queue_family, uint32_t index)
+{
+    auto me = (PlVkRenderer*)dev_ctx->user_opaque;
+    me->m_Vulkan->lock_queue(me->m_Vulkan, queue_family, index);
+}
+
+void PlVkRenderer::unlockQueue(struct AVHWDeviceContext *dev_ctx, uint32_t queue_family, uint32_t index)
+{
+    auto me = (PlVkRenderer*)dev_ctx->user_opaque;
+    me->m_Vulkan->unlock_queue(me->m_Vulkan, queue_family, index);
+}
+
+PlVkRenderer::PlVkRenderer(AVHWDeviceType hwDeviceType, IFFmpegRenderer *backendRenderer) :
+    IFFmpegRenderer(RendererType::Vulkan),
+    m_Backend(backendRenderer),
+    m_HwDeviceType(hwDeviceType)
+{
+    m_Log = PlVkShared::createLog();
 }
 
 PlVkRenderer::~PlVkRenderer()
@@ -166,10 +479,7 @@ PlVkRenderer::~PlVkRenderer()
         pl_tex_destroy(m_Vulkan->gpu, &m_EmptyOverlay.tex);
 #endif
 
-        for (int i = 0; i < (int)SDL_arraysize(m_Overlays); i++) {
-            pl_tex_destroy(m_Vulkan->gpu, &m_Overlays[i].overlay.tex);
-            pl_tex_destroy(m_Vulkan->gpu, &m_Overlays[i].stagingOverlay.tex);
-        }
+        m_Overlays.destroy(m_Vulkan->gpu);
 
         for (int i = 0; i < (int)SDL_arraysize(m_Textures); i++) {
             pl_tex_destroy(m_Vulkan->gpu, &m_Textures[i]);
@@ -202,77 +512,21 @@ PlVkRenderer::~PlVkRenderer()
 
 bool PlVkRenderer::chooseVulkanDevice(PDECODER_PARAMETERS params, bool hdrOutputRequired)
 {
-    uint32_t physicalDeviceCount = 0;
-    fn_vkEnumeratePhysicalDevices(m_PlVkInstance->instance, &physicalDeviceCount, nullptr);
-    std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
-    fn_vkEnumeratePhysicalDevices(m_PlVkInstance->instance, &physicalDeviceCount, physicalDevices.data());
-
-    std::set<uint32_t> devicesTried;
-    VkPhysicalDeviceProperties deviceProps;
-
-    if (physicalDeviceCount == 0) {
+    std::vector<VkPhysicalDevice> physicalDevices = PlVkShared::devicesInPreferenceOrder(
+        m_PlVkInstance->instance, fn_vkEnumeratePhysicalDevices, fn_vkGetPhysicalDeviceProperties);
+    if (physicalDevices.empty()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "No Vulkan devices found!");
         m_InitFailureReason = InitFailureReason::NoSoftwareSupport;
         return false;
     }
 
-    // First, try the first device in the list to support device selection layers
-    // that put the user's preferred GPU in the first slot.
-    fn_vkGetPhysicalDeviceProperties(physicalDevices[0], &deviceProps);
-    if (tryInitializeDevice(physicalDevices[0], &deviceProps, params, hdrOutputRequired)) {
-        return true;
-    }
-    devicesTried.emplace(0);
-
-    // Next, we'll try to match an integrated GPU, since we want to minimize
-    // power consumption and inter-GPU copies.
-    for (uint32_t i = 0; i < physicalDeviceCount; i++) {
-        // Skip devices we've already tried
-        if (devicesTried.find(i) != devicesTried.end()) {
-            continue;
-        }
-
+    for (VkPhysicalDevice physicalDevice : physicalDevices) {
         VkPhysicalDeviceProperties deviceProps;
-        fn_vkGetPhysicalDeviceProperties(physicalDevices[i], &deviceProps);
-        if (deviceProps.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
-            if (tryInitializeDevice(physicalDevices[i], &deviceProps, params, hdrOutputRequired)) {
-                return true;
-            }
-            devicesTried.emplace(i);
-        }
-    }
-
-    // Next, we'll try to match a discrete GPU.
-    for (uint32_t i = 0; i < physicalDeviceCount; i++) {
-        // Skip devices we've already tried
-        if (devicesTried.find(i) != devicesTried.end()) {
-            continue;
-        }
-
-        VkPhysicalDeviceProperties deviceProps;
-        fn_vkGetPhysicalDeviceProperties(physicalDevices[i], &deviceProps);
-        if (deviceProps.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-            if (tryInitializeDevice(physicalDevices[i], &deviceProps, params, hdrOutputRequired)) {
-                return true;
-            }
-            devicesTried.emplace(i);
-        }
-    }
-
-    // Finally, we'll try matching any non-software device.
-    for (uint32_t i = 0; i < physicalDeviceCount; i++) {
-        // Skip devices we've already tried
-        if (devicesTried.find(i) != devicesTried.end()) {
-            continue;
-        }
-
-        VkPhysicalDeviceProperties deviceProps;
-        fn_vkGetPhysicalDeviceProperties(physicalDevices[i], &deviceProps);
-        if (tryInitializeDevice(physicalDevices[i], &deviceProps, params, hdrOutputRequired)) {
+        fn_vkGetPhysicalDeviceProperties(physicalDevice, &deviceProps);
+        if (tryInitializeDevice(physicalDevice, &deviceProps, params, hdrOutputRequired)) {
             return true;
         }
-        devicesTried.emplace(i);
     }
 
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -352,10 +606,7 @@ bool PlVkRenderer::tryInitializeDevice(VkPhysicalDevice device, VkPhysicalDevice
     }
 
     // Avoid software GPUs
-    if (deviceProps->deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU && qgetenv("PLVK_ALLOW_SOFTWARE") != "1") {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Vulkan device '%s' is a (probably slow) software renderer. Set PLVK_ALLOW_SOFTWARE=1 to allow using this device.",
-                    deviceProps->deviceName);
+    if (PlVkShared::isSoftwareDeviceRejected(*deviceProps)) {
         return false;
     }
 
@@ -428,20 +679,8 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
     m_Window = params->window;
     m_MaxVideoFps = params->frameRate;
 
-    unsigned int instanceExtensionCount = 0;
-    if (!SDL_Vulkan_GetInstanceExtensions(params->window, &instanceExtensionCount, nullptr)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "SDL_Vulkan_GetInstanceExtensions() #1 failed: %s",
-                     SDL_GetError());
-        m_InitFailureReason = InitFailureReason::NoSoftwareSupport;
-        return false;
-    }
-
-    std::vector<const char*> instanceExtensions(instanceExtensionCount);
-    if (!SDL_Vulkan_GetInstanceExtensions(params->window, &instanceExtensionCount, instanceExtensions.data())) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "SDL_Vulkan_GetInstanceExtensions() #2 failed: %s",
-                     SDL_GetError());
+    std::vector<const char*> instanceExtensions;
+    if (!PlVkShared::getInstanceExtensions(params->window, instanceExtensions)) {
         m_InitFailureReason = InitFailureReason::NoSoftwareSupport;
         return false;
     }
@@ -451,7 +690,7 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
         vkInstParams.debug_extra = !!qEnvironmentVariableIntValue("PLVK_DEBUG_EXTRA");
         vkInstParams.debug = vkInstParams.debug_extra || !!qEnvironmentVariableIntValue("PLVK_DEBUG");
     }
-    vkInstParams.get_proc_addr = (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr();
+    vkInstParams.get_proc_addr = PlVkShared::getInstanceProcAddr();
     vkInstParams.extensions = instanceExtensions.data();
     vkInstParams.num_extensions = (int)instanceExtensions.size();
     m_PlVkInstance = pl_vk_inst_create(m_Log, &vkInstParams);
@@ -472,17 +711,9 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
     POPULATE_FUNCTION(vkGetPhysicalDeviceSurfaceSupportKHR);
     POPULATE_FUNCTION(vkEnumerateDeviceExtensionProperties);
 
-    {
-        // Don't let Qt take DRM master from us during SDL_Vulkan_CreateSurface()
-        DrmMasterLocker locker;
-
-        if (!SDL_Vulkan_CreateSurface(params->window, m_PlVkInstance->instance, &m_VkSurface)) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "SDL_Vulkan_CreateSurface() failed: %s",
-                         SDL_GetError());
-            m_InitFailureReason = InitFailureReason::NoSoftwareSupport;
-            return false;
-        }
+    if (!PlVkShared::createWindowSurface(params->window, m_PlVkInstance->instance, &m_VkSurface)) {
+        m_InitFailureReason = InitFailureReason::NoSoftwareSupport;
+        return false;
     }
 
     // Enumerate physical devices and choose one that is suitable for our needs.
@@ -497,42 +728,10 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
     // Ignores aspect ratio to fill the entire screen
     m_IgnoreAspectRatio = params->ignoreAspectRatio;
 
-    if (params->enableVsync) {
-        // FIFO mode improves frame pacing compared with Mailbox, especially for
-        // platforms like X11 that lack a VSyncSource implementation for Pacer.
-        m_VkPresentMode = VK_PRESENT_MODE_FIFO_KHR;
-    }
-    else {
-        // We want immediate mode for V-Sync disabled if possible
-        if (isPresentModeSupportedByPhysicalDevice(m_Vulkan->phys_device, VK_PRESENT_MODE_IMMEDIATE_KHR)) {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Using Immediate present mode with V-Sync disabled");
-            m_VkPresentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
-        }
-        else {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "Immediate present mode is not supported by the Vulkan driver. Latency may be higher than normal with V-Sync disabled.");
-
-            // FIFO Relaxed can tear if the frame is running late
-            if (isPresentModeSupportedByPhysicalDevice(m_Vulkan->phys_device, VK_PRESENT_MODE_FIFO_RELAXED_KHR)) {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                            "Using FIFO Relaxed present mode with V-Sync disabled");
-                m_VkPresentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-            }
-            // Mailbox at least provides non-blocking behavior
-            else if (isPresentModeSupportedByPhysicalDevice(m_Vulkan->phys_device, VK_PRESENT_MODE_MAILBOX_KHR)) {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                            "Using Mailbox present mode with V-Sync disabled");
-                m_VkPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
-            }
-            // FIFO is always supported
-            else {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                            "Using FIFO present mode with V-Sync disabled");
-                m_VkPresentMode = VK_PRESENT_MODE_FIFO_KHR;
-            }
-        }
-    }
+    m_VkPresentMode =
+        PlVkShared::choosePresentMode(params->enableVsync, [this](VkPresentModeKHR mode) {
+            return isPresentModeSupportedByPhysicalDevice(m_Vulkan->phys_device, mode);
+        });
 
     // Start with a swapchain that is double-buffered for lowest display latency
     if (!createSwapchain(1)) {
@@ -555,7 +754,7 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
     }
 
     // emptySurface is owned now by the overlay upload code (even on failure)
-    if (!createOverlay(&m_EmptyOverlay, emptySurface)) {
+    if (!PlVkOverlays::createOverlay(m_Vulkan->gpu, &m_EmptyOverlay, emptySurface)) {
         return false;
     }
 
@@ -639,24 +838,9 @@ bool PlVkRenderer::createSwapchain(int depth)
 {
     pl_swapchain_destroy(&m_Swapchain);
 
-    pl_vulkan_swapchain_params vkSwapchainParams = {};
-    vkSwapchainParams.surface = m_VkSurface;
-    vkSwapchainParams.present_mode = m_VkPresentMode;
-    vkSwapchainParams.swapchain_depth = depth;
-#if PL_API_VER >= 338
-    vkSwapchainParams.disable_10bit_sdr = true; // Some drivers don't dither 10-bit SDR output correctly
-#endif
-
-    {
-        // Don't let Qt take DRM master from us during pl_vulkan_create_swapchain()
-        DrmMasterLocker locker;
-
-        m_Swapchain = pl_vulkan_create_swapchain(m_Vulkan, &vkSwapchainParams);
-        if (m_Swapchain == nullptr) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "pl_vulkan_create_swapchain() failed");
-            return false;
-        }
+    m_Swapchain = PlVkShared::createSwapchain(m_Vulkan, m_VkSurface, m_VkPresentMode, depth);
+    if (m_Swapchain == nullptr) {
+        return false;
     }
 
     m_SwapchainDepth = depth;
@@ -913,7 +1097,7 @@ void PlVkRenderer::waitToRender()
 
     // Handle the swapchain being resized
     int vkDrawableW, vkDrawableH;
-    SDL_Vulkan_GetDrawableSize(m_Window, &vkDrawableW, &vkDrawableH);
+    PlVkShared::getDrawableSize(m_Window, &vkDrawableW, &vkDrawableH);
     if (!pl_swapchain_resize(m_Swapchain, &vkDrawableW, &vkDrawableH)) {
         // Swapchain (re)creation can fail if the window is occluded
         return;
@@ -1015,56 +1199,7 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
 
     pl_frame_from_swapchain(&targetFrame, &m_SwapchainFrame);
 
-    // We perform minimal processing under the overlay lock to avoid blocking threads updating the overlay
-    SDL_AtomicLock(&m_OverlayLock);
-    for (int i = 0; i < Overlay::OverlayMax; i++) {
-        // If we have a staging overlay, we need to transfer ownership to us
-        if (m_Overlays[i].hasStagingOverlay) {
-            if (m_Overlays[i].hasOverlay) {
-                texturesToDestroy.push_back(m_Overlays[i].overlay.tex);
-            }
-
-            // Copy the overlay fields from the staging area
-            m_Overlays[i].overlay = m_Overlays[i].stagingOverlay;
-
-            // We now own the staging overlay
-            m_Overlays[i].hasStagingOverlay = false;
-            SDL_zero(m_Overlays[i].stagingOverlay);
-            m_Overlays[i].hasOverlay = true;
-        }
-
-        // If we have an overlay but it's been disabled, free the overlay texture
-        if (m_Overlays[i].hasOverlay && !Session::get()->getOverlayManager().isOverlayEnabled((Overlay::OverlayType)i)) {
-            texturesToDestroy.push_back(m_Overlays[i].overlay.tex);
-            SDL_zero(m_Overlays[i].overlay);
-            m_Overlays[i].hasOverlay = false;
-        }
-
-        // We have an overlay to draw
-        if (m_Overlays[i].hasOverlay) {
-            // Position the overlay
-            overlayParts[i].src = { 0, 0, (float)m_Overlays[i].overlay.tex->params.w, (float)m_Overlays[i].overlay.tex->params.h };
-            float centeredX = targetFrame.crop.x0 + SDL_max(0.0f, (targetFrame.crop.x1 - targetFrame.crop.x0 - overlayParts[i].src.x1) / 2.0f);
-            if (i == Overlay::OverlayStatusUpdate) {
-                // Bottom center
-                overlayParts[i].dst.x0 = centeredX;
-                overlayParts[i].dst.y0 = SDL_max(targetFrame.crop.y0, targetFrame.crop.y1 - overlayParts[i].src.y1);
-            }
-            else if (i == Overlay::OverlayDebug) {
-                // Top center
-                overlayParts[i].dst.x0 = centeredX;
-                overlayParts[i].dst.y0 = targetFrame.crop.y0;
-            }
-            overlayParts[i].dst.x1 = overlayParts[i].dst.x0 + overlayParts[i].src.x1;
-            overlayParts[i].dst.y1 = overlayParts[i].dst.y0 + overlayParts[i].src.y1;
-
-            m_Overlays[i].overlay.parts = &overlayParts[i];
-            m_Overlays[i].overlay.num_parts = 1;
-
-            overlays.push_back(m_Overlays[i].overlay);
-        }
-    }
-    SDL_AtomicUnlock(&m_OverlayLock);
+    m_Overlays.collect(targetFrame, overlayParts, overlays, texturesToDestroy);
 
     SDL_Rect src;
     src.x = mappedFrame.crop.x0;
@@ -1228,100 +1363,9 @@ bool PlVkRenderer::testRenderFrame(AVFrame *frame)
     return true;
 }
 
-// Takes ownership of surface in all cases!
-bool PlVkRenderer::createOverlay(pl_overlay* overlay, SDL_Surface* surface)
-{
-    // Find a compatible texture format
-    SDL_assert(surface->format->format == SDL_PIXELFORMAT_ARGB8888);
-    pl_fmt texFormat = pl_find_named_fmt(m_Vulkan->gpu, "bgra8");
-    if (!texFormat) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "pl_find_named_fmt(bgra8) failed");
-        SDL_FreeSurface(surface);
-        return false;
-    }
-
-    // Create a new texture for this overlay if necessary, otherwise reuse the existing texture.
-    // NB: We're guaranteed that the render thread won't be reading this concurrently because
-    // we set hasStagingOverlay to false above.
-    pl_tex_params texParams = {};
-    texParams.w = surface->w;
-    texParams.h = surface->h;
-    texParams.format = texFormat;
-    texParams.sampleable = true;
-    texParams.host_writable = true;
-    texParams.blit_src = !!(texFormat->caps & PL_FMT_CAP_BLITTABLE);
-    texParams.debug_tag = PL_DEBUG_TAG;
-    if (!pl_tex_recreate(m_Vulkan->gpu, &overlay->tex, &texParams)) {
-        pl_tex_destroy(m_Vulkan->gpu, &overlay->tex);
-        SDL_zerop(overlay);
-        SDL_FreeSurface(surface);
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "pl_tex_recreate() failed");
-        return false;
-    }
-
-    // Upload the surface data to the new texture
-    SDL_assert(!SDL_MUSTLOCK(surface));
-    pl_tex_transfer_params xferParams = {};
-    xferParams.tex = overlay->tex;
-    xferParams.row_pitch = (size_t)surface->pitch;
-    xferParams.ptr = surface->pixels;
-    xferParams.callback = overlayUploadComplete;
-    xferParams.priv = surface;
-    if (!pl_tex_upload(m_Vulkan->gpu, &xferParams)) {
-        pl_tex_destroy(m_Vulkan->gpu, &overlay->tex);
-        SDL_zerop(overlay);
-        SDL_FreeSurface(surface);
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                     "pl_tex_upload() failed");
-        return false;
-    }
-
-    // surface is now owned by the texture upload process. It will be freed in overlayUploadComplete()
-
-    // Initialize the rest of the overlay params
-    overlay->mode = PL_OVERLAY_NORMAL;
-    overlay->coords = PL_OVERLAY_COORDS_DST_FRAME;
-    overlay->repr = pl_color_repr_rgb;
-    overlay->color = pl_color_space_srgb;
-    return true;
-}
-
 void PlVkRenderer::notifyOverlayUpdated(Overlay::OverlayType type)
 {
-    SDL_Surface* newSurface = Session::get()->getOverlayManager().getUpdatedOverlaySurface(type);
-    if (newSurface == nullptr && Session::get()->getOverlayManager().isOverlayEnabled(type)) {
-        // The overlay is enabled and there is no new surface. Leave the old texture alone.
-        return;
-    }
-
-    SDL_AtomicLock(&m_OverlayLock);
-    // We want to clear the staging overlay flag even if a staging overlay is still present,
-    // since this ensures the render thread will not read from a partially initialized pl_tex
-    // as we modify or recreate the staging overlay texture outside the overlay lock.
-    m_Overlays[type].hasStagingOverlay = false;
-    SDL_AtomicUnlock(&m_OverlayLock);
-
-    // If there's no new staging overlay, free the old staging overlay texture.
-    // NB: This is safe to do outside the overlay lock because we're guaranteed
-    // to not have racing readers/writers if hasStagingOverlay is false.
-    if (newSurface == nullptr) {
-        pl_tex_destroy(m_Vulkan->gpu, &m_Overlays[type].stagingOverlay.tex);
-        SDL_zero(m_Overlays[type].stagingOverlay);
-        return;
-    }
-
-    // newSurface is now owned by the texture upload process
-    if (!createOverlay(&m_Overlays[type].stagingOverlay, newSurface)) {
-        return;
-    }
-
-    // Make this staging overlay visible to the render thread
-    SDL_AtomicLock(&m_OverlayLock);
-    SDL_assert(!m_Overlays[type].hasStagingOverlay);
-    m_Overlays[type].hasStagingOverlay = true;
-    SDL_AtomicUnlock(&m_OverlayLock);
+    m_Overlays.notifyUpdated(m_Vulkan->gpu, type);
 }
 
 bool PlVkRenderer::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info)

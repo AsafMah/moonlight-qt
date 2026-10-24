@@ -43,6 +43,10 @@
 #include "video/slvid.h"
 #endif
 
+#include "video/pyrowave/pyrowavehoststore.h"
+#include "video/pyrowave/pyrowaveruntime.h"
+#include "video/pyrowave/pyrowavevideodecoder.h"
+
 #ifdef Q_OS_WIN32
 // Scaling the icon down on Win32 looks dreadful, so render at lower res
 #define ICON_SIZE 32
@@ -1000,6 +1004,31 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                 "V-sync %s",
                 enableVsync ? "enabled" : "disabled");
 
+    // PyroWave never goes through FFmpeg or SLVideo: PyrowaveVideoDecoder owns
+    // its Vulkan decode and presentation. Session only asks for this format
+    // after PyrowaveVideoDecoder::preflight() has passed.
+    if (videoFormat == VIDEO_FORMAT_PYROWAVE) {
+        // The decoder checks every frame against the negotiated range and
+        // follows the delivery model that the advertised capabilities chose.
+        PyrowaveSessionContract contract;
+        if (s_ActiveSession != nullptr) {
+            contract.colorRange = s_ActiveSession->m_StreamConfig.colorRange;
+            contract.hdrMode = s_ActiveSession->m_StreamConfig.hdrMode;
+            contract.pullRenderer =
+                (s_ActiveSession->m_VideoCallbacks.capabilities & CAPABILITY_PULL_RENDERER) != 0;
+        }
+        chosenDecoder = new PyrowaveVideoDecoder(testOnly, contract);
+        if (chosenDecoder->initialize(&params)) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave video decoder chosen");
+            return true;
+        }
+
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to load PyroWave decoder");
+        delete chosenDecoder;
+        chosenDecoder = nullptr;
+        return false;
+    }
+
 #ifdef HAVE_SLVIDEO
     chosenDecoder = new SLVideoDecoder(testOnly);
     if (chosenDecoder->initialize(&params)) {
@@ -1229,6 +1258,11 @@ bool Session::populateDecoderProperties(SDL_Window* window)
     }
 
     m_VideoCallbacks.capabilities = decoder->getDecoderCapabilities();
+    if (m_PyrowaveRequested) {
+        // One capability set covers both PyroWave and its H.264 fallback.
+        m_VideoCallbacks.capabilities =
+            PyrowaveVideoDecoder::advertisedCapabilities(m_VideoCallbacks.capabilities);
+    }
     if (m_VideoCallbacks.capabilities & CAPABILITY_PULL_RENDERER) {
         // It is an error to pass a push callback when in pull mode
         m_VideoCallbacks.submitDecodeUnit = nullptr;
@@ -1777,8 +1811,50 @@ bool Session::initialize(QQuickWindow* qtWindow)
     m_SupportedVideoFormats.append(VIDEO_FORMAT_H264_HIGH8_444);
     m_SupportedVideoFormats.append(VIDEO_FORMAT_H264);
 
+    // PyroWave is only used when chosen explicitly; VCC_AUTO never picks it.
+    // Without the runtime the saved choice behaves like Automatic (the
+    // settings page hides it). With the runtime, a failed preflight stops the
+    // launch with its reason instead of connecting.
+    if (m_Preferences->videoCodecConfig == StreamingPreferences::VCC_FORCE_PYROWAVE) {
+        const PyrowaveRuntime& pyrowaveRuntime = PyrowaveRuntime::get();
+        if (!pyrowaveRuntime.isAvailable()) {
+            const QString reason = pyrowaveRuntime.diagnosticMessage();
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "PyroWave unavailable, using Automatic: %s",
+                        qUtf8Printable(reason));
+        } else {
+            PyrowavePreflightRequest request;
+            request.window = testWindow;
+            request.width = m_StreamConfig.width;
+            request.height = m_StreamConfig.height;
+            request.frameRate = m_StreamConfig.fps;
+            const int hdrMode = static_cast<int>(m_Preferences->hdrMode);
+            request.hdrMode = m_Preferences->enableHdr ? hdrMode : 0;
+
+            const PyrowavePreflightResult preflight = PyrowaveVideoDecoder::preflight(request);
+            if (!preflight.ok) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "PyroWave preflight failed: %s",
+                             qUtf8Printable(preflight.reason));
+                emit displayLaunchError(PyrowaveVideoDecoder::launchErrorText(preflight.reason));
+                SDL_DestroyWindow(testWindow);
+                SDL_QuitSubSystem(SDL_INIT_VIDEO);
+                return false;
+            }
+
+            m_PyrowaveRequested = true;
+        }
+    }
+
     switch (m_Preferences->videoCodecConfig)
     {
+    case StreamingPreferences::VCC_FORCE_PYROWAVE:
+        if (m_PyrowaveRequested) {
+            // moonlight-common-c falls back to H.264 if the host doesn't
+            // negotiate PyroWave (client contract, section 1). YUV 4:4:4 is
+            // locked off while PyroWave is selected.
+            m_SupportedVideoFormats.removeByMask(~VIDEO_FORMAT_H264);
+            break;
+        }
+        [[fallthrough]];
     case StreamingPreferences::VCC_AUTO:
     {
         // Codecs are checked in order of ascending decode complexity to ensure
@@ -1982,6 +2058,10 @@ bool Session::initialize(QQuickWindow* qtWindow)
     if (ret) {
         // Video format is now locked in
         m_StreamConfig.supportedVideoFormats = m_SupportedVideoFormats.front();
+        if (m_PyrowaveRequested) {
+            m_StreamConfig.supportedVideoFormats =
+                PyrowaveVideoDecoder::advertisedVideoFormats(m_StreamConfig.supportedVideoFormats);
+        }
 
         // Populate decoder-dependent properties.
         // Must be done after validateLaunch() since m_StreamConfig is finalized.
@@ -2110,7 +2190,8 @@ bool Session::validateLaunch(SDL_Window* testWindow)
         }
     }
 
-    if (m_Preferences->enableHdr) {
+    // PyroWave negotiates HDR itself; its H.264 fallback streams SDR.
+    if (m_Preferences->enableHdr && !m_PyrowaveRequested) {
         if (m_Preferences->videoCodecConfig == StreamingPreferences::VCC_FORCE_H264) {
             emitLaunchWarning(tr("HDR is not supported using the H.264 codec."));
             m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_10BIT);
@@ -2173,7 +2254,8 @@ bool Session::validateLaunch(SDL_Window* testWindow)
         }
     }
 
-    if (m_Preferences->enableYUV444) {
+    // YUV 4:4:4 is locked off while PyroWave is selected.
+    if (m_Preferences->enableYUV444 && !m_PyrowaveRequested) {
         if (!(m_Computer->serverCodecModeSupport & SCM_MASK_YUV444)) {
             emitLaunchWarning(tr("Your host PC doesn't support YUV 4:4:4 streaming."));
             m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_YUV444);
@@ -3761,6 +3843,24 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
     case SDL_CODE_FLUSH_WINDOW_EVENT_BARRIER:
         m_FlushingWindowEventsRef--;
         break;
+    case SDL_CODE_PYROWAVE_FATAL: {
+        // PyroWave gave up after its bounded recovery. End the stream with
+        // the failing stage; the codec is never switched mid-stream.
+        QString* reason = static_cast<QString*>(event.data2);
+        m_UnexpectedTermination = true;
+        emit displayLaunchError(
+            PyrowaveVideoDecoder::fatalErrorText((int)(intptr_t)event.data1, *reason));
+        delete reason;
+
+        SDL_Event quitEvent = {};
+        quitEvent.type = SDL_QUIT;
+        quitEvent.quit.timestamp = SDL_GetTicks();
+        pushEventOrWarn(quitEvent);
+        break;
+    }
+    case SDL_CODE_PYROWAVE_FALLBACK_NOTICE:
+        showStreamingToast(PyrowaveVideoDecoder::fallbackNotice((int)(intptr_t)event.data1), 8000);
+        break;
     case SDL_CODE_GAMECONTROLLER_RUMBLE:
         m_InputHandler->rumble((uint16_t)(uintptr_t)event.data1,
                                (uint16_t)((uintptr_t)event.data2 >> 16),
@@ -4342,6 +4442,34 @@ bool Session::startConnectionAsync()
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "Failed to set initial local cursor mode: %d",
                         cursorResult);
+        }
+    }
+
+    {
+        // Remember what this host said about PyroWave for the settings page.
+        QString hostUuid, hostName;
+        {
+            QReadLocker locker(&m_Computer->lock);
+            hostUuid = m_Computer->uuid;
+            hostName = m_Computer->name;
+        }
+        const auto offer = PyrowaveVideoDecoder::hostOfferFromConnection(m_ActiveVideoFormat);
+        PyrowaveHostStore::recordConnection(hostUuid, hostName, offer);
+
+        // PyroWave was requested but the host negotiated another codec. Keep
+        // streaming and say so once; the saved setting stays as it is.
+        if (m_PyrowaveRequested && m_ActiveVideoFormat != VIDEO_FORMAT_PYROWAVE &&
+            !m_PyrowaveFallbackNoticeShown) {
+            m_PyrowaveFallbackNoticeShown = true;
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "PyroWave was not negotiated; streaming with format 0x%x",
+                        m_ActiveVideoFormat);
+
+            SDL_Event noticeEvent = {};
+            noticeEvent.type = SDL_USEREVENT;
+            noticeEvent.user.code = SDL_CODE_PYROWAVE_FALLBACK_NOTICE;
+            noticeEvent.user.data1 = (void*)(intptr_t)m_ActiveVideoFormat;
+            pushEventOrWarn(noticeEvent);
         }
     }
 

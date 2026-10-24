@@ -396,6 +396,26 @@ HEADERS += \
     pipwbackground.h \
     uifont.h
 
+# PyroWave (experimental). The runtime is loaded at run time, never linked, so
+# these files build on every platform. The Vulkan capability check and the
+# decoder (pyrowavevulkan.cpp) compile only with HAVE_LIBPLACEBO_VULKAN, which
+# provides the Vulkan headers and libplacebo.
+SOURCES += \
+    streaming/video/pyrowave/pyrowavecapabilities.cpp \
+    streaming/video/pyrowave/pyrowavehoststore.cpp \
+    streaming/video/pyrowave/pyrowaveruntime.cpp \
+    streaming/video/pyrowave/pyrowavestatus.cpp \
+    streaming/video/pyrowave/pyrowavevideodecoder.cpp \
+    streaming/video/pyrowave/pyrowavevulkan.cpp
+HEADERS += \
+    streaming/video/pyrowave/pyrowaveabi.h \
+    streaming/video/pyrowave/pyrowavecapabilities.h \
+    streaming/video/pyrowave/pyrowavehoststore.h \
+    streaming/video/pyrowave/pyrowaveruntime.h \
+    streaming/video/pyrowave/pyrowavestatus.h \
+    streaming/video/pyrowave/pyrowavevideodecoder.h \
+    streaming/video/pyrowave/pyrowavevulkan.h
+
 # Conditional files for non-Steam Link builds
 !config_SL: SOURCES += streaming/micstream.cpp
 !config_SL: HEADERS += streaming/micstream.h

@@ -929,6 +929,12 @@ ApplicationWindow {
         }
     }
 
+    // 串流结束后的会话小结。和上面的错误框一样挂在永不销毁的 main.qml 上，
+    // 因为 StreamSegue 在它弹出之前就已经出栈了。
+    SessionSummaryDialog {
+        id: sessionSummaryDialog
+    }
+
     GamepadKeyboard {
         id: gamepadKeyboard
     }

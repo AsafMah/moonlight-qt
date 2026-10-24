@@ -96,6 +96,7 @@ static QString getStartupApplicationDir(const char* argv0)
 #include "streaming/waylandqtsdlbridge.h"
 #endif
 #include "settings/streamingpreferences.h"
+#include "settings/sessionstatssettings.h"
 #include "settings/statsoverlaysettings.h"
 #include "gui/sdlgamepadkeynavigation.h"
 #include "gui/windowplacement.h"
@@ -1397,6 +1398,9 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonType<StatsOverlaySettings>(
         "StatsOverlaySettings", 1, 0, "StatsOverlaySettings",
         [](QQmlEngine*, QJSEngine*) -> QObject* { return new StatsOverlaySettings(); });
+    qmlRegisterSingletonType<SessionStatsSettings>(
+        "SessionStatsSettings", 1, 0, "SessionStatsSettings",
+        [](QQmlEngine*, QJSEngine*) -> QObject* { return new SessionStatsSettings(); });
     qmlRegisterType<ImageUtils>("ImageUtils", 1, 0, "ImageUtils");
     qmlRegisterType<WindowPlacement>("WindowPlacement", 1, 0, "WindowPlacement");
     qmlRegisterType<WindowsWindowChrome>("WindowsWindowChrome", 1, 0, "WindowsWindowChrome");

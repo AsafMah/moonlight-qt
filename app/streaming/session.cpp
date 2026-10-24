@@ -4936,6 +4936,9 @@ void Session::exec()
     // (m_UnexpectedTermination is set back to true).
     m_UnexpectedTermination = false;
 
+    // Follow the stream's stats for the session summary (and CSV, if enabled)
+    startSessionStatsRecorder();
+
     // Start rich presence to indicate we're in game
     RichPresenceManager presence(*m_Preferences, m_App.name);
 
@@ -4953,6 +4956,7 @@ void Session::exec()
     m_MenuButton = nullptr;
     m_Toast = new OverlayToast(m_WaylandStreamWindow, overlayWindowMode);
     createStatsOverlay(overlayWindowMode);
+    setupSessionStatsMenu();
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
     // Developer-only harness: Session supplies integration callbacks while
     // the test class owns the panel, picker, replay scheduler, and cleanup.
@@ -5910,6 +5914,9 @@ DispatchDeferredCleanup:
     delete m_VideoDecoder;
     m_VideoDecoder = nullptr;
     SDL_UnlockMutex(m_DecoderLock);
+
+    // No more stats windows are coming
+    finishSessionStatsRecorder();
 
     // Propagate state changes from the SDL window back to the Qt window
     //

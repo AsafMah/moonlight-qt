@@ -4,6 +4,7 @@ import QtQuick.Window 2.2
 
 import SdlGamepadKeyNavigation 1.0
 import Session 1.0
+import SessionStatsSettings 1.0
 import SystemProperties 1.0
 import StreamingPreferences 1.0
 
@@ -115,6 +116,14 @@ Item {
         // Re-enable GUI gamepad usage now
         SdlGamepadKeyNavigation.enable()
 
+        // 正常结束的 GUI 串流才弹小结：出错时用户要看的是错误框，命令行启动会直接退出。
+        // Session 在 readyForDeletion 之后就没了，所以趁现在把数据取出来。
+        var summary = null
+        if (!quitAfter && !streamSegueErrorDialog.text && session &&
+                SessionStatsSettings.showSummary) {
+            summary = session.sessionSummary()
+        }
+
         // Pop the StreamSegue off the stack if this is a GUI-based app launch
         if (!quitAfter) {
             stackView.pop()
@@ -135,6 +144,9 @@ Item {
             if (streamSegueErrorDialog.text) {
                 streamSegueErrorDialog.quitAfter = quitAfter
                 streamSegueErrorDialog.open()
+            }
+            else if (summary && summary.valid) {
+                sessionSummaryDialog.present(summary)
             }
         }
     }
@@ -158,6 +170,9 @@ Item {
     StackView.onActivated: {
         // Hide the toolbar before we start loading
         toolBar.shown = false
+
+        // A summary left open from the last stream is stale now
+        sessionSummaryDialog.close()
 
         // Hook up our signals
         session.stageStarting.connect(stageStarting)

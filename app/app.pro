@@ -269,6 +269,9 @@ SOURCES += \
     gui/computermodel.cpp \
     gui/shortcutmodel.cpp \
     gui/appmodel.cpp \
+    streaming/sessionstatsrecording.cpp \
+    streaming/stats/sessionstatsrecorder.cpp \
+    streaming/stats/sessionsummary.cpp \
     streaming/stats/statsmath.cpp \
     streaming/stats/streamstatsmodel.cpp \
     streaming/stats/videostatsbridge.cpp \
@@ -291,7 +294,9 @@ SOURCES += \
     streaming/video/overlaystatswindow.cpp \
     streaming/video/overlaystatstooltip.cpp \
     streaming/video/overlaystatscontroller.cpp \
+    streaming/sessionstatsmenu.cpp \
     streaming/sessionstatsoverlay.cpp \
+    settings/sessionstatssettings.cpp \
     settings/statsoverlaysettings.cpp \
     backend/systemproperties.cpp \
     backend/usbforwardingenvironment.cpp \
@@ -357,6 +362,8 @@ HEADERS += \
     gui/appmodel.h \
     streaming/video/decoder.h \
     streaming/bandwidth.h \
+    streaming/stats/sessionstatsrecorder.h \
+    streaming/stats/sessionsummary.h \
     streaming/stats/statsmath.h \
     streaming/stats/statssnapshot.h \
     streaming/stats/streamstatsmodel.h \
@@ -385,6 +392,7 @@ HEADERS += \
     streaming/video/overlaystatswindow.h \
     streaming/video/overlaystatstooltip.h \
     streaming/video/overlaystatscontroller.h \
+    settings/sessionstatssettings.h \
     settings/statsoverlaysettings.h \
     backend/systemproperties.h \
     imageutils.h \

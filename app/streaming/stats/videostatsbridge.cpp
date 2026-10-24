@@ -78,11 +78,10 @@ void readRtpCounters(StatsWindow& window)
     window.fecPackets = rtpStats->packetCountFec;
 
     // RTP_VIDEO_STATS has fields for FEC recovered and failed packets, but
-    // moonlight-common-c only counts them for audio. Leave them unreported
-    // (-1) rather than showing a misleading zero. Once the video queue counts
-    // them, copy packetCountFecRecovered and packetCountFecFailed here.
-    window.fecRecoveredPackets = -1;
-    window.fecUnrecoverablePackets = -1;
+    // moonlight-common-c only counts them for audio. Leave the FEC results
+    // unreported (-1) rather than showing a misleading zero.
+    window.fecRecoveredFrames = -1;
+    window.fecUnrecoverableFrames = -1;
 }
 
 int formatMetrics(const StatsSnapshot& snapshot, const VIDEO_STATS& stats, bool sessionWide,

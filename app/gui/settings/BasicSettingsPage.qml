@@ -807,9 +807,17 @@ Column {
                          qsTr("Note:") + "\n" +
                          qsTr("If available, ensure that appropriate settings (i.e. RTX Video enhancement) are enabled in your GPU driver configuration.") + "\n" +
                          qsTr("HDR rendering has diverse issues depending on the GPU used, we are working on it but we advise to currently use Non-HDR.") + "\n" +
-                         qsTr("Be advised that using this feature on laptops running on battery power may lead to significant battery drain.")
+                         qsTr("Be advised that using this feature on laptops running on battery power may lead to significant battery drain.") +
+                         (pyrowaveSelected
+                          ? "\n" + qsTranslate("PyrowaveCodecPanel", "Fixed while PyroWave is selected") + ": " +
+                            qsTranslate("PyrowaveCodecPanel", "It runs inside the D3D11 renderer, which PyroWave doesn't use. Your saved setting is kept and still applies to other codecs, including the fallback codec.")
+                          : "")
 
-            controlEnabled: enhancementCapable && !softwareDecoderForced
+            readonly property bool pyrowaveSelected: PyrowaveStatus.runtimeAvailable &&
+                StreamingPreferences.videoCodecConfig === StreamingPreferences.VCC_FORCE_PYROWAVE
+
+            // Greyed out while PyroWave is selected, keeping the saved value
+            controlEnabled: enhancementCapable && !softwareDecoderForced && !pyrowaveSelected
             checked: controlEnabled && StreamingPreferences.videoEnhancement
             onToggled: function(value) { StreamingPreferences.videoEnhancement = value }
         }

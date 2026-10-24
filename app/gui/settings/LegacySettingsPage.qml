@@ -11,6 +11,7 @@ import SdlGamepadKeyNavigation 1.0
 import ComputerManager 1.0
 import SystemProperties 1.0
 import ImageUtils 1.0
+import PyrowaveStatus 1.0
 
 // 这六个分类保留在同一文件中，以维持现有 LegacySettingsPage 翻译上下文。
 // 视觉和交互已经迁移到 SettingsCard / SettingsRow / ToggleRow。
@@ -22,6 +23,14 @@ Column {
     property string category: ""
     // 关闭捕获时保留用户上次选择的作用范围，重新开启后恢复原模式。
     property int captureSysKeysSelection: StreamingPreferences.CSK_FULLSCREEN
+    // PyroWave fixes some video pipeline settings (see PyrowaveCodecPanel).
+    // Their rows are greyed out and keep the saved values.
+    readonly property bool pyrowaveSelected: PyrowaveStatus.runtimeAvailable &&
+        StreamingPreferences.videoCodecConfig === StreamingPreferences.VCC_FORCE_PYROWAVE
+
+    function pyrowaveLockNote(reason) {
+        return qsTranslate("PyrowaveCodecPanel", "Fixed while PyroWave is selected") + ": " + reason
+    }
 
     function applyLocalBackgroundImage(fileUrl) {
         var validationError = localBackgroundImageUtils.validateLocalBackgroundImage(fileUrl)
@@ -628,6 +637,10 @@ Column {
 
         ChoiceRow {
             title: qsTr("Video decoder")
+            description: settingsPage.pyrowaveSelected
+                         ? settingsPage.pyrowaveLockNote(qsTranslate("PyrowaveCodecPanel", "PyroWave always decodes on the GPU with Vulkan. Your saved setting is kept and still applies to other codecs, including the fallback codec."))
+                         : ""
+            controlEnabled: !settingsPage.pyrowaveSelected
             selectedValue: StreamingPreferences.videoDecoderSelection
             onValueActivated: function(value) { StreamingPreferences.videoDecoderSelection = value }
 
@@ -654,8 +667,13 @@ Column {
 
         ToggleRow {
             title: qsTr("Enable YUV 4:4:4")
-            description: qsTr("Good for streaming desktop and text-heavy games, but not recommended for fast-paced games.")
-            checked: StreamingPreferences.enableYUV444
+            description: qsTr("Good for streaming desktop and text-heavy games, but not recommended for fast-paced games.") +
+                         (settingsPage.pyrowaveSelected
+                          ? "\n" + settingsPage.pyrowaveLockNote(qsTranslate("PyrowaveCodecPanel", "The PyroWave stream contract covers 4:2:0 only, and its fallback codec streams 4:2:0 too. Your saved setting is kept."))
+                          : "")
+            // Shows what PyroWave streams (off) while the saved value is kept
+            controlEnabled: !settingsPage.pyrowaveSelected
+            checked: StreamingPreferences.enableYUV444 && !settingsPage.pyrowaveSelected
             onToggled: function(value) {
                 if (StreamingPreferences.enableYUV444 === value) {
                     return

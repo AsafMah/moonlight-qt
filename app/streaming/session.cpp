@@ -323,6 +323,37 @@ static QString gamepadQuitComboGlyphText(GamepadUiStyle style,
     }
 }
 
+// Qt key for an SDL key that navigates the overlay menu, or 0. Escape is
+// handled separately (back/close on key-up).
+static int overlayMenuNavigationKey(const SDL_KeyboardEvent& key)
+{
+    switch (key.keysym.sym) {
+    case SDLK_UP:
+        return Qt::Key_Up;
+    case SDLK_DOWN:
+        return Qt::Key_Down;
+    case SDLK_LEFT:
+        return Qt::Key_Left;
+    case SDLK_RIGHT:
+        return Qt::Key_Right;
+    case SDLK_TAB:
+        return (key.keysym.mod & KMOD_SHIFT) ? Qt::Key_Backtab : Qt::Key_Tab;
+    case SDLK_PAGEUP:
+        return Qt::Key_PageUp;
+    case SDLK_PAGEDOWN:
+        return Qt::Key_PageDown;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:
+        return Qt::Key_Return;
+    case SDLK_SPACE:
+        return Qt::Key_Space;
+    case SDLK_BACKSPACE:
+        return Qt::Key_Backspace;
+    default:
+        return 0;
+    }
+}
+
 OverlayMenuPanel::MenuAction menuPlacementActionForPreference(
         StreamingPreferences::OverlayMenuPosition position)
 {
@@ -5670,6 +5701,17 @@ void Session::exec()
                 }
                 break;
             }
+            // While the menu is open, its navigation keys drive it and never
+            // reach the host (both halves are swallowed, like Escape).
+            if (m_MenuPanel && (m_MenuPanel->isMenuVisible() || m_MenuPanel->isClosing())) {
+                const int menuKey = overlayMenuNavigationKey(event.key);
+                if (menuKey != 0) {
+                    if (event.type == SDL_KEYDOWN && m_MenuPanel->isMenuVisible()) {
+                        m_MenuPanel->handleNavigationKey(menuKey);
+                    }
+                    break;
+                }
+            }
             // Escape also ends moving the performance overlay
             if (m_StatsOverlay && m_StatsOverlay->isEditing() &&
                 event.key.keysym.sym == SDLK_ESCAPE) {
@@ -5853,10 +5895,16 @@ void Session::exec()
                         m_MenuPanel->gamepadMoveDown();
                         break;
                     case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
-                        m_MenuPanel->gamepadAdjustSlider(-1);
+                        m_MenuPanel->gamepadMoveHorizontal(-1);
                         break;
                     case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-                        m_MenuPanel->gamepadAdjustSlider(1);
+                        m_MenuPanel->gamepadMoveHorizontal(1);
+                        break;
+                    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+                        m_MenuPanel->gamepadSwitchTab(-1);
+                        break;
+                    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+                        m_MenuPanel->gamepadSwitchTab(1);
                         break;
                     case SDL_CONTROLLER_BUTTON_A:
                         m_MenuPanel->gamepadSelect();

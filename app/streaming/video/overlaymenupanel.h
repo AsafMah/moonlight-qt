@@ -24,23 +24,27 @@
 #include "overlaywindowpolicy.h"
 
 /**
- * OverlayMenuPanel - Multi-level Qt overlay menu for streaming sessions.
+ * OverlayMenuPanel - Tabbed, multi-level Qt overlay menu for streaming sessions.
  *
  * Rendered by OS compositor (DWM), completely independent of the
  * D3D11/SDL/EGL video rendering pipeline.
  *
  * Menu structure:
- *   Level 0 (Top):      Quick Actions >, Menu Position >, Bitrate >, Fullscreen,
- *                        Microphone [toggle], Disconnect
- *   Level 1 (Actions):  Quit, Performance Stats, Mouse Mode, Cursor, Minimize, ...
- *   Level 2 (Bitrate):  piecewise-linear scrubber row + 1/2/5/10/20/30/50/100 Mbps presets
- *   Level 3 (Position): Top, Right, Left, Floating button, Disabled
- *   Developer builds may append a function-test panel entry.
- *   Then:             USB Devices (when enabled), Send Keys (special keys and
- *                      key macros), Host Commands (Foundation Sunshine only).
- *                      These levels have no fixed index; see m_SendKeysLevel.
+ *   Tab bar:     Quick | Display | Input | Host | Session. Each top-level entry
+ *                is filed into a tab by tabForAction() (one table, keyed by
+ *                MenuAction). Tabs without entries are hidden, and the last
+ *                tab is remembered for the panel's lifetime (one session).
+ *   Tab roots:   one MenuLevel per visible tab, holding that tab's entries.
+ *   Sub-levels:  Bitrate (scrubber + presets), Menu Position, USB Devices
+ *                (when enabled), Performance Overlay, Send Keys, Host Commands
+ *                (Foundation Sunshine only). A sub-level records the action of
+ *                the entry that opens it (MenuLevel::openAction) and is looked
+ *                up by it; no level has a fixed index.
  *
- * Sub-level navigation uses a title bar with back button (◂ Title).
+ * Navigation: mouse (tabs, rows, back/close), gamepad (LB/RB tabs, D-pad
+ * move, A select, B back/close) and keyboard (handleNavigationKey()).
+ * Sub-level navigation uses a title bar with back button (◂ Title); back
+ * returns to the tab the sub-level was opened from.
  * Square industrial theme matching Theme.qml, with hard shadows and brand accents.
  */
 class OverlayMenuPanel : public OverlayRasterWindow
@@ -91,11 +95,31 @@ public:
         OpenHostCommands,
         SendHostKeys,   // payload: HostKeys payload ("special:<id>" or "keys:<combo>")
         RunHostCommand, // payload: Foundation Sunshine super command id
+        // Tags of the top-level SubMenu entries for the fixed sub-levels.
+        // Never dispatched.
+        OpenBitrate,
+        OpenMenuPosition,
+        OpenRemoteUsbDevices,
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         OpenStylusReplayPanel,
 #endif
         MenuActionMax
     };
+
+    // Tabs of the top level, in display order. Count is not a tab.
+    enum class MenuTab
+    {
+        Quick,
+        Display,
+        Input,
+        Host,
+        Session,
+        Count
+    };
+
+    // Tab a top-level entry belongs to (see the table in the .cpp).
+    static MenuTab tabForAction(MenuAction action);
+    static QString tabTitle(MenuTab tab);
 
     enum class FileMappingState {
         Unknown,
@@ -255,6 +279,25 @@ public:
         }
     }
 
+    // Visible tabs in display order, and the one shown (or that a sub-level
+    // was opened from).
+    std::vector<MenuTab> visibleTabs() const;
+    MenuTab currentTab() const;
+    bool isAtTabRoot() const { return isTabRootLevel(m_CurrentLevel); }
+    // Shows the root of a tab of the visible menu. Returns false when the
+    // menu is hidden or the tab has no entries.
+    bool showTab(MenuTab tab);
+    // Opens the sub-level behind a top-level entry (an Open* action) of the
+    // visible menu; back returns to the entry's tab. Returns false when the
+    // menu is hidden or the level doesn't exist.
+    bool showLevel(MenuAction openAction);
+    // Layout queries, in window coordinates, so callers and tests can find
+    // rows and tabs by identity instead of by pixel offsets.
+    // Row of the shown level with this action (and payload, when given), or -1.
+    int rowOfAction(MenuAction action, const QString& payload = QString()) const;
+    QRect rowGeometry(int row) const;
+    QRect tabGeometry(MenuTab tab) const; // empty when the tab is hidden
+
     // Gamepad navigation
     void gamepadMoveUp();
     void gamepadMoveDown();
@@ -263,6 +306,16 @@ public:
     // Step the focused slider row (DPAD left/right); direction is -1 or +1.
     // Rapid consecutive presses accelerate the step size.
     void gamepadAdjustSlider(int direction);
+    // Previous (-1) or next (+1) visible tab, wrapping (LB/RB)
+    void gamepadSwitchTab(int direction);
+    // D-pad left/right: drives the level's slider row if it has one, else
+    // switches tabs on a tab root.
+    void gamepadMoveHorizontal(int direction);
+    // Keyboard navigation with Qt key codes: arrows move (left/right like
+    // the D-pad), Tab/Shift+Tab and PageUp/PageDown switch tabs,
+    // Enter/Space select, Backspace/Escape go back. Returns false for keys
+    // that are not menu keys, or when the menu is hidden.
+    bool handleNavigationKey(int key, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
 
 protected:
     void paintOverlay(QPainter& painter) override;
@@ -309,6 +362,9 @@ private:
     struct MenuLevel {
         QString              title;
         std::vector<MenuItem> items;
+        // Tab roots carry their tab; sub-levels the action of their entry
+        std::optional<MenuTab> tab;
+        MenuAction openAction = MenuAction::MenuActionMax;
     };
 
     enum class AnchorMode { RightEdge, LeftEdge, TopEdge, AtCursor };
@@ -327,6 +383,14 @@ private:
     void applyStatsOverlayState();
     QString shortcutDetail(MenuAction action) const; // live key binding text
     void navigateToLevel(int level);
+    // Tab roots and sub-levels, looked up by identity
+    bool isTabRootLevel(int level) const;
+    int tabRootLevel() const; // root of m_CurrentTab, or the first visible tab
+    int levelForOpenAction(MenuAction action) const; // -1 when absent
+    MenuItem* findRootItem(MenuAction action);
+    void showTabLevel(int level, int direction); // direction: slide, 0 for none
+    int contentTop() const { return m_TitleHeight + m_TabBarHeight + m_Padding; }
+    QRect tabRect(int visibleIndex, int contentWidth) const;
     void repositionWindow();
     void showInternal();     // shared show logic after geometry is set
     void schedulePointerOutsideCheck();
@@ -346,13 +410,17 @@ private:
     void commitBitrateNow();                        // flush pending change to callback
     void refreshBitrateDetails();                   // level-0 detail + preset checkmarks
 
-    // Index of the performance overlay level. It is appended after the
-    // fixed levels, so it is looked up rather than hard-coded.
+    // Index of the performance overlay level, refreshed on every build
+    // from levelForOpenAction().
     int m_StatsOverlayLevel = -1;
     StatsOverlay::Preset m_StatsOverlayPreset = StatsOverlay::Preset::Off;
     bool m_StatsOverlayEditable = true;
 
     std::vector<MenuLevel> m_MenuLevels;
+    // Level indices of the visible tab roots, in display order
+    std::vector<int> m_TabLevels;
+    // Last chosen tab; survives rebuilds, closes and reopens
+    MenuTab m_CurrentTab = MenuTab::Quick;
     int  m_CurrentLevel;
     int  m_HoveredIndex;
     bool m_Visible;
@@ -408,11 +476,13 @@ private:
     int m_ShadowMargin;
     int m_TitleHeight;
     int m_IconAreaWidth;
+    int m_TabBarHeight;
 
     // Fonts
     QFont m_LabelFont;
     QFont m_DetailFont;
     QFont m_TitleFont;
+    QFont m_TabFont;
     QHash<QString, QIcon> m_MenuIcons;
 
     // Anti-flicker: grace period after show

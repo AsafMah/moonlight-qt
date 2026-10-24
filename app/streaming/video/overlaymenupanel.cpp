@@ -87,6 +87,70 @@ int sliderPositionToBitrate(double sliderPosition)
 constexpr int kBitrateCommitDelayMs = 450;
 // Bottom hint bar height, shown only while a gamepad is connected
 constexpr int kGamepadHintBarHeight = 30;
+// itemAtPos() codes for the tab bar: kTabHitBase - visible tab index
+constexpr int kTabHitBase = -100;
+
+using MenuAction = OverlayMenuPanel::MenuAction;
+using MenuTab = OverlayMenuPanel::MenuTab;
+
+struct TabAssignment
+{
+    MenuAction action;
+    MenuTab tab;
+};
+
+// Tab of every top-level menu entry, keyed by the entry's MenuAction.
+//
+// This is the only place that files entries into tabs. To put a new entry
+// in a tab, add ONE line here: { MenuAction::YourAction, MenuTab::Display }.
+// - Entries appear in their tab in the order of this table (lines of other
+//   tabs in between don't matter).
+// - An entry missing from the table lands at the end of the Quick tab.
+// - A tab with no entries (e.g. Session in release builds today, or Host
+//   without host features) is hidden, so a tab needs no other registration.
+// Sub-level rows (presets, keys, commands, devices) are not listed: they live
+// in their sub-level, which opens from the listed Open* entry.
+constexpr TabAssignment kTabAssignments[] = {
+    // Quick: the most used toggles and leaving the stream
+    { MenuAction::ToggleStatsOverlay, MenuTab::Quick },
+    { MenuAction::ToggleMouseMode, MenuTab::Quick },
+    { MenuAction::ToggleFullScreen, MenuTab::Quick },
+    { MenuAction::ToggleMinimize, MenuTab::Quick },
+    { MenuAction::ToggleMicrophone, MenuTab::Quick },
+    { MenuAction::Quit, MenuTab::Quick },
+    { MenuAction::QuitAndExit, MenuTab::Quick },
+    // Display: what the stream looks like
+    { MenuAction::OpenStatsOverlay, MenuTab::Display },
+    { MenuAction::OpenBitrate, MenuTab::Display },
+    { MenuAction::OpenMenuPosition, MenuTab::Display },
+    // Input: keys sent to the host, mouse/keyboard/gamepad options, USB
+    { MenuAction::OpenSendKeys, MenuTab::Input },
+    { MenuAction::ToggleGamepadMouse, MenuTab::Input },
+    { MenuAction::ToggleCursorHide, MenuTab::Input },
+    { MenuAction::UngrabInput, MenuTab::Input },
+    { MenuAction::TogglePointerRegionLock, MenuTab::Input },
+    { MenuAction::PasteText, MenuTab::Input },
+    { MenuAction::OpenRemoteUsbDevices, MenuTab::Input },
+    // Host: features the host offers
+    { MenuAction::OpenHostCommands, MenuTab::Host },
+    { MenuAction::ShowHostFiles, MenuTab::Host },
+    // Session: the running session
+#ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
+    { MenuAction::OpenStylusReplayPanel, MenuTab::Session },
+#endif
+};
+constexpr int kTabAssignmentCount = int(sizeof(kTabAssignments) / sizeof(kTabAssignments[0]));
+
+// Position of an action in kTabAssignments; unlisted actions sort last
+int tabAssignmentOrder(MenuAction action)
+{
+    for (int i = 0; i < kTabAssignmentCount; i++) {
+        if (kTabAssignments[i].action == action) {
+            return i;
+        }
+    }
+    return kTabAssignmentCount;
+}
 }
 
 OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode)
@@ -114,6 +178,7 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode
     m_ShadowMargin = 8;
     m_TitleHeight  = 32;
     m_IconAreaWidth = 28;
+    m_TabBarHeight = 30;
 
     m_LabelFont.setFamilies(UiFont::familyChain(QStringLiteral("Manrope")));
     m_LabelFont.setPointSize(10);
@@ -127,6 +192,10 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode
     m_TitleFont.setWeight(QFont::DemiBold);
     m_TitleFont.setLetterSpacing(QFont::AbsoluteSpacing, 1.5);
 
+    m_TabFont = m_DetailFont;
+    m_TabFont.setWeight(QFont::DemiBold);
+    m_TabFont.setLetterSpacing(QFont::AbsoluteSpacing, 1.0);
+
     // Reuse the same bundled Fluent 24 Regular assets as settings/toolbars.
     // Keep QIcon instances alive so Qt can cache rasterizations for each DPI.
     for (const QString &name : {QStringLiteral("tb-settings"), QStringLiteral("menu-position"),
@@ -137,7 +206,8 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode
              QStringLiteral("tb-back")}) {
         m_MenuIcons.insert(name, QIcon(QStringLiteral(":/res/fluent/%1.svg").arg(name)));
     }
-    for (const QString& name : { QStringLiteral("cat-input"), QStringLiteral("cat-host") }) {
+    for (const QString& name : { QStringLiteral("cat-input"), QStringLiteral("cat-host"),
+                                 QStringLiteral("tb-network") }) {
         m_MenuIcons.insert(name, QIcon(QStringLiteral(":/res/fluent/%1.svg").arg(name)));
     }
 
@@ -258,88 +328,105 @@ QString OverlayMenuPanel::shortcutDetail(MenuAction action) const
     return texts.join(QStringLiteral(" / "));
 }
 
+OverlayMenuPanel::MenuTab OverlayMenuPanel::tabForAction(MenuAction action)
+{
+    const int order = tabAssignmentOrder(action);
+    return order < kTabAssignmentCount ? kTabAssignments[order].tab : MenuTab::Quick;
+}
+
+QString OverlayMenuPanel::tabTitle(MenuTab tab)
+{
+    switch (tab) {
+    case MenuTab::Quick:
+        return tr("Quick");
+    case MenuTab::Display:
+        return tr("Display");
+    case MenuTab::Input:
+        return tr("Input");
+    case MenuTab::Host:
+        return tr("Host");
+    case MenuTab::Session:
+        return tr("Session");
+    case MenuTab::Count:
+        break;
+    }
+    return QString();
+}
+
+bool OverlayMenuPanel::isTabRootLevel(int level) const
+{
+    return level >= 0 && level < static_cast<int>(m_MenuLevels.size()) &&
+           m_MenuLevels[level].tab.has_value();
+}
+
+int OverlayMenuPanel::tabRootLevel() const
+{
+    for (int level : m_TabLevels) {
+        if (*m_MenuLevels[level].tab == m_CurrentTab) {
+            return level;
+        }
+    }
+    // The remembered tab is empty right now; show the first one instead
+    // but keep remembering it, in case its entries come back.
+    return m_TabLevels.empty() ? 0 : m_TabLevels.front();
+}
+
+int OverlayMenuPanel::levelForOpenAction(MenuAction action) const
+{
+    if (action == MenuAction::MenuActionMax) {
+        return -1;
+    }
+    for (int i = 0; i < static_cast<int>(m_MenuLevels.size()); i++) {
+        if (m_MenuLevels[i].openAction == action) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+OverlayMenuPanel::MenuItem* OverlayMenuPanel::findRootItem(MenuAction action)
+{
+    for (int level : m_TabLevels) {
+        for (MenuItem& item : m_MenuLevels[level].items) {
+            if (item.action == action) {
+                return &item;
+            }
+        }
+    }
+    return nullptr;
+}
+
+std::vector<OverlayMenuPanel::MenuTab> OverlayMenuPanel::visibleTabs() const
+{
+    std::vector<MenuTab> tabs;
+    for (int level : m_TabLevels) {
+        tabs.push_back(*m_MenuLevels[level].tab);
+    }
+    return tabs;
+}
+
+OverlayMenuPanel::MenuTab OverlayMenuPanel::currentTab() const
+{
+    const int level = tabRootLevel();
+    return isTabRootLevel(level) ? *m_MenuLevels[level].tab : m_CurrentTab;
+}
+
 void OverlayMenuPanel::buildMenuLevels()
 {
-    // The overlay level's index can change between builds; follow it by identity
-    const bool inStatsOverlayLevel =
-        m_StatsOverlayLevel >= 0 && m_CurrentLevel == m_StatsOverlayLevel;
-    // Host action levels are appended after the fixed ones, so their index
-    // can change between builds; follow them by identity instead.
-    const MenuAction currentHostLevel = m_CurrentLevel == m_SendKeysLevel ? MenuAction::OpenSendKeys
-                                        : m_CurrentLevel == m_HostCommandsLevel
-                                            ? MenuAction::OpenHostCommands
-                                            : MenuAction::MenuActionMax;
+    // Level indices change between builds; follow an open sub-level by the
+    // action of the entry that opened it.
+    const MenuAction openLevelAction = m_CurrentLevel >= 0 &&
+                                               m_CurrentLevel < static_cast<int>(m_MenuLevels.size())
+                                           ? m_MenuLevels[m_CurrentLevel].openAction
+                                           : MenuAction::MenuActionMax;
 
     m_MenuLevels.clear();
+    m_TabLevels.clear();
 
-    // === Level 0: Top-level categories ===
-    MenuLevel top;
-    top.title = tr("Overlay Menu");
-    top.items.push_back({tr("Quick Actions"), QString(),  MenuItemType::SubMenu,
-                         MenuAction::MenuActionMax, 1, true, false, false});
-    top.items.push_back({tr("Menu Position"), QString(), MenuItemType::SubMenu,
-                         MenuAction::MenuActionMax, 3, true, false, false});
-    top.items.push_back({tr("Bitrate"),       QString(),  MenuItemType::SubMenu,
-                         MenuAction::MenuActionMax, 2, true, false, false});
-    // The target level is filled in once the overlay level exists
-    top.items.push_back({ tr("Performance Overlay"), QString(), MenuItemType::SubMenu,
-                          MenuAction::OpenStatsOverlay, 0, true, false, false });
-    const bool separatorAfterHostFiles =
-#ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
-            false;
-#else
-            !m_RemoteUsbAvailable;
-#endif
-    top.items.push_back({tr("Host Files"),    m_FileMappingDetail, MenuItemType::Action,
-                         MenuAction::ShowHostFiles, 0, true,
-                         m_FileMappingState == FileMappingState::Available ||
-                         m_FileMappingState == FileMappingState::Open,
-                         separatorAfterHostFiles});
-    if (m_RemoteUsbAvailable) {
-        top.items.push_back(
-            { tr("USB Devices"),
-              m_RemoteUsbNeedsActivation ? tr("Activate device") : m_RemoteUsbDetail,
-              MenuItemType::SubMenu, MenuAction::MenuActionMax, 4, true, false,
-#ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
-              false });
-#else
-              true });
-#endif
-    }
-#ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
-    top.items.push_back({tr("Function Tests"),
-                         tr("Developer"),
-                         MenuItemType::Action,
-                         MenuAction::OpenStylusReplayPanel, 0, true, false, true});
-#endif
-    // Host actions. Target levels are filled in once those levels exist.
-    top.items.push_back({ tr("Send Keys"), QString(), MenuItemType::SubMenu,
-                          MenuAction::OpenSendKeys, 0, true, false, !m_HostCommandsSupported });
-    if (m_HostCommandsSupported) {
-        top.items.push_back(
-            { tr("Host Commands"),
-              m_HostCommands.empty() ? QString() : QString::number(m_HostCommands.size()),
-              MenuItemType::SubMenu, MenuAction::OpenHostCommands, 0, true, false, true });
-    }
-    top.items.push_back({tr("Toggle Fullscreen"), QString(), MenuItemType::Action,
-                         MenuAction::ToggleFullScreen, 0, true, false, false});
-    top.items.push_back({tr("Microphone"),    QString(),  MenuItemType::Toggle,
-                         MenuAction::ToggleMicrophone, 0, true, false, !m_HasGamepads}); // separator if no gamepad item follows
-    // Only show Gamepad Mouse toggle when a gamepad is actually connected
-    if (m_HasGamepads) {
-        top.items.push_back({tr("Gamepad Mouse"), QString(),  MenuItemType::Toggle,
-                             MenuAction::ToggleGamepadMouse, 0, true, false, true}); // separator
-    }
-    top.items.push_back({ tr("Disconnect"), m_HasGamepads ? m_QuitComboGlyphs : QString(),
-                          MenuItemType::Action, MenuAction::Quit, 0, true, false, false });
-    m_MenuLevels.push_back(top);
+    // === Top-level entries. tabForAction() files them into tabs; their
+    // order inside a tab is the order of the tab table. ===
+    std::vector<MenuItem> entries;
 
-    // === Level 1: Quick Actions (keyboard shortcuts) ===
-    MenuLevel shortcuts;
-    shortcuts.title = tr("Quick Actions");
-    shortcuts.items.push_back({ tr("Quit Moonlight"), shortcutDetail(MenuAction::QuitAndExit),
-                                MenuItemType::Action, MenuAction::QuitAndExit, 0, true, false,
-                                true });
     QString statsDetail = shortcutDetail(MenuAction::ToggleStatsOverlay);
     if (m_HasGamepads) {
         // 手柄组合键与键盘快捷键并列展示,按键名按实体手柄风格显示;
@@ -353,31 +440,95 @@ void OverlayMenuPanel::buildMenuLevels()
                        gamepadRightShoulderName(m_GamepadUiStyle) + QStringLiteral("+") +
                        gamepadFaceButtonGlyph(m_GamepadUiStyle, statsFace);
     }
-    shortcuts.items.push_back({ tr("Performance Stats"), statsDetail, MenuItemType::Action,
-                                MenuAction::ToggleStatsOverlay, 0, true, false, true });
-    shortcuts.items.push_back({ tr("Mouse Mode"), shortcutDetail(MenuAction::ToggleMouseMode),
-                                MenuItemType::Action, MenuAction::ToggleMouseMode, 0, true, false,
-                                false });
-    shortcuts.items.push_back({ tr("Show/Hide Cursor"),
-                                shortcutDetail(MenuAction::ToggleCursorHide), MenuItemType::Action,
-                                MenuAction::ToggleCursorHide, 0, true, false, false });
-    shortcuts.items.push_back({ tr("Minimize"), shortcutDetail(MenuAction::ToggleMinimize),
-                                MenuItemType::Action, MenuAction::ToggleMinimize, 0, true, false,
-                                true });
-    shortcuts.items.push_back({ tr("Ungrab Mouse"), shortcutDetail(MenuAction::UngrabInput),
-                                MenuItemType::Action, MenuAction::UngrabInput, 0, true, false,
-                                false });
-    shortcuts.items.push_back({ tr("Paste Clipboard"), shortcutDetail(MenuAction::PasteText),
-                                MenuItemType::Action, MenuAction::PasteText, 0, true, false,
-                                false });
-    shortcuts.items.push_back(
-        { tr("Pointer Region Lock"), shortcutDetail(MenuAction::TogglePointerRegionLock),
-          MenuItemType::Action, MenuAction::TogglePointerRegionLock, 0, true, false, false });
-    m_MenuLevels.push_back(shortcuts);
+    // Quick
+    entries.push_back({ tr("Performance Stats"), statsDetail, MenuItemType::Action,
+                        MenuAction::ToggleStatsOverlay, 0, true, false, false });
+    entries.push_back({ tr("Mouse Mode"), shortcutDetail(MenuAction::ToggleMouseMode),
+                        MenuItemType::Action, MenuAction::ToggleMouseMode, 0, true, false, false });
+    entries.push_back({ tr("Toggle Fullscreen"), shortcutDetail(MenuAction::ToggleFullScreen),
+                        MenuItemType::Action, MenuAction::ToggleFullScreen, 0, true, false, false });
+    entries.push_back({ tr("Minimize"), shortcutDetail(MenuAction::ToggleMinimize),
+                        MenuItemType::Action, MenuAction::ToggleMinimize, 0, true, false, true });
+    entries.push_back({ tr("Microphone"), QString(), MenuItemType::Toggle,
+                        MenuAction::ToggleMicrophone, 0, true, false, true });
+    entries.push_back({ tr("Disconnect"), m_HasGamepads ? m_QuitComboGlyphs : QString(),
+                        MenuItemType::Action, MenuAction::Quit, 0, true, false, false });
+    entries.push_back({ tr("Quit Moonlight"), shortcutDetail(MenuAction::QuitAndExit),
+                        MenuItemType::Action, MenuAction::QuitAndExit, 0, true, false, false });
+    // Display. SubMenu target levels are filled in once the levels exist.
+    entries.push_back({ tr("Performance Overlay"), QString(), MenuItemType::SubMenu,
+                        MenuAction::OpenStatsOverlay, 0, true, false, false });
+    entries.push_back({ tr("Bitrate"), QString(), MenuItemType::SubMenu, MenuAction::OpenBitrate,
+                        0, true, false, false });
+    entries.push_back({ tr("Menu Position"), QString(), MenuItemType::SubMenu,
+                        MenuAction::OpenMenuPosition, 0, true, false, false });
+    // Input
+    entries.push_back({ tr("Send Keys"), QString(), MenuItemType::SubMenu,
+                        MenuAction::OpenSendKeys, 0, true, false, true });
+    // Only show Gamepad Mouse toggle when a gamepad is actually connected
+    if (m_HasGamepads) {
+        entries.push_back({ tr("Gamepad Mouse"), QString(), MenuItemType::Toggle,
+                            MenuAction::ToggleGamepadMouse, 0, true, false, false });
+    }
+    entries.push_back({ tr("Show/Hide Cursor"), shortcutDetail(MenuAction::ToggleCursorHide),
+                        MenuItemType::Action, MenuAction::ToggleCursorHide, 0, true, false, false });
+    entries.push_back({ tr("Ungrab Mouse"), shortcutDetail(MenuAction::UngrabInput),
+                        MenuItemType::Action, MenuAction::UngrabInput, 0, true, false, false });
+    entries.push_back({ tr("Pointer Region Lock"),
+                        shortcutDetail(MenuAction::TogglePointerRegionLock), MenuItemType::Action,
+                        MenuAction::TogglePointerRegionLock, 0, true, false, false });
+    entries.push_back({ tr("Paste Clipboard"), shortcutDetail(MenuAction::PasteText),
+                        MenuItemType::Action, MenuAction::PasteText, 0, true, false,
+                        m_RemoteUsbAvailable });
+    if (m_RemoteUsbAvailable) {
+        entries.push_back({ tr("USB Devices"),
+                            m_RemoteUsbNeedsActivation ? tr("Activate device") : m_RemoteUsbDetail,
+                            MenuItemType::SubMenu, MenuAction::OpenRemoteUsbDevices, 0, true, false,
+                            false });
+    }
+    // Host
+    if (m_HostCommandsSupported) {
+        entries.push_back(
+            { tr("Host Commands"),
+              m_HostCommands.empty() ? QString() : QString::number(m_HostCommands.size()),
+              MenuItemType::SubMenu, MenuAction::OpenHostCommands, 0, true, false, false });
+    }
+    entries.push_back({ tr("Host Files"), m_FileMappingDetail, MenuItemType::Action,
+                        MenuAction::ShowHostFiles, 0, true,
+                        m_FileMappingState == FileMappingState::Available ||
+                            m_FileMappingState == FileMappingState::Open,
+                        false });
+    // Session
+#ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
+    entries.push_back({ tr("Function Tests"), tr("Developer"), MenuItemType::Action,
+                        MenuAction::OpenStylusReplayPanel, 0, true, false, false });
+#endif
 
-    // === Level 2: Bitrate (piecewise-linear scrubber row + presets) ===
+    std::stable_sort(entries.begin(), entries.end(), [](const MenuItem& a, const MenuItem& b) {
+        return tabAssignmentOrder(a.action) < tabAssignmentOrder(b.action);
+    });
+
+    // === Tab roots, one level per tab with entries (empty tabs are hidden) ===
+    for (int t = 0; t < static_cast<int>(MenuTab::Count); t++) {
+        MenuLevel tabLevel;
+        tabLevel.title = tr("Overlay Menu");
+        tabLevel.tab = static_cast<MenuTab>(t);
+        for (const MenuItem& item : entries) {
+            if (tabForAction(item.action) == *tabLevel.tab) {
+                tabLevel.items.push_back(item);
+            }
+        }
+        if (tabLevel.items.empty()) {
+            continue;
+        }
+        m_TabLevels.push_back(static_cast<int>(m_MenuLevels.size()));
+        m_MenuLevels.push_back(std::move(tabLevel));
+    }
+
+    // === Bitrate (piecewise-linear scrubber row + presets) ===
     MenuLevel bitrate;
     bitrate.title = tr("Bitrate");
+    bitrate.openAction = MenuAction::OpenBitrate;
     bitrate.items.push_back({QString(), QString(), MenuItemType::Slider,
                              MenuAction::MenuActionMax, 0, true, false, true});
     static const int kBitratePresets[] = {
@@ -388,11 +539,12 @@ void OverlayMenuPanel::buildMenuLevels()
                                  MenuAction::SetBitrate, 0, true, false, false,
                                  QString::number(kbps)});
     }
-    m_MenuLevels.push_back(bitrate);
+    m_MenuLevels.push_back(std::move(bitrate));
 
-    // === Level 3: Overlay menu placement ===
+    // === Overlay menu placement ===
     MenuLevel placement;
     placement.title = tr("Menu Position");
+    placement.openAction = MenuAction::OpenMenuPosition;
     placement.items.push_back({tr("Top edge"), QString(), MenuItemType::Action,
                                MenuAction::SetMenuPlacementTop, 0, true, false, false});
     placement.items.push_back({tr("Right edge"), QString(), MenuItemType::Action,
@@ -403,12 +555,13 @@ void OverlayMenuPanel::buildMenuLevels()
                                MenuAction::SetMenuPlacementButton, 0, true, false, false});
     placement.items.push_back({tr("Disabled"), QString(), MenuItemType::Action,
                                MenuAction::SetMenuPlacementDisabled, 0, true, false, false});
-    m_MenuLevels.push_back(placement);
+    m_MenuLevels.push_back(std::move(placement));
 
-    // === Level 4: Remote USB devices ===
+    // === Remote USB devices ===
     if (m_RemoteUsbAvailable) {
         MenuLevel usb;
         usb.title = tr("USB Devices");
+        usb.openAction = MenuAction::OpenRemoteUsbDevices;
         if (m_RemoteUsbDevices.empty()) {
             const QString emptyDetail =
                 m_RemoteUsbState == RemoteUsbState::Discovering
@@ -471,6 +624,7 @@ void OverlayMenuPanel::buildMenuLevels()
     // === Performance overlay ===
     MenuLevel stats;
     stats.title = tr("Performance Overlay");
+    stats.openAction = MenuAction::OpenStatsOverlay;
     stats.items.push_back({ tr("Off"), QString(), MenuItemType::Action,
                             MenuAction::SetStatsPresetOff, 0, true, false, false });
     stats.items.push_back({ tr("Minimal"), QString(), MenuItemType::Action,
@@ -484,21 +638,12 @@ void OverlayMenuPanel::buildMenuLevels()
     stats.items.push_back({ tr("Edit position"), QString(), MenuItemType::Action,
                             MenuAction::EditStatsOverlayPosition, 0, m_StatsOverlayEditable, false,
                             false });
-    m_StatsOverlayLevel = static_cast<int>(m_MenuLevels.size());
     m_MenuLevels.push_back(std::move(stats));
-    for (MenuItem& item : m_MenuLevels[0].items) {
-        if (item.action == MenuAction::OpenStatsOverlay) {
-            item.targetLevel = m_StatsOverlayLevel;
-        }
-    }
-    if (inStatsOverlayLevel) {
-        m_CurrentLevel = m_StatsOverlayLevel;
-    }
-    applyStatsOverlayState();
 
     // === Send Keys: special keys, then the user's key macros ===
     MenuLevel sendKeys;
     sendKeys.title = tr("Send Keys");
+    sendKeys.openAction = MenuAction::OpenSendKeys;
     for (size_t i = 0; i < m_SpecialKeyItems.size(); i++) {
         const SendKeyItem& key = m_SpecialKeyItems[i];
         sendKeys.items.push_back(
@@ -513,14 +658,13 @@ void OverlayMenuPanel::buildMenuLevels()
         sendKeys.items.push_back({ tr("No keys"), QString(), MenuItemType::Action,
                                    MenuAction::MenuActionMax, 0, false, false, false });
     }
-    m_SendKeysLevel = static_cast<int>(m_MenuLevels.size());
     m_MenuLevels.push_back(std::move(sendKeys));
 
     // === Host Commands (Foundation Sunshine super commands) ===
-    m_HostCommandsLevel = -1;
     if (m_HostCommandsSupported) {
         MenuLevel hostCommands;
         hostCommands.title = tr("Host Commands");
+        hostCommands.openAction = MenuAction::OpenHostCommands;
         for (const HostCommandItem& command : m_HostCommands) {
             hostCommands.items.push_back({ command.name, QString(), MenuItemType::Action,
                                            MenuAction::RunHostCommand, 0, true, false, false,
@@ -531,27 +675,25 @@ void OverlayMenuPanel::buildMenuLevels()
                 { tr("No host commands"), tr("Set them up in Foundation Sunshine"),
                   MenuItemType::Action, MenuAction::MenuActionMax, 0, false, false, false });
         }
-        m_HostCommandsLevel = static_cast<int>(m_MenuLevels.size());
         m_MenuLevels.push_back(std::move(hostCommands));
     }
 
-    for (MenuItem& item : m_MenuLevels[0].items) {
-        if (item.action == MenuAction::OpenSendKeys) {
-            item.targetLevel = m_SendKeysLevel;
-        } else if (item.action == MenuAction::OpenHostCommands) {
-            item.targetLevel = m_HostCommandsLevel;
+    // Point the tab entries at their sub-levels
+    for (int level : m_TabLevels) {
+        for (MenuItem& item : m_MenuLevels[level].items) {
+            if (item.type == MenuItemType::SubMenu) {
+                item.targetLevel = levelForOpenAction(item.action);
+            }
         }
     }
+    m_StatsOverlayLevel = levelForOpenAction(MenuAction::OpenStatsOverlay);
+    m_SendKeysLevel = levelForOpenAction(MenuAction::OpenSendKeys);
+    m_HostCommandsLevel = levelForOpenAction(MenuAction::OpenHostCommands);
+    applyStatsOverlayState();
 
-    if (currentHostLevel == MenuAction::OpenSendKeys) {
-        m_CurrentLevel = m_SendKeysLevel;
-    } else if (currentHostLevel == MenuAction::OpenHostCommands) {
-        m_CurrentLevel = m_HostCommandsLevel >= 0 ? m_HostCommandsLevel : 0;
-    }
-
-    if (m_CurrentLevel >= static_cast<int>(m_MenuLevels.size())) {
-        m_CurrentLevel = 0;
-    }
+    // Stay in the open sub-level if it still exists, else in the tab
+    const int reopenedLevel = levelForOpenAction(openLevelAction);
+    m_CurrentLevel = reopenedLevel >= 0 ? reopenedLevel : tabRootLevel();
 
     // Rebuilds (gamepad set / USB refresh) wipe derived details; re-stamp
     // the bitrate state so the scrubber row and preset checkmarks survive.
@@ -564,25 +706,17 @@ void OverlayMenuPanel::buildMenuLevels()
 
 void OverlayMenuPanel::updateMicrophoneState(bool enabled)
 {
-    if (m_MenuLevels.empty()) return;
-    for (auto& item : m_MenuLevels[0].items) {
-        if (item.action == MenuAction::ToggleMicrophone) {
-            item.toggleState = enabled;
-            forceRepaint();
-            break;
-        }
+    if (MenuItem* item = findRootItem(MenuAction::ToggleMicrophone)) {
+        item->toggleState = enabled;
+        forceRepaint();
     }
 }
 
 void OverlayMenuPanel::updateGamepadMouseState(bool enabled)
 {
-    if (m_MenuLevels.empty()) return;
-    for (auto& item : m_MenuLevels[0].items) {
-        if (item.action == MenuAction::ToggleGamepadMouse) {
-            item.toggleState = enabled;
-            forceRepaint();
-            break;
-        }
+    if (MenuItem* item = findRootItem(MenuAction::ToggleGamepadMouse)) {
+        item->toggleState = enabled;
+        forceRepaint();
     }
 }
 
@@ -623,18 +757,16 @@ void OverlayMenuPanel::refreshBitrateDetails()
 {
     if (m_MenuLevels.empty()) return;
 
-    // Current bitrate as detail text on the Bitrate category (level 0)
-    for (auto& item : m_MenuLevels[0].items) {
-        if (item.type == MenuItemType::SubMenu && item.targetLevel == 2) {
-            item.detail = formatBitrateKbps(m_BitrateKbps);
-            break;
-        }
+    // Current bitrate as detail text on the Bitrate entry of its tab
+    if (MenuItem* entry = findRootItem(MenuAction::OpenBitrate)) {
+        entry->detail = formatBitrateKbps(m_BitrateKbps);
     }
 
-    // Mark the active preset (✓) in level 2; custom values stay unmarked
-    // since the scrubber row itself shows the exact value.
-    if ((int)m_MenuLevels.size() > 2) {
-        for (auto& item : m_MenuLevels[2].items) {
+    // Mark the active preset (✓) in the Bitrate level; custom values stay
+    // unmarked since the scrubber row itself shows the exact value.
+    const int bitrateLevel = levelForOpenAction(MenuAction::OpenBitrate);
+    if (bitrateLevel >= 0) {
+        for (auto& item : m_MenuLevels[bitrateLevel].items) {
             if (item.action == MenuAction::SetBitrate) {
                 item.detail = (item.payload.toInt() == m_BitrateKbps)
                                   ? QString::fromUtf8("\342\234\223") : QString();
@@ -725,7 +857,7 @@ OverlayMenuPanel::SliderZone OverlayMenuPanel::sliderZoneAt(const QPoint& window
 
     // Row rects live in content coordinates; callers hand us window coords.
     const QPoint contentPos = windowPos - QPoint(m_ShadowMargin, m_ShadowMargin);
-    const int itemY = m_TitleHeight + m_Padding + rowIdx * m_ItemHeight;
+    const int itemY = contentTop() + rowIdx * m_ItemHeight;
     const SliderRowRects r = sliderRowRects(width() - 2 * m_ShadowMargin, itemY);
 
     // Buttons win over the track so their hit area feels solid.
@@ -771,12 +903,13 @@ void OverlayMenuPanel::gamepadAdjustSlider(int direction)
 
 void OverlayMenuPanel::updateMenuPositionState(MenuAction activePlacementAction)
 {
-    if (m_MenuLevels.size() <= 3) {
+    const int placementLevel = levelForOpenAction(MenuAction::OpenMenuPosition);
+    if (placementLevel < 0) {
         return;
     }
 
     QString activeLabel;
-    for (auto& item : m_MenuLevels[3].items) {
+    for (auto& item : m_MenuLevels[placementLevel].items) {
         const bool active = item.action == activePlacementAction;
         item.detail = active ? QString::fromUtf8("\342\234\223") : QString();
         if (active) {
@@ -784,11 +917,8 @@ void OverlayMenuPanel::updateMenuPositionState(MenuAction activePlacementAction)
         }
     }
 
-    for (auto& item : m_MenuLevels[0].items) {
-        if (item.type == MenuItemType::SubMenu && item.targetLevel == 3) {
-            item.detail = activeLabel;
-            break;
-        }
+    if (MenuItem* entry = findRootItem(MenuAction::OpenMenuPosition)) {
+        entry->detail = activeLabel;
     }
     forceRepaint();
 }
@@ -839,11 +969,8 @@ void OverlayMenuPanel::applyStatsOverlayState()
         }
     }
 
-    for (auto& item : m_MenuLevels[0].items) {
-        if (item.action == MenuAction::OpenStatsOverlay) {
-            item.detail = activeLabel;
-            break;
-        }
+    if (MenuItem* entry = findRootItem(MenuAction::OpenStatsOverlay)) {
+        entry->detail = activeLabel;
     }
 }
 
@@ -852,15 +979,10 @@ void OverlayMenuPanel::updateFileMappingState(FileMappingState state, const QStr
     m_FileMappingState = state;
     m_FileMappingDetail = detail;
 
-    if (m_MenuLevels.empty()) return;
-    for (auto& item : m_MenuLevels[0].items) {
-        if (item.action == MenuAction::ShowHostFiles) {
-            item.detail = detail;
-            item.toggleState = state == FileMappingState::Available ||
-                               state == FileMappingState::Open;
-            forceRepaint();
-            break;
-        }
+    if (MenuItem* item = findRootItem(MenuAction::ShowHostFiles)) {
+        item->detail = detail;
+        item->toggleState = state == FileMappingState::Available || state == FileMappingState::Open;
+        forceRepaint();
     }
 }
 
@@ -880,11 +1002,8 @@ void OverlayMenuPanel::updateRemoteUsbState(
         std::any_of(m_RemoteUsbDevices.cbegin(), m_RemoteUsbDevices.cend(),
                     [](const RemoteUsbDevice& device) { return device.supported; });
     m_RemoteUsbDetail = detail;
-    const int previousLevel = m_CurrentLevel;
+    // The rebuild keeps an open USB level open
     buildMenuLevels();
-    if (m_Visible && previousLevel == 4 && m_MenuLevels.size() > 4) {
-        m_CurrentLevel = 4;
-    }
     if (m_Visible) {
         repositionWindow();
     }
@@ -919,6 +1038,8 @@ bool OverlayMenuPanel::showHostCommandsLevel()
     if (!m_Visible || m_HostCommandsLevel < 0) {
         return false;
     }
+    // Back from the level returns to the tab that holds its entry
+    m_CurrentTab = tabForAction(MenuAction::OpenHostCommands);
     navigateToLevel(m_HostCommandsLevel);
     return true;
 }
@@ -928,8 +1049,161 @@ bool OverlayMenuPanel::showSendKeysLevel()
     if (!m_Visible || m_SendKeysLevel < 0) {
         return false;
     }
+    m_CurrentTab = tabForAction(MenuAction::OpenSendKeys);
     navigateToLevel(m_SendKeysLevel);
     return true;
+}
+
+bool OverlayMenuPanel::showTab(MenuTab tab)
+{
+    if (!m_Visible) {
+        return false;
+    }
+    for (int level : m_TabLevels) {
+        if (*m_MenuLevels[level].tab == tab) {
+            beginInteraction();
+            showTabLevel(level, 0);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool OverlayMenuPanel::showLevel(MenuAction openAction)
+{
+    const int level = levelForOpenAction(openAction);
+    if (!m_Visible || level < 0) {
+        return false;
+    }
+    m_CurrentTab = tabForAction(openAction);
+    navigateToLevel(level);
+    return true;
+}
+
+int OverlayMenuPanel::rowOfAction(MenuAction action, const QString& payload) const
+{
+    const auto& items = m_MenuLevels[m_CurrentLevel].items;
+    for (int i = 0; i < static_cast<int>(items.size()); i++) {
+        if (items[i].action == action && (payload.isEmpty() || items[i].payload == payload)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+QRect OverlayMenuPanel::rowGeometry(int row) const
+{
+    if (row < 0 || row >= static_cast<int>(m_MenuLevels[m_CurrentLevel].items.size())) {
+        return QRect();
+    }
+    return QRect(m_ShadowMargin, m_ShadowMargin + contentTop() + row * m_ItemHeight, m_MenuWidth,
+                 m_ItemHeight);
+}
+
+QRect OverlayMenuPanel::tabGeometry(MenuTab tab) const
+{
+    for (int i = 0; i < static_cast<int>(m_TabLevels.size()); i++) {
+        if (*m_MenuLevels[m_TabLevels[i]].tab == tab) {
+            return tabRect(i, m_MenuWidth).translated(m_ShadowMargin, m_ShadowMargin);
+        }
+    }
+    return QRect();
+}
+
+void OverlayMenuPanel::showTabLevel(int level, int direction)
+{
+    if (!isTabRootLevel(level)) {
+        return;
+    }
+    m_CurrentTab = *m_MenuLevels[level].tab;
+    m_ContentSlideAnim->stop();
+    m_ContentOffset = 0;
+    m_CurrentLevel = level;
+    m_HoveredIndex = -1;
+    m_SliderHotZone = SliderZone::None;
+    repositionWindow();
+
+    if (direction != 0) {
+        // Content slides in from the side of the new tab
+        m_ContentSlideAnim->setStartValue(8.0 * direction);
+        m_ContentSlideAnim->setEndValue(0.0);
+        m_ContentSlideAnim->start();
+    } else {
+        forceRepaint();
+    }
+}
+
+void OverlayMenuPanel::gamepadSwitchTab(int direction)
+{
+    if (!m_Visible || m_TabLevels.empty() || direction == 0) {
+        return;
+    }
+    beginInteraction();
+    const int count = static_cast<int>(m_TabLevels.size());
+    const auto current = std::find(m_TabLevels.cbegin(), m_TabLevels.cend(), tabRootLevel());
+    const int index = current == m_TabLevels.cend()
+                          ? 0
+                          : static_cast<int>(current - m_TabLevels.cbegin());
+    const int step = direction > 0 ? 1 : -1;
+    showTabLevel(m_TabLevels[((index + step) % count + count) % count], step);
+}
+
+void OverlayMenuPanel::gamepadMoveHorizontal(int direction)
+{
+    if (!m_Visible) {
+        return;
+    }
+    const auto& items = m_MenuLevels[m_CurrentLevel].items;
+    const bool hasSlider =
+        std::any_of(items.cbegin(), items.cend(),
+                    [](const MenuItem& item) { return item.type == MenuItemType::Slider; });
+    if (hasSlider) {
+        gamepadAdjustSlider(direction);
+    } else if (isTabRootLevel(m_CurrentLevel)) {
+        gamepadSwitchTab(direction);
+    }
+}
+
+bool OverlayMenuPanel::handleNavigationKey(int key, Qt::KeyboardModifiers modifiers)
+{
+    if (!m_Visible) {
+        return false;
+    }
+    switch (key) {
+    case Qt::Key_Up:
+        gamepadMoveUp();
+        return true;
+    case Qt::Key_Down:
+        gamepadMoveDown();
+        return true;
+    case Qt::Key_Left:
+        gamepadMoveHorizontal(-1);
+        return true;
+    case Qt::Key_Right:
+        gamepadMoveHorizontal(1);
+        return true;
+    case Qt::Key_Tab:
+        gamepadSwitchTab(modifiers.testFlag(Qt::ShiftModifier) ? -1 : 1);
+        return true;
+    case Qt::Key_Backtab:
+    case Qt::Key_PageUp:
+        gamepadSwitchTab(-1);
+        return true;
+    case Qt::Key_PageDown:
+        gamepadSwitchTab(1);
+        return true;
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+    case Qt::Key_Space:
+        gamepadSelect();
+        return true;
+    case Qt::Key_Backspace:
+    case Qt::Key_Escape:
+        gamepadBack();
+        return true;
+    default:
+        return false;
+    }
 }
 
 void OverlayMenuPanel::dispatchActionItem(const MenuItem& item)
@@ -1026,7 +1300,8 @@ void OverlayMenuPanel::showAtCursor(int parentX, int parentY, int parentW, int p
 void OverlayMenuPanel::showInternal()
 {
     m_LeaveTimer.stop();
-    m_CurrentLevel = 0;
+    // Reopen on the last tab of this session
+    m_CurrentLevel = tabRootLevel();
     m_HoveredIndex = -1;
     m_ContentOffset = 0;
     m_WheelAccum = 0;
@@ -1112,7 +1387,14 @@ void OverlayMenuPanel::repositionWindow()
     int qpH = m_ParentH;
 
     int itemCount  = (int)m_MenuLevels[m_CurrentLevel].items.size();
-    int titleH     = m_TitleHeight;
+    if (isTabRootLevel(m_CurrentLevel)) {
+        // All tab roots share the tallest tab's height, so switching tabs
+        // doesn't move or resize the panel.
+        for (int level : m_TabLevels) {
+            itemCount = std::max(itemCount, static_cast<int>(m_MenuLevels[level].items.size()));
+        }
+    }
+    int titleH     = m_TitleHeight + m_TabBarHeight;
     int menuHeight = titleH + itemCount * m_ItemHeight + m_Padding * 2;
     if (m_HasGamepads) {
         menuHeight += kGamepadHintBarHeight;
@@ -1126,7 +1408,7 @@ void OverlayMenuPanel::repositionWindow()
     case AnchorMode::LeftEdge:
         cx = qpX;
         if (m_TriggerPosition.has_value()) {
-            cy = triggerPosition.y() - m_TitleHeight - m_Padding - m_ItemHeight / 2;
+            cy = triggerPosition.y() - contentTop() - m_ItemHeight / 2;
         }
         else {
             cy = qpY + (qpH - menuHeight) / 2;
@@ -1154,7 +1436,7 @@ void OverlayMenuPanel::repositionWindow()
     default:
         cx = qpX + qpW - m_MenuWidth;
         if (m_TriggerPosition.has_value()) {
-            cy = triggerPosition.y() - m_TitleHeight - m_Padding - m_ItemHeight / 2;
+            cy = triggerPosition.y() - contentTop() - m_ItemHeight / 2;
         }
         else {
             cy = qpY + (qpH - menuHeight) / 2;
@@ -1184,7 +1466,8 @@ void OverlayMenuPanel::navigateToLevel(int level)
     // submenu can resize out from under the pointer, so keep it open until
     // an action or explicit dismissal instead of racing a leave timeout.
     beginInteraction();
-    bool goingForward = level > m_CurrentLevel;
+    // Into a sub-level slides; back to a tab root is instant
+    bool goingForward = !isTabRootLevel(level);
     m_ContentSlideAnim->stop();
     m_ContentOffset = 0;
 
@@ -1275,7 +1558,7 @@ void OverlayMenuPanel::closeMenu()
     *conn = connect(m_OpacityAnim, &QPropertyAnimation::finished, this, [this, conn]() {
         disconnect(*conn);
         m_Closing = false;
-        m_CurrentLevel = 0;
+        m_CurrentLevel = tabRootLevel();
         hide();
         setOpacity(1.0);   // reset for next show
         if (m_CloseCallback) {
@@ -1285,6 +1568,17 @@ void OverlayMenuPanel::closeMenu()
 
     m_SlideAnim->start();
     m_OpacityAnim->start();
+}
+
+QRect OverlayMenuPanel::tabRect(int visibleIndex, int contentWidth) const
+{
+    // Equal-width tabs across the bar; the last one takes the remainder
+    const int count = qMax(1, static_cast<int>(m_TabLevels.size()));
+    const int innerWidth = contentWidth - 2;
+    const int tabWidth = innerWidth / count;
+    const int x = 1 + visibleIndex * tabWidth;
+    const int width = visibleIndex == count - 1 ? innerWidth - visibleIndex * tabWidth : tabWidth;
+    return QRect(x, m_TitleHeight, width, m_TabBarHeight - 1);
 }
 
 int OverlayMenuPanel::itemAtPos(const QPoint& pos) const
@@ -1300,12 +1594,20 @@ int OverlayMenuPanel::itemAtPos(const QPoint& pos) const
         if (lx >= m_MenuWidth - m_TitleHeight) {
             return -3; // close button
         }
-        if (m_CurrentLevel > 0) {
+        if (!isTabRootLevel(m_CurrentLevel)) {
             return -2; // back button
         }
         return -1;
     }
-    int localY = ly - titleH - m_Padding;
+    if (ly < titleH + m_TabBarHeight) {
+        for (int i = 0; i < static_cast<int>(m_TabLevels.size()); i++) {
+            if (tabRect(i, m_MenuWidth).contains(lx, ly)) {
+                return kTabHitBase - i;
+            }
+        }
+        return -1;
+    }
+    int localY = ly - contentTop();
     if (localY < 0) return -1;
     int idx = localY / m_ItemHeight;
     const auto& items = m_MenuLevels[m_CurrentLevel].items;
@@ -1357,7 +1659,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
     const auto& level = m_MenuLevels[m_CurrentLevel];
     int textPad = 16;
     int titleH = m_TitleHeight;
-    const bool backHovered = m_CurrentLevel > 0 && m_HoveredIndex == -2;
+    const bool backHovered = !isTabRootLevel(m_CurrentLevel) && m_HoveredIndex == -2;
     const bool closeHovered = m_HoveredIndex == -3;
 
     if (backHovered) {
@@ -1371,7 +1673,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
 
     p.setFont(m_TitleFont);
     p.setPen(backHovered ? MenuAccent : MenuDim);
-    const int backWidth = m_CurrentLevel > 0 ? 28 : 0;
+    const int backWidth = isTabRootLevel(m_CurrentLevel) ? 0 : 28;
     if (backWidth) {
         drawIcon(QStringLiteral("tb-back"), QRect(textPad, (titleH - 20) / 2, 20, 20));
     }
@@ -1379,6 +1681,31 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
     p.drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, level.title.toUpper());
     drawIcon(QStringLiteral("menu-close"),
              QRect(closeRect.center().x() - 9, closeRect.center().y() - 9, 18, 18));
+
+    // --- Tab bar: the active tab (or the one a sub-level belongs to) is
+    // underlined in the accent. It stays put while the content slides. ---
+    const int activeTabLevel = tabRootLevel();
+    p.fillRect(QRect(1, titleH + m_TabBarHeight - 1, cw - 2, 1), MenuLine);
+    p.setFont(m_TabFont);
+    for (int i = 0; i < static_cast<int>(m_TabLevels.size()); i++) {
+        const QRect tab = tabRect(i, cw);
+        const MenuTab menuTab = *m_MenuLevels[m_TabLevels[i]].tab;
+        const bool active = m_TabLevels[i] == activeTabLevel;
+        const bool hovered = m_HoveredIndex == kTabHitBase - i;
+        if (hovered && !active) {
+            p.fillRect(tab, MenuHover);
+        }
+        p.setPen(active || hovered ? MenuText : MenuDim);
+        p.drawText(tab.adjusted(2, 0, -2, 0), Qt::AlignCenter, tabTitle(menuTab).toUpper());
+        if (active) {
+            p.fillRect(QRect(tab.x() + 6, tab.bottom() - 2, tab.width() - 12, 3), MenuAccent);
+        }
+        // A USB device waiting for activation marks its tab, too
+        if (m_RemoteUsbNeedsActivation &&
+            menuTab == tabForAction(MenuAction::OpenRemoteUsbDevices)) {
+            p.fillRect(QRect(tab.right() - 8, tab.y() + 6, 4, 4), MenuAccent);
+        }
+    }
 
     // Apply content offset for level navigation animation
     if (m_ContentSlideAnim->state() != QAbstractAnimation::Running) {
@@ -1390,19 +1717,19 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
     }
 
     const auto& items = level.items;
-    int contentTop = titleH + m_Padding;
+    const int itemsTop = contentTop();
 
-    auto iconForItem = [](const MenuItem& item) -> QString {
-        if (item.type == MenuItemType::SubMenu) {
-            switch (item.targetLevel) {
-            case 1: return QStringLiteral("tb-settings");
-            case 2: return QStringLiteral("menu-bitrate");
-            case 3: return QStringLiteral("menu-position");
-            case 4: return QStringLiteral("cat-peripherals");
-            }
-        }
+    // Sub-levels have no fixed index, so entries match by action
+    auto itemIcon = [](const MenuItem& item) -> QString {
         switch (item.action) {
+        case MenuAction::OpenBitrate: return QStringLiteral("menu-bitrate");
+        case MenuAction::OpenMenuPosition: return QStringLiteral("menu-position");
+        case MenuAction::OpenRemoteUsbDevices: return QStringLiteral("cat-peripherals");
+        case MenuAction::OpenStatsOverlay:
         case MenuAction::ToggleFullScreen: return QStringLiteral("cat-display");
+        case MenuAction::ToggleStatsOverlay: return QStringLiteral("tb-network");
+        case MenuAction::OpenSendKeys: return QStringLiteral("cat-input");
+        case MenuAction::OpenHostCommands: return QStringLiteral("cat-host");
         case MenuAction::ShowHostFiles: return QStringLiteral("menu-files");
         case MenuAction::ToggleMicrophone: return QStringLiteral("menu-microphone");
         case MenuAction::ToggleGamepadMouse: return QStringLiteral("cat-gamepad");
@@ -1414,25 +1741,13 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
         default: return {};
         }
     };
-
-    // Host action levels have no fixed index, so their rows match by action
-    auto itemIcon = [&iconForItem](const MenuItem& item) -> QString {
-        switch (item.action) {
-        case MenuAction::OpenSendKeys:
-            return QStringLiteral("cat-input");
-        case MenuAction::OpenHostCommands:
-            return QStringLiteral("cat-host");
-        default:
-            return iconForItem(item);
-        }
-    };
-    // Icon column: only on top-level menu
-    bool hasIcons = (m_CurrentLevel == 0);
+    // Icon column: only on tab roots
+    bool hasIcons = isTabRootLevel(m_CurrentLevel);
     int iconW = hasIcons ? m_IconAreaWidth : 0;
     int labelX = textPad + iconW;
 
     for (int i = 0; i < (int)items.size(); i++) {
-        int itemY = contentTop + i * m_ItemHeight;
+        int itemY = itemsTop + i * m_ItemHeight;
         const auto& item = items[i];
 
         // Square focus/hover outline and the shared 4px accent marker.
@@ -1445,19 +1760,16 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
         }
         const bool activationPrompt =
             m_RemoteUsbNeedsActivation &&
-            ((m_CurrentLevel == 0 && item.type == MenuItemType::SubMenu && item.targetLevel == 4) ||
-             (m_CurrentLevel == 4 && item.action == MenuAction::SelectRemoteUsbDevice &&
+            ((hasIcons && item.action == MenuAction::OpenRemoteUsbDevices) ||
+             (m_CurrentLevel == levelForOpenAction(MenuAction::OpenRemoteUsbDevices) &&
+              item.action == MenuAction::SelectRemoteUsbDevice &&
               item.enabled));
         if (activationPrompt) {
             p.fillRect(QRect(4, itemY + 4, 4, m_ItemHeight - 8), MenuAccent);
         }
 
         if (hasIcons) {
-            // The overlay level is appended, so it has no fixed index to switch on
-            const QString icon = item.action == MenuAction::OpenStatsOverlay
-                                     ? QStringLiteral("cat-display")
-                                     : itemIcon(item);
-            drawIcon(icon, QRect(textPad, itemY + (m_ItemHeight - 20) / 2, 20, 20),
+            drawIcon(itemIcon(item), QRect(textPad, itemY + (m_ItemHeight - 20) / 2, 20, 20),
                      item.enabled ? (i == m_HoveredIndex ? 1.0 : 0.85) : 0.4);
         }
 
@@ -1610,10 +1922,13 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
         p.drawLine(textPad, hintTop, cw - textPad, hintTop);
         p.setFont(m_DetailFont);
         p.setPen(MenuDim);
-        const QString hint = QStringLiteral("\xe2\x86\x91\xe2\x86\x93 ") + tr("Move") +
-                             QStringLiteral("      ") +
+        const QString hint = gamepadLeftShoulderName(m_GamepadUiStyle) + QStringLiteral("/") +
+                             gamepadRightShoulderName(m_GamepadUiStyle) + QStringLiteral(" ") +
+                             tr("Tabs") + QStringLiteral("    ") +
+                             QStringLiteral("\xe2\x86\x91\xe2\x86\x93 ") + tr("Move") +
+                             QStringLiteral("    ") +
                              gamepadFaceButtonGlyph(m_GamepadUiStyle, m_SwapFaceButtons ? 1 : 0) +
-                             QStringLiteral(" ") + tr("Select") + QStringLiteral("      ") +
+                             QStringLiteral(" ") + tr("Select") + QStringLiteral("    ") +
                              gamepadFaceButtonGlyph(m_GamepadUiStyle, m_SwapFaceButtons ? 0 : 1) +
                              QStringLiteral(" ") + tr("Back");
         p.drawText(QRect(textPad, hintTop + 1, cw - textPad * 2, kGamepadHintBarHeight - 1),
@@ -1641,7 +1956,7 @@ void OverlayMenuPanel::mouseMoveEvent(QMouseEvent* event)
         const auto& items = m_MenuLevels[m_CurrentLevel].items;
         for (int i = 0; i < (int)items.size(); i++) {
             if (items[i].type != MenuItemType::Slider) continue;
-            const int itemY = m_TitleHeight + m_Padding + i * m_ItemHeight;
+            const int itemY = contentTop() + i * m_ItemHeight;
             const SliderRowRects r = sliderRowRects(width() - 2 * m_ShadowMargin, itemY);
             const double frac = (pos.x() - m_ShadowMargin - r.track.x())
                                     / double(r.track.width());
@@ -1656,7 +1971,8 @@ void OverlayMenuPanel::mouseMoveEvent(QMouseEvent* event)
     if (newIdx != m_HoveredIndex || hotZone != m_SliderHotZone) {
         m_HoveredIndex = newIdx;
         m_SliderHotZone = hotZone;
-        setCursor((m_HoveredIndex >= 0 || m_HoveredIndex == -2 || m_HoveredIndex == -3)
+        setCursor((m_HoveredIndex >= 0 || m_HoveredIndex == -2 || m_HoveredIndex == -3 ||
+                   m_HoveredIndex <= kTabHitBase)
                           ? Qt::PointingHandCursor
                           : Qt::ArrowCursor);
         forceRepaint();
@@ -1682,7 +1998,21 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
 
     // Title bar click → navigate back
     if (idx == -2) {
-        navigateToLevel(0);
+        navigateToLevel(tabRootLevel());
+        return;
+    }
+
+    if (idx <= kTabHitBase) {
+        const int tabIndex = kTabHitBase - idx;
+        if (tabIndex < static_cast<int>(m_TabLevels.size())) {
+            const auto active =
+                std::find(m_TabLevels.cbegin(), m_TabLevels.cend(), tabRootLevel());
+            const int activeIndex = static_cast<int>(active - m_TabLevels.cbegin());
+            const int level = m_TabLevels[tabIndex];
+            showTabLevel(level, level == m_CurrentLevel     ? 0
+                                : tabIndex > activeIndex ? 1
+                                                         : -1);
+        }
         return;
     }
 
@@ -1695,7 +2025,7 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
 
     switch (item.type) {
     case MenuItemType::Back:
-        navigateToLevel(0);
+        navigateToLevel(tabRootLevel());
         break;
 
     case MenuItemType::SubMenu:
@@ -1722,7 +2052,7 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
             adjustBitrateStep(1, 1);
         }
         else if (zone == SliderZone::Track) {
-            const int itemY = m_TitleHeight + m_Padding + idx * m_ItemHeight;
+            const int itemY = contentTop() + idx * m_ItemHeight;
             const SliderRowRects r = sliderRowRects(width() - 2 * m_ShadowMargin, itemY);
             m_SliderDragging = true;
             setMouseGrabEnabled(true);
@@ -1813,7 +2143,7 @@ void OverlayMenuPanel::gamepadMoveUp()
 
     if (m_HoveredIndex <= 0) {
         // Wrap to last item, or move to title bar if on sub-level
-        if (m_CurrentLevel > 0 && m_HoveredIndex == 0) {
+        if (!isTabRootLevel(m_CurrentLevel) && m_HoveredIndex == 0) {
             m_HoveredIndex = -2; // title bar (back button)
         } else {
             m_HoveredIndex = (int)items.size() - 1;
@@ -1840,8 +2170,8 @@ void OverlayMenuPanel::gamepadMoveDown()
         // From title bar, move to first item
         m_HoveredIndex = 0;
     } else if (m_HoveredIndex < 0 || m_HoveredIndex >= (int)items.size() - 1) {
-        // Wrap to title bar on sub-level, or to first item on top level
-        if (m_CurrentLevel > 0) {
+        // Wrap to title bar on sub-level, or to first item on a tab root
+        if (!isTabRootLevel(m_CurrentLevel)) {
             m_HoveredIndex = -2;
         } else {
             m_HoveredIndex = 0;
@@ -1863,7 +2193,7 @@ void OverlayMenuPanel::gamepadSelect()
 
     // Title bar → back
     if (m_HoveredIndex == -2) {
-        navigateToLevel(0);
+        navigateToLevel(tabRootLevel());
         return;
     }
 
@@ -1876,7 +2206,7 @@ void OverlayMenuPanel::gamepadSelect()
 
     switch (item.type) {
     case MenuItemType::Back:
-        navigateToLevel(0);
+        navigateToLevel(tabRootLevel());
         break;
     case MenuItemType::SubMenu:
         navigateToLevel(item.targetLevel);
@@ -1909,8 +2239,8 @@ void OverlayMenuPanel::gamepadBack()
 {
     if (!m_Visible) return;
 
-    if (m_CurrentLevel > 0) {
-        navigateToLevel(0);
+    if (!isTabRootLevel(m_CurrentLevel)) {
+        navigateToLevel(tabRootLevel());
     } else {
         closeMenu();
     }

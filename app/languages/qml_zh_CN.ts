@@ -955,6 +955,62 @@
         <source>Enable V-Sync to use frame pacing.</source>
         <translation>开启垂直同步后才能使用帧平滑。</translation>
     </message>
+    <message>
+        <source>Performance overlay</source>
+        <translation>性能浮层</translation>
+    </message>
+    <message>
+        <source>Preset</source>
+        <translation>预设</translation>
+    </message>
+    <message>
+        <source>What the performance overlay shows while streaming. Cycle presets in a stream with %1, or pick one from the overlay menu.</source>
+        <translation>串流时性能浮层显示的内容。串流中可用 %1 轮换预设，也可在悬浮菜单中选择。</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Minimal: FPS, 1% low and latency</source>
+        <translation>极简：帧率、1% 低帧与延迟</translation>
+    </message>
+    <message>
+        <source>Compact: one bar</source>
+        <translation>紧凑：单行</translation>
+    </message>
+    <message>
+        <source>Detailed: graphs and all metrics</source>
+        <translation>详细：图表与全部指标</translation>
+    </message>
+    <message>
+        <source>Custom</source>
+        <translation>自定义</translation>
+    </message>
+    <message>
+        <source>Overlay size</source>
+        <translation>浮层大小</translation>
+    </message>
+    <message>
+        <source>In a stream, choose Edit position in the overlay menu to drag the overlay and resize it with the mouse wheel.</source>
+        <translation>串流中在悬浮菜单里选择「调整位置」，即可拖动浮层并用鼠标滚轮调整大小。</translation>
+    </message>
+    <message>
+        <source>Background opacity</source>
+        <translation>背景不透明度</translation>
+    </message>
+    <message>
+        <source>Remembered positions</source>
+        <translation>已记住的位置</translation>
+    </message>
+    <message>
+        <source>The overlay remembers its position and preset for each display.</source>
+        <translation>浮层会为每台显示器分别记住位置和预设。</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation>重置</translation>
+    </message>
 </context>
 <context>
     <name>EcosystemPlatformCatalog</name>
@@ -2138,6 +2194,149 @@
         <source>Developer</source>
         <translation>开发功能</translation>
     </message>
+    <message>
+        <source>Performance Overlay</source>
+        <translation>性能浮层</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Minimal</source>
+        <translation>极简</translation>
+    </message>
+    <message>
+        <source>Compact</source>
+        <translation>紧凑</translation>
+    </message>
+    <message>
+        <source>Detailed</source>
+        <translation>详细</translation>
+    </message>
+    <message>
+        <source>Custom</source>
+        <translation>自定义</translation>
+    </message>
+    <message>
+        <source>Edit position</source>
+        <translation>调整位置</translation>
+    </message>
+</context>
+<context>
+    <name>OverlayStatsWindow</name>
+    <message>
+        <source>Stream</source>
+        <translation>串流</translation>
+    </message>
+    <message>
+        <source>FPS</source>
+        <translation>帧率</translation>
+    </message>
+    <message>
+        <source>1% low</source>
+        <translation>1% 低帧</translation>
+    </message>
+    <message>
+        <source>0.1% low</source>
+        <translation>0.1% 低帧</translation>
+    </message>
+    <message>
+        <source>Latency</source>
+        <translation>延迟</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>码率</translation>
+    </message>
+    <message>
+        <source>Loss</source>
+        <translation>丢包</translation>
+    </message>
+    <message>
+        <source>RTT</source>
+        <translation>往返</translation>
+    </message>
+    <message>
+        <source>Jitter</source>
+        <translation>抖动</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>主机</translation>
+    </message>
+    <message>
+        <source>Decode</source>
+        <translation>解码</translation>
+    </message>
+    <message>
+        <source>Queue</source>
+        <translation>队列</translation>
+    </message>
+    <message>
+        <source>Render</source>
+        <translation>渲染</translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <translation>网络</translation>
+    </message>
+    <message>
+        <source>FEC</source>
+        <translation>FEC</translation>
+    </message>
+    <message>
+        <source>%1% parity</source>
+        <translation>%1% 冗余</translation>
+    </message>
+    <message>
+        <source>%1 recovered, %2 lost</source>
+        <translation>已恢复 %1，丢失 %2</translation>
+    </message>
+    <message>
+        <source>ABR</source>
+        <translation>自适应码率</translation>
+    </message>
+    <message>
+        <source>On</source>
+        <translation>开</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>关</translation>
+    </message>
+    <message>
+        <source>Pacer drops</source>
+        <translation>帧同步丢帧</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>显示器</translation>
+    </message>
+    <message>
+        <source>Time</source>
+        <translation>时长</translation>
+    </message>
+    <message>
+        <source>Frame time</source>
+        <translation>帧时间</translation>
+    </message>
+    <message>
+        <source>avg %1 · p99 %2 ms</source>
+        <translation>平均 %1 · p99 %2 ms</translation>
+    </message>
+    <message>
+        <source>Estimated latency</source>
+        <translation>估算延迟</translation>
+    </message>
+    <message>
+        <source>No metrics selected</source>
+        <translation>未选择任何指标</translation>
+    </message>
+    <message>
+        <source>Drag to move · Wheel to resize · Esc when done</source>
+        <translation>拖动移动 · 滚轮缩放 · Esc 完成</translation>
+    </message>
 </context>
 <context>
     <name>PcView</name>
@@ -3166,6 +3365,10 @@
         <source>Unable to initialize video decoder. Please check your streaming settings and try again.</source>
         <translation>无法初始化视频解码器。请检查你的流式传输设置，然后重试。</translation>
     </message>
+    <message>
+        <source>Drag the overlay to move it. Press Esc when done.</source>
+        <translation>拖动浮层即可移动，完成后按 Esc。</translation>
+    </message>
 </context>
 <context>
     <name>SettingsView</name>
@@ -3349,6 +3552,93 @@
     <message>
         <source>Type clipboard text on the host</source>
         <translation>在主机上输入剪贴板文本</translation>
+    </message>
+    <message>
+        <source>Cycle performance overlay presets</source>
+        <translation>轮换性能浮层预设</translation>
+    </message>
+    <message>
+        <source>Move the performance overlay</source>
+        <translation>移动性能浮层</translation>
+    </message>
+</context>
+<context>
+    <name>StatsOverlaySettings</name>
+    <message>
+        <source>Resolution and codec</source>
+        <translation>分辨率与编码</translation>
+    </message>
+    <message>
+        <source>Frame rate</source>
+        <translation>帧率</translation>
+    </message>
+    <message>
+        <source>1% low frame rate</source>
+        <translation>1% 低帧率</translation>
+    </message>
+    <message>
+        <source>Estimated latency</source>
+        <translation>估算延迟</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>码率</translation>
+    </message>
+    <message>
+        <source>Frames lost by the network</source>
+        <translation>网络丢帧</translation>
+    </message>
+    <message>
+        <source>Round trip time</source>
+        <translation>往返时间</translation>
+    </message>
+    <message>
+        <source>Network jitter</source>
+        <translation>网络抖动</translation>
+    </message>
+    <message>
+        <source>Host processing time</source>
+        <translation>主机处理时间</translation>
+    </message>
+    <message>
+        <source>Decode time</source>
+        <translation>解码时间</translation>
+    </message>
+    <message>
+        <source>Frame queue delay</source>
+        <translation>帧队列延迟</translation>
+    </message>
+    <message>
+        <source>Render time</source>
+        <translation>渲染时间</translation>
+    </message>
+    <message>
+        <source>FEC</source>
+        <translation>FEC</translation>
+    </message>
+    <message>
+        <source>Adaptive bitrate</source>
+        <translation>自适应码率</translation>
+    </message>
+    <message>
+        <source>Frames dropped by pacing</source>
+        <translation>帧同步丢弃的帧</translation>
+    </message>
+    <message>
+        <source>Display refresh rate</source>
+        <translation>显示器刷新率</translation>
+    </message>
+    <message>
+        <source>Session time</source>
+        <translation>串流时长</translation>
+    </message>
+    <message>
+        <source>Frame time graph</source>
+        <translation>帧时间图</translation>
+    </message>
+    <message>
+        <source>Latency breakdown bar</source>
+        <translation>延迟分解条</translation>
     </message>
 </context>
 <context>

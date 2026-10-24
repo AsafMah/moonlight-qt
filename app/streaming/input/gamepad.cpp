@@ -572,10 +572,8 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
         if (!state->statsComboLatched) {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Detected stats toggle gamepad combo");
 
-            // Toggle the stats overlay
-            Session::get()->getOverlayManager().setOverlayState(
-                Overlay::OverlayDebug,
-                !Session::get()->getOverlayManager().isOverlayEnabled(Overlay::OverlayDebug));
+            // Toggle the stats overlay the same way its keyboard shortcut does
+            m_ShortcutDispatcher.trigger(QLatin1String(ShortcutActions::ToggleStatsOverlay));
 
             // Clear buttons down on this gamepad
             LiSendMultiControllerEvent(state->index, m_GamepadMask, 0, 0, 0, 0, 0, 0, 0);

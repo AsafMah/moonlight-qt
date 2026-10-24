@@ -278,6 +278,7 @@ SOURCES += \
     streaming/stats/statsmath.cpp \
     streaming/stats/streamstatsmodel.cpp \
     streaming/stats/videostatsbridge.cpp \
+    streaming/streamquality.cpp \
     streaming/streamutils.cpp \
     backend/autoupdatechecker.cpp \
     backend/portableupdateinstaller.cpp \
@@ -369,6 +370,7 @@ HEADERS += \
     streaming/stats/statssnapshot.h \
     streaming/stats/streamstatsmodel.h \
     streaming/stats/videostatsbridge.h \
+    streaming/streamquality.h \
     streaming/streamutils.h \
     backend/autoupdatechecker.h \
     backend/portableupdateinstaller.h \

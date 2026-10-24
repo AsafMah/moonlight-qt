@@ -1648,6 +1648,46 @@
 <context>
     <name>OverlayMenuPanel</name>
     <message>
+        <source>Stream Quality</source>
+        <translation>串流畫質</translation>
+    </message>
+    <message>
+        <source>%1 · %2 FPS</source>
+        <translation>%1 · %2 FPS</translation>
+    </message>
+    <message>
+        <source>Switch to %1</source>
+        <translation>切換到 %1</translation>
+    </message>
+    <message>
+        <source>Switch stream</source>
+        <translation>切換串流</translation>
+    </message>
+    <message>
+        <source>Pick a resolution or frame rate</source>
+        <translation>請選擇解析度或影格率</translation>
+    </message>
+    <message>
+        <source>Native display</source>
+        <translation>顯示器原生</translation>
+    </message>
+    <message>
+        <source>Current</source>
+        <translation>目前</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>顯示器</translation>
+    </message>
+    <message>
+        <source>%1 FPS</source>
+        <translation>%1 FPS</translation>
+    </message>
+    <message>
+        <source>Save as Default</source>
+        <translation>儲存為預設</translation>
+    </message>
+    <message>
         <source>Connecting — select to cancel</source>
         <translation>正在連線 · 選擇此項取消</translation>
     </message>
@@ -2742,6 +2782,30 @@
 </context>
 <context>
     <name>Session</name>
+    <message>
+        <source>%1 at %2 FPS</source>
+        <translation>%1 @ %2 FPS</translation>
+    </message>
+    <message>
+        <source>Saved %1 as the default</source>
+        <translation>已將 %1 儲存為預設設定</translation>
+    </message>
+    <message>
+        <source>Switching to %1 at %2 FPS... (%3s)</source>
+        <translation>正在切換到 %1 @ %2 FPS…（%3 秒）</translation>
+    </message>
+    <message>
+        <source>Now streaming at %1</source>
+        <translation>目前串流：%1</translation>
+    </message>
+    <message>
+        <source>Now streaming at %1 (saved as default)</source>
+        <translation>目前串流：%1（已儲存為預設）</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t switch the stream to %1. The host didn&apos;t accept the new settings or stopped responding, so the session ended.</source>
+        <translation>無法將串流切換到 %1。主機未接受新設定或已無回應，串流工作階段已結束。</translation>
+    </message>
     <message>
         <source>USB tunnel connected. Check device availability on the host.</source>
         <translation>USB 通道已連線，請確認裝置在主機上是否可用。</translation>

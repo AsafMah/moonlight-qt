@@ -2113,6 +2113,46 @@
 <context>
     <name>OverlayMenuPanel</name>
     <message>
+        <source>Stream Quality</source>
+        <translation>串流画质</translation>
+    </message>
+    <message>
+        <source>%1 · %2 FPS</source>
+        <translation>%1 · %2 FPS</translation>
+    </message>
+    <message>
+        <source>Switch to %1</source>
+        <translation>切换到 %1</translation>
+    </message>
+    <message>
+        <source>Switch stream</source>
+        <translation>切换串流</translation>
+    </message>
+    <message>
+        <source>Pick a resolution or frame rate</source>
+        <translation>请选择分辨率或帧率</translation>
+    </message>
+    <message>
+        <source>Native display</source>
+        <translation>显示器原生</translation>
+    </message>
+    <message>
+        <source>Current</source>
+        <translation>当前</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>显示器</translation>
+    </message>
+    <message>
+        <source>%1 FPS</source>
+        <translation>%1 FPS</translation>
+    </message>
+    <message>
+        <source>Save as Default</source>
+        <translation>保存为默认</translation>
+    </message>
+    <message>
         <source>Overlay Menu</source>
         <translation>悬浮菜单</translation>
     </message>
@@ -3195,6 +3235,30 @@
 </context>
 <context>
     <name>Session</name>
+    <message>
+        <source>%1 at %2 FPS</source>
+        <translation>%1 @ %2 FPS</translation>
+    </message>
+    <message>
+        <source>Saved %1 as the default</source>
+        <translation>已将 %1 保存为默认设置</translation>
+    </message>
+    <message>
+        <source>Switching to %1 at %2 FPS... (%3s)</source>
+        <translation>正在切换到 %1 @ %2 FPS…（%3 秒）</translation>
+    </message>
+    <message>
+        <source>Now streaming at %1</source>
+        <translation>当前串流：%1</translation>
+    </message>
+    <message>
+        <source>Now streaming at %1 (saved as default)</source>
+        <translation>当前串流：%1（已保存为默认）</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t switch the stream to %1. The host didn&apos;t accept the new settings or stopped responding, so the session ended.</source>
+        <translation>无法将串流切换到 %1。主机未接受新设置或已无响应，串流会话已结束。</translation>
+    </message>
     <message>
         <source>Checking host USB forwarding support</source>
         <translation>正在检查主机 USB 转发支持</translation>

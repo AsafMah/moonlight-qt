@@ -66,6 +66,8 @@
 #define SDL_CODE_FLUSH_TOUCHPAD_FRAME 106
 #define SDL_CODE_CURSOR_UPDATE 107
 #define SDL_CODE_FLUSH_CURSOR_VISIBILITY 108
+// Restart the stream with the Stream Quality menu's pending choice
+#define SDL_CODE_APPLY_STREAM_QUALITY 110
 #if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN) || \
         defined(HAVE_LINUX_DISPLAY_EVENT_MONITOR)
 #define SDL_CODE_PROCESS_QT_OVERLAY_EVENTS 109
@@ -2914,6 +2916,7 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     // Update dynamic state before showing
     m_MenuPanel->updateMicrophoneState(m_MicStream != nullptr);
     m_MenuPanel->updateBitrateState(m_Preferences->bitrateKbps);
+    updateStreamQualityMenuState();
     m_MenuPanel->updateGamepadMouseState(m_InputHandler->isMouseEmulationActive());
     m_MenuPanel->updateMenuPositionState(
             menuPlacementActionForPreference(m_Preferences->overlayMenuPosition));
@@ -3946,6 +3949,13 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
         // native button messages without re-entering Qt from platform code.
         break;
 #endif
+    case SDL_CODE_APPLY_STREAM_QUALITY:
+        // The stream loop handles this before calling here. Reaching this
+        // means a reconnect is already running, so drop the request.
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Ignoring stream quality change requested during a reconnect");
+        m_PendingStreamQuality.reset();
+        break;
     default:
         SDL_assert(false);
     }
@@ -3969,7 +3979,153 @@ public:
     Session* m_Session;
 };
 
-bool Session::tryReconnect()
+void Session::requestStreamQualityChange(const OverlayMenuPanel::StreamQualityRequest& request)
+{
+    // This runs inside the stream loop's Qt overlay event processing.
+    // Restart the connection from the loop itself, not from the callback.
+    m_PendingStreamQuality = request;
+    SDL_Event event = {};
+    event.type = SDL_USEREVENT;
+    event.user.code = SDL_CODE_APPLY_STREAM_QUALITY;
+    pushEventOrWarn(event);
+}
+
+void Session::updateStreamQualityMenuState()
+{
+    if (m_MenuPanel == nullptr) {
+        return;
+    }
+
+    OverlayMenuPanel::StreamQualityState state;
+    state.resolution = QSize(m_StreamConfig.width, m_StreamConfig.height);
+    state.fps = m_StreamConfig.fps;
+    if (m_Window != nullptr) {
+        SDL_DisplayMode mode;
+        SDL_Rect safeArea;
+        const int displayIndex = SDL_GetWindowDisplayIndex(m_Window);
+        if (displayIndex >= 0 &&
+            StreamUtils::getNativeDesktopMode(displayIndex, &mode, &safeArea)) {
+            state.nativeResolution = QSize(mode.w, mode.h);
+        }
+        state.displayHz = StreamUtils::getDisplayRefreshRate(m_Window);
+    }
+    m_MenuPanel->updateStreamQualityState(state);
+}
+
+bool Session::tryApplyStreamQualityLive(const StreamQuality::Settings& target)
+{
+    // Live path seam. Foundation Sunshine already parses a client-sent
+    // dynamic parameter change (0x5506, RESOLUTION) and reconfigures its
+    // display and encoder, but:
+    //  - moonlight-common-c on this branch has no sender for it (the
+    //    LiSendResolutionChangeRequest() API is still pending, see
+    //    qiin2333/moonlight-qt#104), and
+    //  - no host advertises LI_FF_CLIENT_RESOLUTION_CHANGE yet, so a client
+    //    can't tell whether the host would apply the request.
+    // Its FPS parameter is only logged by the encoders, so FPS changes always
+    // reconnect. Once both land, send the request here when the host
+    // advertises support, let the resolutionChanged callback reset the
+    // decoder and input dimensions, and return true.
+    Q_UNUSED(target);
+    return false;
+}
+
+bool Session::applyPendingStreamQualityChange()
+{
+    if (!m_PendingStreamQuality) {
+        return true;
+    }
+    const OverlayMenuPanel::StreamQualityRequest request = *m_PendingStreamQuality;
+    m_PendingStreamQuality.reset();
+
+    const StreamQuality::Settings current{ m_StreamConfig.width, m_StreamConfig.height,
+                                           m_StreamConfig.fps, m_Preferences->bitrateKbps };
+    StreamQuality::Settings target = current;
+    if (request.resolution.isValid()) {
+        target.width = request.resolution.width();
+        target.height = request.resolution.height();
+    }
+    if (request.fps > 0) {
+        target.fps = request.fps;
+    }
+    StreamQuality::Change change = StreamQuality::diff(current, target);
+    if (change.needsRestart()) {
+        target.bitrateKbps = StreamQuality::bitrateForSwitch(
+            m_Preferences->autoAdjustBitrate, current.bitrateKbps,
+            StreamingPreferences::getDefaultBitrate(target.width, target.height, target.fps,
+                                                    m_Preferences->enableYUV444));
+        change = StreamQuality::diff(current, target);
+    }
+
+    const QString summary =
+        tr("%1 at %2 FPS").arg(StreamQuality::resolutionName(target.resolution())).arg(target.fps);
+
+    if (request.saveAsDefault) {
+        // The saved value is the exact stream size, so don't scale it again.
+        m_Preferences->width = target.width;
+        m_Preferences->height = target.height;
+        m_Preferences->fps = target.fps;
+        m_Preferences->streamResolutionScale = false;
+        m_Preferences->save();
+    }
+
+    switch (StreamQuality::choosePath(change, /* hostSupportsLiveResolution */ false)) {
+    case StreamQuality::Path::None:
+        if (request.saveAsDefault) {
+            showStreamingToast(tr("Saved %1 as the default").arg(summary), 2500);
+        }
+        return true;
+    case StreamQuality::Path::LiveBitrate:
+        requestRuntimeBitrateChange(target.bitrateKbps);
+        return true;
+    case StreamQuality::Path::LiveResolution:
+        if (tryApplyStreamQualityLive(target)) {
+            return true;
+        }
+        break;
+    case StreamQuality::Path::Reconnect:
+        break;
+    }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Restarting stream for quality change: %dx%dx%d -> %dx%dx%d (%d kbps)",
+                current.width, current.height, current.fps, target.width, target.height, target.fps,
+                target.bitrateKbps);
+
+    // Reconnect fallback: stop the stream and resume the same app with the
+    // new configuration. The window, fullscreen state, input handler and
+    // overlays all stay; the decoder is recreated for the new stream.
+    m_StreamConfig.width = target.width;
+    m_StreamConfig.height = target.height;
+    m_StreamConfig.fps = target.fps;
+    m_StreamConfig.bitrate = target.bitrateKbps;
+    m_StreamQualityOverride = target;
+    if (m_InputHandler != nullptr) {
+        m_InputHandler->setStreamDimensions(target.width, target.height);
+    }
+
+    if (tryReconnect(ReconnectReason::StreamQualityChange)) {
+        showStreamingToast(request.saveAsDefault
+                               ? tr("Now streaming at %1 (saved as default)").arg(summary)
+                               : tr("Now streaming at %1").arg(summary),
+                           2500);
+        return true;
+    }
+
+    if (m_ShouldExit) {
+        // The user cancelled the switch; end the session without an error.
+        return false;
+    }
+
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Stream quality change to %dx%dx%d failed",
+                 target.width, target.height, target.fps);
+    emit displayLaunchError(tr("Couldn't switch the stream to %1. The host didn't accept the "
+                               "new settings or stopped responding, so the session ended.")
+                                .arg(summary));
+    return false;
+}
+
+bool Session::tryReconnect(ReconnectReason reason)
 {
     // Drop any forwarded USB device so the reconnect starts from a clean state.
     teardownUsbTunnel();
@@ -4000,8 +4156,10 @@ bool Session::tryReconnect()
         m_DualSenseHapticsRenderer->reset();
     }
 
-    // Total time budget for reconnect attempts before giving up
-    const Uint32 graceMs = 60 * 1000;
+    // Total time budget for reconnect attempts before giving up. A quality
+    // change talks to a host that was fine a moment ago, so give up sooner.
+    const bool qualityChange = reason == ReconnectReason::StreamQualityChange;
+    const Uint32 graceMs = (qualityChange ? 30 : 60) * 1000;
     const Uint32 startTicks = SDL_GetTicks();
     int backoffMs = 1000;
 
@@ -4054,9 +4212,18 @@ bool Session::tryReconnect()
     while (!cancelled && SDL_GetTicks() - startTicks < graceMs) {
         // Update the on-screen indicator (re-shown each attempt so it stays up)
         Uint32 remainingMs = graceMs - (SDL_GetTicks() - startTicks);
-        showStreamingToast(tr("Connection interrupted. Reconnecting... (%1s)")
-                               .arg((remainingMs + 999) / 1000),
-                           2500);
+        const unsigned int remainingSeconds = (remainingMs + 999) / 1000;
+        if (qualityChange) {
+            showStreamingToast(tr("Switching to %1 at %2 FPS... (%3s)")
+                                   .arg(StreamQuality::resolutionName(
+                                       QSize(m_StreamConfig.width, m_StreamConfig.height)))
+                                   .arg(m_StreamConfig.fps)
+                                   .arg(remainingSeconds),
+                               2500);
+        } else {
+            showStreamingToast(
+                tr("Connection interrupted. Reconnecting... (%1s)").arg(remainingSeconds), 2500);
+        }
 
         // Run the connection start on a worker thread and pump events while we wait
         m_AsyncConnectionSuccess = false;
@@ -4147,7 +4314,9 @@ bool Session::tryReconnect()
         // torn down, so don't toggle it off on reconnect.
         m_PendingMicToggle = false;
 
-        showStreamingToast(tr("Reconnected"), 1500);
+        if (!qualityChange) {
+            showStreamingToast(tr("Reconnected"), 1500);
+        }
         return true;
     }
 
@@ -4344,21 +4513,31 @@ bool Session::startConnectionAsync()
         break;
     }
 
+    // A mid-stream quality change replaces the preferred resolution/FPS for
+    // the rest of this session, including the host display overrides.
+    bool remoteResolution = m_Preferences->remoteResolution;
+    bool remoteFps = m_Preferences->remoteFps;
+    int originalStreamWidth = m_Preferences->width;
+    int originalStreamHeight = m_Preferences->height;
+    if (m_StreamQualityOverride) {
+        if (m_StreamQualityOverride->width != m_Preferences->width ||
+            m_StreamQualityOverride->height != m_Preferences->height) {
+            remoteResolution = false;
+        }
+        if (m_StreamQualityOverride->fps != m_Preferences->fps) {
+            remoteFps = false;
+        }
+        originalStreamWidth = m_StreamQualityOverride->width;
+        originalStreamHeight = m_StreamQualityOverride->height;
+    }
+
     try {
         NvHTTP http(m_Computer);
         RemoteStreamConfig remoteStreamConfig(
-            m_Preferences->remoteResolution,
-            m_Preferences->remoteResolutionWidth,
-            m_Preferences->remoteResolutionHeight,
-            m_Preferences->remoteFps,
-            m_Preferences->remoteFpsRate,
-            m_Preferences->width,
-            m_Preferences->height,
-            maxBrightness,
-            minBrightness,
-            maxAverageBrightness,
-            sdrWhiteBrightness
-        );
+            remoteResolution, m_Preferences->remoteResolutionWidth,
+            m_Preferences->remoteResolutionHeight, remoteFps, m_Preferences->remoteFpsRate,
+            originalStreamWidth, originalStreamHeight, maxBrightness, minBrightness,
+            maxAverageBrightness, sdrWhiteBrightness);
         m_LastClientSdrWhiteNits = sdrWhiteBrightness;
         http.startApp(resumingSession ? "resume" : "launch",
                       m_Computer->isNvidiaServerSoftware,
@@ -5141,6 +5320,10 @@ void Session::exec()
             dispatchQtMenuPayloadAction(action, payload);
         });
     m_HostCommandRunner = new HostCommandRunner(this);
+    m_MenuPanel->setStreamQualityCallback(
+        [this](const OverlayMenuPanel::StreamQualityRequest& request) {
+            requestStreamQualityChange(request);
+        });
     updateRemoteUsbMenuState();
     m_MenuPanel->setCloseCallback([this]() {
         // Record close timestamp for edge-trigger debounce
@@ -5446,6 +5629,12 @@ void Session::exec()
             goto DispatchDeferredCleanup;
 
         case SDL_USEREVENT:
+            if (event.user.code == SDL_CODE_APPLY_STREAM_QUALITY) {
+                if (!applyPendingStreamQualityChange()) {
+                    goto DispatchDeferredCleanup;
+                }
+                break;
+            }
             handleSdlUserEvent(event.user);
             break;
 

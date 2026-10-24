@@ -1,5 +1,6 @@
 #include "overlaymenupanel.h"
 #include "uifont.h"
+#include "streaming/streamquality.h"
 
 #include <QScreen>
 #include <QGuiApplication>
@@ -420,6 +421,11 @@ void OverlayMenuPanel::buildMenuLevels()
             ? m_MenuLevels[m_CurrentLevel].openAction
             : MenuAction::MenuActionMax;
 
+    // The Stream Quality level is appended after the fixed ones, so its index
+    // can change between builds; follow it by identity.
+    const bool onStreamQualityLevel =
+        m_StreamQualityLevel >= 0 && m_CurrentLevel == m_StreamQualityLevel;
+
     m_MenuLevels.clear();
     m_TabLevels.clear();
 
@@ -680,6 +686,18 @@ void OverlayMenuPanel::buildMenuLevels()
         m_MenuLevels.push_back(std::move(hostCommands));
     }
 
+    // === Stream Quality (resolution / FPS for this session) ===
+    m_StreamQualityLevel = static_cast<int>(m_MenuLevels.size());
+    m_MenuLevels.push_back(buildStreamQualityLevel());
+    for (MenuItem& item : m_MenuLevels[0].items) {
+        if (item.action == MenuAction::OpenStreamQuality) {
+            item.targetLevel = m_StreamQualityLevel;
+        }
+    }
+    if (onStreamQualityLevel) {
+        m_CurrentLevel = m_StreamQualityLevel;
+    }
+
     // Point SubMenu rows at their levels by the Open* action they carry. This
     // covers tab entries and rows inside a sub-level that link to another
     // one (e.g. a Bitrate row tagged MenuAction::OpenBitrate).
@@ -777,6 +795,15 @@ void OverlayMenuPanel::refreshBitrateDetails()
             if (item.action == MenuAction::SetBitrate) {
                 item.detail = (item.payload.toInt() == m_BitrateKbps)
                                   ? QString::fromUtf8("\342\234\223") : QString();
+            }
+        }
+    }
+
+    // The Stream Quality level links to the Bitrate level and shows its value.
+    if (m_StreamQualityLevel >= 0 && m_StreamQualityLevel < (int)m_MenuLevels.size()) {
+        for (auto& item : m_MenuLevels[m_StreamQualityLevel].items) {
+            if (item.type == MenuItemType::SubMenu && item.targetLevel == 2) {
+                item.detail = formatBitrateKbps(m_BitrateKbps);
             }
         }
     }
@@ -1212,8 +1239,130 @@ bool OverlayMenuPanel::handleNavigationKey(int key, Qt::KeyboardModifiers modifi
     }
 }
 
+OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamQualityLevel() const
+{
+    const QString check = QString::fromUtf8("\342\234\223");
+    auto detailText = [&check](bool selected, const QString& note) {
+        if (!selected) {
+            return note;
+        }
+        return note.isEmpty() ? check : check + QStringLiteral(" ") + note;
+    };
+    auto summary = [](QSize resolution, int fps) {
+        return tr("%1 · %2 FPS").arg(StreamQuality::resolutionName(resolution)).arg(fps);
+    };
+    auto sizeText = [](QSize size) {
+        return QStringLiteral("%1%2%3").arg(size.width()).arg(QChar(0x00D7)).arg(size.height());
+    };
+
+    MenuLevel level;
+    level.title = tr("Stream Quality");
+
+    const bool known = m_StreamQuality.resolution.isValid() && m_StreamQuality.fps > 0;
+    const bool changed = known && (m_PendingStreamResolution != m_StreamQuality.resolution ||
+                                   m_PendingStreamFps != m_StreamQuality.fps);
+
+    // Apply row first, so the pending choice and its confirmation stay in view.
+    level.items.push_back(
+        { changed ? tr("Switch to %1").arg(summary(m_PendingStreamResolution, m_PendingStreamFps))
+                  : tr("Switch stream"),
+          changed ? QString() : tr("Pick a resolution or frame rate"), MenuItemType::Action,
+          MenuAction::ApplyStreamQuality, 0, changed, false, true });
+
+    const auto resolutions = StreamQuality::resolutionPresets(m_StreamQuality.nativeResolution,
+                                                              m_StreamQuality.resolution);
+    for (int i = 0; i < resolutions.size(); i++) {
+        const StreamQuality::ResolutionPreset& preset = resolutions[i];
+        const QString label =
+            preset.native ? tr("Native display") : StreamQuality::resolutionName(preset.size);
+        const QString note = preset.current ? tr("Current") : sizeText(preset.size);
+        level.items.push_back(
+            { label, detailText(preset.size == m_PendingStreamResolution, note),
+              MenuItemType::Action, MenuAction::SelectStreamResolution, 0, true, false,
+              i == resolutions.size() - 1,
+              QStringLiteral("%1x%2").arg(preset.size.width()).arg(preset.size.height()) });
+    }
+
+    const auto frameRates =
+        StreamQuality::fpsPresets(m_StreamQuality.displayHz, m_StreamQuality.fps);
+    for (int i = 0; i < frameRates.size(); i++) {
+        const StreamQuality::FpsPreset& preset = frameRates[i];
+        const QString note = preset.current   ? tr("Current")
+                             : preset.display ? tr("Display")
+                                              : QString();
+        level.items.push_back({ tr("%1 FPS").arg(preset.fps),
+                                detailText(preset.fps == m_PendingStreamFps, note),
+                                MenuItemType::Action, MenuAction::SelectStreamFps, 0, true, false,
+                                i == frameRates.size() - 1, QString::number(preset.fps) });
+    }
+
+    // Bitrate changes apply to the running stream, so they reuse the Bitrate level.
+    level.items.push_back({ tr("Bitrate"), formatBitrateKbps(m_BitrateKbps), MenuItemType::SubMenu,
+                            MenuAction::MenuActionMax, 2, true, false, false });
+    level.items.push_back(
+        { tr("Save as Default"),
+          known ? summary(m_PendingStreamResolution, m_PendingStreamFps) : QString(),
+          MenuItemType::Action, MenuAction::SaveStreamQualityAsDefault, 0, known, false, false });
+    return level;
+}
+
+void OverlayMenuPanel::updateStreamQualityState(const StreamQualityState& state)
+{
+    m_StreamQuality = state;
+    m_PendingStreamResolution = state.resolution;
+    m_PendingStreamFps = state.fps;
+    buildMenuLevels();
+    if (m_Visible) {
+        repositionWindow();
+    }
+    forceRepaint();
+}
+
+bool OverlayMenuPanel::handleStreamQualityItem(const MenuItem& item)
+{
+    switch (item.action) {
+    case MenuAction::SelectStreamResolution:
+    case MenuAction::SelectStreamFps: {
+        // Rebuilding the level replaces the item, so read it first.
+        const MenuAction action = item.action;
+        const QString payload = item.payload;
+        if (action == MenuAction::SelectStreamResolution) {
+            const QStringList parts = payload.split(QLatin1Char('x'));
+            if (parts.size() == 2) {
+                m_PendingStreamResolution = QSize(parts[0].toInt(), parts[1].toInt());
+            }
+        } else {
+            m_PendingStreamFps = payload.toInt();
+        }
+        beginInteraction();
+        if (m_StreamQualityLevel >= 0 && m_StreamQualityLevel < (int)m_MenuLevels.size()) {
+            m_MenuLevels[m_StreamQualityLevel] = buildStreamQualityLevel();
+        }
+        forceRepaint();
+        return true;
+    }
+    case MenuAction::ApplyStreamQuality:
+    case MenuAction::SaveStreamQualityAsDefault: {
+        StreamQualityRequest request;
+        request.resolution = m_PendingStreamResolution;
+        request.fps = m_PendingStreamFps;
+        request.saveAsDefault = item.action == MenuAction::SaveStreamQualityAsDefault;
+        closeMenu();
+        if (m_StreamQualityCallback) {
+            m_StreamQualityCallback(request);
+        }
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
 void OverlayMenuPanel::dispatchActionItem(const MenuItem& item)
 {
+    if (handleStreamQualityItem(item)) {
+        return;
+    }
     // USB callbacks can synchronously rebuild the device list. Own the payload
     // before calling out so a refresh cannot invalidate the selected identity.
     const QString payload = item.payload;

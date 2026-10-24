@@ -1857,6 +1857,30 @@
         <source>Set them up in Foundation Sunshine</source>
         <translation>請在 Foundation Sunshine 中新增</translation>
     </message>
+    <message>
+        <source>Quick</source>
+        <translation>快捷</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>顯示</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>輸入</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>主機</translation>
+    </message>
+    <message>
+        <source>Session</source>
+        <translation>工作階段</translation>
+    </message>
+    <message>
+        <source>Tabs</source>
+        <translation>切換頁</translation>
+    </message>
 </context>
 <context>
     <name>OverlayStatsWindow</name>

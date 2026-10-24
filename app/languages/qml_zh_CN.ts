@@ -2332,6 +2332,30 @@
         <source>Set them up in Foundation Sunshine</source>
         <translation>请在 Foundation Sunshine 中添加</translation>
     </message>
+    <message>
+        <source>Quick</source>
+        <translation>快捷</translation>
+    </message>
+    <message>
+        <source>Display</source>
+        <translation>显示</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>输入</translation>
+    </message>
+    <message>
+        <source>Host</source>
+        <translation>主机</translation>
+    </message>
+    <message>
+        <source>Session</source>
+        <translation>会话</translation>
+    </message>
+    <message>
+        <source>Tabs</source>
+        <translation>切换页</translation>
+    </message>
 </context>
 <context>
     <name>OverlayStatsWindow</name>

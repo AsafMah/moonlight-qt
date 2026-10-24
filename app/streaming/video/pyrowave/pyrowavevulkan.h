@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QString>
+#include <QStringList>
 
 #include <cstddef>
 #include <cstdint>
@@ -30,6 +31,7 @@ const char* pyrowaveStageName(PyrowaveStage stage);
 #ifdef HAVE_LIBPLACEBO_VULKAN
 
 #include "pyrowaveabi.h"
+#include "pyrowavecolor.h"
 #include "streaming/video/ffmpeg-renderers/plvk.h"
 
 #include <memory>
@@ -81,6 +83,9 @@ struct PyrowavePresentParams
     // The session's YCbCr range (StreamConfig.colorRange), which the host
     // encodes with and every frame's native metadata must match.
     bool fullRange = false;
+    // 0 = SDR, 1 = HDR10, 2 = HLG (StreamConfig.hdrMode). Fixed for the
+    // stream: HDR planes, color checks and swapchain follow it.
+    int hdrMode = 0;
     bool enableVsync = false;
     bool ignoreAspectRatio = false;
 };
@@ -132,6 +137,10 @@ public:
 
     void notifyOverlayUpdated(Overlay::OverlayType type);
 
+    // The session's static HDR metadata. Applied to the frame and the
+    // swapchain from the next present on. Ignored for SDR.
+    void setHdrSnapshot(const PyrowaveColor::HdrSnapshot& snapshot);
+
     const std::string& deviceName() const { return m_DeviceName; }
 
 private:
@@ -150,11 +159,14 @@ private:
 
     bool loadEntryPoints(PyrowaveFailure& failure);
     bool createDevice(PyrowaveFailure& failure);
+    void checkHdrOutput(VkPhysicalDevice device,
+                        const std::vector<VkExtensionProperties>& extensions, QStringList& missing);
     bool createLogicalDevice(VkPhysicalDevice device, uint32_t queueFamily, QString& reason);
     bool createPyrowaveDecoder(PyrowaveFailure& failure);
     bool createPlanes(PyrowaveFailure& failure);
     bool createPlane(Plane& plane, uint32_t width, uint32_t height, VkImageUsageFlags usage);
     bool createPresentation(PyrowaveFailure& failure);
+    void hintSwapchainColorspace();
     bool checkColorMetadata(PyrowaveFailure& failure);
     bool decodeToPlanes(PyrowaveFailure& failure);
     FrameResult present(const pl_swapchain_frame& swapchainFrame, bool decoded,
@@ -163,6 +175,9 @@ private:
 
     PyrowaveVulkanInstance& m_Instance;
     PyrowavePresentParams m_Params;
+    PyrowaveColor::Contract m_Contract{ 0, false };
+    PyrowaveColor::PlaneEncoding m_PlaneEncoding;
+    VkFormat m_PlaneFormat = VK_FORMAT_R8_UNORM;
 
     // Vulkan functions we call directly
     PFN_vkGetPhysicalDeviceProperties m_GetPhysicalDeviceProperties = nullptr;
@@ -170,6 +185,7 @@ private:
     PFN_vkGetPhysicalDeviceQueueFamilyProperties m_GetQueueFamilyProperties = nullptr;
     PFN_vkGetPhysicalDeviceSurfaceSupportKHR m_GetSurfaceSupport = nullptr;
     PFN_vkGetPhysicalDeviceSurfacePresentModesKHR m_GetSurfacePresentModes = nullptr;
+    PFN_vkGetPhysicalDeviceSurfaceFormatsKHR m_GetSurfaceFormats = nullptr;
     PFN_vkGetPhysicalDeviceFormatProperties m_GetFormatProperties = nullptr;
     PFN_vkGetPhysicalDeviceMemoryProperties m_GetMemoryProperties = nullptr;
     PFN_vkEnumeratePhysicalDevices m_EnumeratePhysicalDevices = nullptr;
@@ -226,6 +242,13 @@ private:
     pl_swapchain m_Swapchain = nullptr;
     pl_renderer m_Renderer = nullptr;
     PlVkOverlays m_Overlays;
+
+    // HDR presentation. The swapchain is hinted with the frames' color space
+    // (static metadata included) whenever that changes, like PlVkRenderer.
+    PyrowaveColor::HdrSnapshot m_HdrSnapshot;
+    pl_color_space m_FrameColor = {};
+    pl_color_space m_HintedColor = {};
+    bool m_LoggedSdrTarget = false;
 };
 
 #endif

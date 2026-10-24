@@ -4459,6 +4459,57 @@ Choose another video codec in Settings to stream.</source>
         <source>PyroWave wasn&apos;t available from this host, so this stream uses %1. Your codec setting hasn&apos;t changed.</source>
         <translation>此主機未提供 PyroWave，本次串流使用 %1。你的編解碼器設定未變更。</translation>
     </message>
+    <message>
+        <source>PyroWave doesn&apos;t support the selected HDR mode (%1).</source>
+        <translation>PyroWave 不支援所選的 HDR 模式（%1）。</translation>
+    </message>
+    <message>
+        <source>This PC can&apos;t show PyroWave in HDR: %1 Turn off HDR in Settings to stream with PyroWave in SDR.</source>
+        <translation>此電腦無法以 HDR 顯示 PyroWave：%1 請在設定中關閉 HDR，以 SDR 使用 PyroWave 串流。</translation>
+    </message>
+</context>
+<context>
+    <name>PyrowaveVulkanRenderer</name>
+    <message>
+        <source>This client doesn&apos;t know HDR mode %1.</source>
+        <translation>此用戶端無法識別 HDR 模式 %1。</translation>
+    </message>
+    <message>
+        <source>The Vulkan driver on this PC doesn&apos;t offer HDR output color spaces (VK_EXT_swapchain_colorspace), which PyroWave HDR needs.</source>
+        <translation>此電腦的 Vulkan 驅動程式未提供 PyroWave HDR 所需的 HDR 輸出色彩空間（VK_EXT_swapchain_colorspace）。</translation>
+    </message>
+    <message>
+        <source>%1 is missing %2.</source>
+        <translation>%1 缺少%2。</translation>
+    </message>
+    <message>
+        <source>16-bit plane images that can be written and sampled</source>
+        <translation>可寫入並可取樣的 16 位元平面影像</translation>
+    </message>
+    <message>
+        <source>HDR metadata for the display (VK_EXT_hdr_metadata)</source>
+        <translation>顯示器 HDR 中繼資料（VK_EXT_hdr_metadata）</translation>
+    </message>
+    <message>
+        <source>an HDR output format for the stream window (is HDR turned on for this display?)</source>
+        <translation>串流視窗的 HDR 輸出格式（此顯示器是否已開啟 HDR？）</translation>
+    </message>
+    <message>
+        <source>%1 can&apos;t write 16-bit plane images the way PyroWave needs.</source>
+        <translation>%1 無法依 PyroWave 的要求寫入 16 位元平面影像。</translation>
+    </message>
+    <message>
+        <source>The host sent PyroWave video in a different color format than this session uses (%1, %2 range).</source>
+        <translation>主機傳送的 PyroWave 視訊色彩格式與本次工作階段不一致（%1，%2範圍）。</translation>
+    </message>
+    <message>
+        <source>full</source>
+        <translation>全</translation>
+    </message>
+    <message>
+        <source>limited</source>
+        <translation>有限</translation>
+    </message>
 </context>
 <context>
     <name>PyrowaveCapabilities</name>

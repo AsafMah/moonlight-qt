@@ -1,11 +1,13 @@
 #pragma once
 
+#include "pyrowavecolor.h"
 #include "streaming/video/decoder.h"
 #include "streaming/video/overlaymanager.h"
 
 #include <QCoreApplication>
 #include <QString>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -81,8 +83,13 @@ struct PyrowaveFailure;
 // end the connection with an error naming the stage. The codec never changes
 // mid-stream.
 //
-// Not yet: HDR10/HLG (PW-3, refused by preflight()), the SDR CPU-staging
-// fallback, frame pacing and dynamic swapchain depth.
+// HDR10 and HLG sessions decode into 16-bit planes and present through an
+// HDR swapchain with the host's static metadata (SS_HDR_METADATA). Whether a
+// session is SDR or HDR is fixed before it starts; preflight() refuses HDR on
+// a GPU or display that can't show it rather than streaming SDR instead.
+//
+// Not yet: dynamic HDR metadata, the SDR CPU-staging fallback, frame pacing
+// and dynamic swapchain depth.
 class PyrowaveVideoDecoder : public IVideoDecoder, public Overlay::IOverlayRenderer
 {
     Q_DECLARE_TR_FUNCTIONS(PyrowaveVideoDecoder)
@@ -128,17 +135,22 @@ public:
     virtual bool initialize(PDECODER_PARAMETERS params) override;
     virtual bool isHardwareAccelerated() override { return true; }
     virtual bool isAlwaysFullScreen() override { return false; }
-    // TODO(PW-3): HDR10/HLG presentation.
-    virtual bool isHdrSupported() override { return false; }
+    // True once a renderer was built for this HDR session, which checked the
+    // GPU, the driver and the window for HDR output. False for SDR sessions,
+    // whose device was never checked for it.
+    virtual bool isHdrSupported() override { return m_HdrVerified; }
     virtual int getDecoderCapabilities() override { return CAPABILITY_PYROWAVE; }
-    // SDR PyroWave is BT.709 (client contract, section 3).
-    virtual int getDecoderColorspace() override { return COLORSPACE_REC_709; }
+    // SDR PyroWave is BT.709, HDR10 and HLG are BT.2020 (client contract,
+    // section 3).
+    virtual int getDecoderColorspace() override;
     virtual int getDecoderColorRange() override { return m_Contract.colorRange; }
     virtual QSize getDecoderMaxResolution() override;
     virtual int submitDecodeUnit(PDECODE_UNIT du) override;
     virtual void renderFrameOnMainThread() override {}
-    // TODO(PW-3): apply SS_HDR_METADATA to the swapchain.
-    virtual void setHdrMode(bool) override {}
+    // Takes the host's static HDR metadata (LiGetHdrMetadata()) for the
+    // frames and the swapchain. Never changes the session between SDR and
+    // HDR: the stream's signal was fixed when it was negotiated.
+    virtual void setHdrMode(bool enabled) override;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info) override;
 
     virtual void notifyOverlayUpdated(Overlay::OverlayType type) override;
@@ -165,6 +177,14 @@ private:
 
     SDL_Thread* m_DecoderThread = nullptr;
     SDL_atomic_t m_DecoderThreadShouldQuit = {};
+
+    // Written by setHdrMode() on the control thread, copied by the decode
+    // thread for every frame. Outlives renderer rebuilds, so a new renderer
+    // starts with the last accepted metadata.
+    std::mutex m_HdrLock;
+    PyrowaveColor::HdrSnapshot m_HdrSnapshot;
+    // Set on the decode thread, read on the main thread.
+    std::atomic<bool> m_HdrVerified{ false };
 
 #ifdef HAVE_LIBPLACEBO_VULKAN
     bool createRenderer(PyrowaveFailure& failure);

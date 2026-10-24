@@ -33,8 +33,13 @@ using namespace PyrowaveAbi;
 
 namespace {
 
-// SDR planes (client contract, section 3). HDR (PW-3) uses R16.
-constexpr VkFormat k_PlaneFormat = VK_FORMAT_R8_UNORM;
+static_assert(PYROWAVE_COLOR_PRIMARIES_BT2020 == PyrowaveColor::k_PrimariesBt2020 &&
+                  PYROWAVE_TRANSFER_PQ == PyrowaveColor::k_TransferPq &&
+                  PYROWAVE_TRANSFER_HLG == PyrowaveColor::k_TransferHlg &&
+                  PYROWAVE_YCBCR_BT2020 == PyrowaveColor::k_TransformBt2020 &&
+                  PYROWAVE_YCBCR_LIMITED == PyrowaveColor::k_RangeLimited &&
+                  PYROWAVE_CHROMA_SITING_LEFT == PyrowaveColor::k_SitingLeft,
+              "pyrowavecolor.h must use pyrowave.h's enum values");
 
 const char k_PortabilityEnumeration[] = "VK_KHR_portability_enumeration";
 const char k_PortabilitySubset[] = "VK_KHR_portability_subset";
@@ -42,6 +47,7 @@ const char k_GetSurfaceCapabilities2[] = "VK_KHR_get_surface_capabilities2";
 const char k_KhrSurfaceMaintenance1[] = "VK_KHR_surface_maintenance1";
 const char k_ExtSurfaceMaintenance1[] = "VK_EXT_surface_maintenance1";
 const char k_SwapchainColorspace[] = "VK_EXT_swapchain_colorspace";
+const char k_HdrMetadata[] = "VK_EXT_hdr_metadata";
 
 // VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR, absent from older headers.
 constexpr VkInstanceCreateFlags k_EnumeratePortabilityBit = 0x00000001;
@@ -359,7 +365,16 @@ bool PyrowaveVulkanRenderer::initialize(const PyrowavePresentParams& params,
                                         PyrowaveFailure& failure)
 {
     m_Params = params;
+    m_Contract = PyrowaveColor::Contract(params.hdrMode, params.fullRange);
+    m_PlaneEncoding = m_Contract.planeEncoding();
+    m_PlaneFormat = m_PlaneEncoding.sixteenBit ? VK_FORMAT_R16_UNORM : VK_FORMAT_R8_UNORM;
+    m_FrameColor = PyrowaveColor::frameColorSpace(m_Contract, m_HdrSnapshot);
     failure.stage = PyrowaveStage::Create;
+
+    if (!m_Contract.isValid()) {
+        failure.reason = tr("This client doesn't know HDR mode %1.").arg(params.hdrMode);
+        return false;
+    }
 
     if (!loadEntryPoints(failure) || !createDevice(failure) || !createPyrowaveDecoder(failure) ||
         !createPlanes(failure) || !createPresentation(failure)) {
@@ -370,9 +385,9 @@ bool PyrowaveVulkanRenderer::initialize(const PyrowavePresentParams& params,
     }
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                "PyroWave renderer ready on '%s' (%dx%d, %s range, %s path)", m_DeviceName.c_str(),
-                m_Params.width, m_Params.height, m_Params.fullRange ? "full" : "limited",
-                m_FragmentPath ? "fragment" : "compute");
+                "PyroWave renderer ready on '%s' (%dx%d, %s, %s range, %s path)",
+                m_DeviceName.c_str(), m_Params.width, m_Params.height, m_Contract.signalName(),
+                m_Params.fullRange ? "full" : "limited", m_FragmentPath ? "fragment" : "compute");
     return true;
 }
 
@@ -418,6 +433,7 @@ bool PyrowaveVulkanRenderer::loadEntryPoints(PyrowaveFailure& failure)
     PYROWAVE_LOAD_INSTANCE_FN(m_GetQueueFamilyProperties, vkGetPhysicalDeviceQueueFamilyProperties)
     PYROWAVE_LOAD_INSTANCE_FN(m_GetSurfaceSupport, vkGetPhysicalDeviceSurfaceSupportKHR)
     PYROWAVE_LOAD_INSTANCE_FN(m_GetSurfacePresentModes, vkGetPhysicalDeviceSurfacePresentModesKHR)
+    PYROWAVE_LOAD_INSTANCE_FN(m_GetSurfaceFormats, vkGetPhysicalDeviceSurfaceFormatsKHR)
     PYROWAVE_LOAD_INSTANCE_FN(m_GetFormatProperties, vkGetPhysicalDeviceFormatProperties)
     PYROWAVE_LOAD_INSTANCE_FN(m_GetMemoryProperties, vkGetPhysicalDeviceMemoryProperties)
     PYROWAVE_LOAD_INSTANCE_FN(m_EnumeratePhysicalDevices, vkEnumeratePhysicalDevices)
@@ -443,6 +459,13 @@ bool PyrowaveVulkanRenderer::createDevice(PyrowaveFailure& failure)
         instance, m_EnumeratePhysicalDevices, m_GetPhysicalDeviceProperties);
     if (devices.empty()) {
         failure.reason = tr("No Vulkan GPU was found.");
+        return false;
+    }
+
+    // HDR color spaces are an instance extension, so no GPU can do without it.
+    if (m_Contract.isHdr() && !m_Instance.hasExtension(k_SwapchainColorspace)) {
+        failure.reason = tr("The Vulkan driver on this PC doesn't offer HDR output color spaces "
+                            "(VK_EXT_swapchain_colorspace), which PyroWave HDR needs.");
         return false;
     }
 
@@ -474,6 +497,9 @@ bool PyrowaveVulkanRenderer::createDevice(PyrowaveFailure& failure)
             if (!hasExtension(extensions, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
                 missing.append(tr("presentation to windows (VK_KHR_swapchain)"));
             }
+            if (m_Contract.isHdr()) {
+                checkHdrOutput(device, extensions, missing);
+            }
 
             uint32_t familyCount = 0;
             m_GetQueueFamilyProperties(device, &familyCount, nullptr);
@@ -497,14 +523,16 @@ bool PyrowaveVulkanRenderer::createDevice(PyrowaveFailure& failure)
             // The decoder writes the planes from compute (or, on the fragment
             // path, as color attachments) and libplacebo samples them.
             VkFormatProperties format = {};
-            m_GetFormatProperties(device, k_PlaneFormat, &format);
+            m_GetFormatProperties(device, m_PlaneFormat, &format);
             const VkFormatFeatureFlags sampled = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
                                                  VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
             const VkFormatFeatureFlags writable =
                 VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
             if ((format.optimalTilingFeatures & sampled) != sampled ||
                 (format.optimalTilingFeatures & writable) == 0) {
-                missing.append(tr("8-bit plane images that can be written and sampled"));
+                missing.append(m_PlaneEncoding.sixteenBit
+                                   ? tr("16-bit plane images that can be written and sampled")
+                                   : tr("8-bit plane images that can be written and sampled"));
             }
         }
 
@@ -527,6 +555,44 @@ bool PyrowaveVulkanRenderer::createDevice(PyrowaveFailure& failure)
 
     failure.reason = firstReason;
     return false;
+}
+
+void PyrowaveVulkanRenderer::checkHdrOutput(VkPhysicalDevice device,
+                                            const std::vector<VkExtensionProperties>& extensions,
+                                            QStringList& missing)
+{
+    // libplacebo hands the static metadata to the swapchain through this.
+    // Required for HLG too: on PCs an HLG stream is usually shown through an
+    // HDR10 swapchain, which needs the mastering metadata just the same.
+    if (!hasExtension(extensions, k_HdrMetadata)) {
+        missing.append(tr("HDR metadata for the display (VK_EXT_hdr_metadata)"));
+    }
+
+    // The window must offer an HDR10 (ST 2084) surface format, or for HLG an
+    // HLG one. libplacebo picks the best of them for the frames.
+    uint32_t count = 0;
+    std::vector<VkSurfaceFormatKHR> formats;
+    if (m_GetSurfaceFormats(device, m_Instance.surface(), &count, nullptr) == VK_SUCCESS) {
+        formats.resize(count);
+        if (m_GetSurfaceFormats(device, m_Instance.surface(), &count, formats.data()) !=
+            VK_SUCCESS) {
+            formats.clear();
+        }
+        formats.resize(std::min<size_t>(formats.size(), count));
+    }
+    bool hdrSurface = false;
+    for (const VkSurfaceFormatKHR& format : formats) {
+        if (format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT ||
+            (m_Contract.hdrMode() == PyrowaveColor::k_ModeHlg &&
+             format.colorSpace == VK_COLOR_SPACE_HDR10_HLG_EXT)) {
+            hdrSurface = true;
+            break;
+        }
+    }
+    if (!hdrSurface) {
+        missing.append(tr("an HDR output format for the stream window (is HDR turned on for this "
+                          "display?)"));
+    }
 }
 
 bool PyrowaveVulkanRenderer::createLogicalDevice(VkPhysicalDevice device, uint32_t queueFamily,
@@ -621,6 +687,11 @@ bool PyrowaveVulkanRenderer::createLogicalDevice(VkPhysicalDevice device, uint32
         }
 
         addUnique(setup->extensions, extension);
+    }
+
+    // Checked in createDevice() for HDR sessions.
+    if (m_Contract.isHdr()) {
+        addUnique(setup->extensions, k_HdrMetadata);
     }
 
     setup->queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -766,7 +837,7 @@ bool PyrowaveVulkanRenderer::createPlane(Plane& plane, uint32_t width, uint32_t 
     VkImageCreateInfo imageInfo = {};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.format = k_PlaneFormat;
+    imageInfo.format = m_PlaneFormat;
     imageInfo.extent = { width, height, 1 };
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
@@ -817,7 +888,7 @@ bool PyrowaveVulkanRenderer::createPlane(Plane& plane, uint32_t width, uint32_t 
     wrap.image = plane.image;
     wrap.width = static_cast<int>(width);
     wrap.height = static_cast<int>(height);
-    wrap.format = k_PlaneFormat;
+    wrap.format = m_PlaneFormat;
     wrap.usage = usage;
     wrap.debug_tag = PL_DEBUG_TAG;
     plane.tex = pl_vulkan_wrap(m_Vulkan->gpu, &wrap);
@@ -845,9 +916,11 @@ bool PyrowaveVulkanRenderer::createPlanes(PyrowaveFailure& failure)
                                                   ? VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT
                                                   : VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
     VkFormatProperties format = {};
-    m_GetFormatProperties(m_PhysicalDevice, k_PlaneFormat, &format);
+    m_GetFormatProperties(m_PhysicalDevice, m_PlaneFormat, &format);
     if ((format.optimalTilingFeatures & writeFeature) == 0) {
-        failure.reason = tr("%1 can't write 8-bit plane images the way PyroWave needs.")
+        failure.reason = (m_PlaneEncoding.sixteenBit
+                              ? tr("%1 can't write 16-bit plane images the way PyroWave needs.")
+                              : tr("%1 can't write 8-bit plane images the way PyroWave needs."))
                              .arg(QString::fromStdString(m_DeviceName));
         return false;
     }
@@ -907,13 +980,9 @@ bool PyrowaveVulkanRenderer::createPresentation(PyrowaveFailure& failure)
         return false;
     }
 
-#ifdef Q_OS_DARWIN
-    // The same BT.709 gamma workaround as PlVkRenderer
-    pl_swapchain_colorspace_hint(m_Swapchain, &pl_color_space_srgb);
-#else
-    // TODO(PW-3): hint BT.2020 PQ or HLG for HDR sessions.
-    pl_swapchain_colorspace_hint(m_Swapchain, &pl_color_space_bt709);
-#endif
+    // Before the first frame, so the first swapchain images already have the
+    // stream's color space (and MoltenVK enables EDR for HDR in time).
+    hintSwapchainColorspace();
 
     m_Renderer = pl_renderer_create(m_Instance.log(), m_Vulkan->gpu);
     if (m_Renderer == nullptr) {
@@ -922,6 +991,33 @@ bool PyrowaveVulkanRenderer::createPresentation(PyrowaveFailure& failure)
     }
 
     return true;
+}
+
+void PyrowaveVulkanRenderer::hintSwapchainColorspace()
+{
+    m_HintedColor = m_FrameColor;
+
+#ifdef Q_OS_DARWIN
+    // The same BT.709 gamma workaround as PlVkRenderer
+    if (!m_Contract.isHdr()) {
+        pl_swapchain_colorspace_hint(m_Swapchain, &pl_color_space_srgb);
+        return;
+    }
+#endif
+
+    // For HDR, libplacebo picks the HDR10 (or HLG) surface format and passes
+    // the static metadata to vkSetHdrMetadataEXT, as for PlVkRenderer.
+    pl_swapchain_colorspace_hint(m_Swapchain, &m_FrameColor);
+}
+
+void PyrowaveVulkanRenderer::setHdrSnapshot(const PyrowaveColor::HdrSnapshot& snapshot)
+{
+    if (snapshot == m_HdrSnapshot) {
+        return;
+    }
+
+    m_HdrSnapshot = snapshot;
+    m_FrameColor = PyrowaveColor::frameColorSpace(m_Contract, m_HdrSnapshot);
 }
 
 void PyrowaveVulkanRenderer::notifyOverlayUpdated(Overlay::OverlayType type)
@@ -942,23 +1038,25 @@ bool PyrowaveVulkanRenderer::checkColorMetadata(PyrowaveFailure& failure)
         return false;
     }
 
-    // SDR is BT.709 with the session's range (client contract, section 3).
-    // A frame that doesn't match is never shown as if it did.
-    // TODO(PW-3): BT.2020 PQ/HLG for HDR sessions.
-    const pyrowave_ycbcr_range expectedRange =
-        m_Params.fullRange ? PYROWAVE_YCBCR_FULL : PYROWAVE_YCBCR_LIMITED;
-    if (metadata.primaries != PYROWAVE_COLOR_PRIMARIES_BT709 ||
-        metadata.transfer != PYROWAVE_TRANSFER_BT709 ||
-        metadata.transform != PYROWAVE_YCBCR_BT709 || metadata.range != expectedRange ||
-        metadata.chroma_siting > PYROWAVE_CHROMA_SITING_LEFT) {
+    // SDR is BT.709, HDR10 BT.2020 PQ and HLG BT.2020 HLG, all with the
+    // session's range (client contract, section 3). A frame that doesn't
+    // match is never shown as if it did.
+    PyrowaveColor::FrameColor frame;
+    frame.primaries = metadata.primaries;
+    frame.transfer = metadata.transfer;
+    frame.transform = metadata.transform;
+    frame.range = metadata.range;
+    frame.chromaSiting = metadata.chroma_siting;
+    if (!m_Contract.matches(frame)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "PyroWave color metadata mismatch: primaries %d, transfer %d, transform %d, "
-                     "range %d, siting %u (expected BT.709 SDR, range %d)",
+                     "range %d, siting %u (expected %s, range %d)",
                      metadata.primaries, metadata.transfer, metadata.transform, metadata.range,
-                     metadata.chroma_siting, expectedRange);
+                     metadata.chroma_siting, m_Contract.signalName(), m_Contract.expected().range);
         failure.reason = tr("The host sent PyroWave video in a different color format than this "
-                            "session uses (BT.709 SDR, %1 range).")
-                             .arg(m_Params.fullRange ? tr("full") : tr("limited"));
+                            "session uses (%1, %2 range).")
+                             .arg(QString::fromLatin1(m_Contract.signalName()),
+                                  m_Params.fullRange ? tr("full") : tr("limited"));
         return false;
     }
 
@@ -996,8 +1094,8 @@ bool PyrowaveVulkanRenderer::decodeToPlanes(PyrowaveFailure& failure)
             view.image = m_Planes[i].image;
             view.width = m_Planes[i].width;
             view.height = m_Planes[i].height;
-            view.image_format = k_PlaneFormat;
-            view.view_format = k_PlaneFormat;
+            view.image_format = m_PlaneFormat;
+            view.view_format = m_PlaneFormat;
             view.aspect = VK_IMAGE_ASPECT_COLOR_BIT;
             view.swizzle = VK_COMPONENT_SWIZZLE_IDENTITY;
             view.layout = VK_IMAGE_LAYOUT_GENERAL;
@@ -1082,6 +1180,12 @@ PyrowaveVulkanRenderer::submitFrame(const uint8_t* data, size_t length,
     // anything right now doesn't cost a decode. Handle resizes like
     // PlVkRenderer::waitToRender().
     const uint64_t acquireStart = LiGetMicroseconds();
+
+    // New static HDR metadata reaches the swapchain before its next image.
+    if (!pl_color_space_equal(&m_FrameColor, &m_HintedColor)) {
+        hintSwapchainColorspace();
+    }
+
     int drawableWidth, drawableHeight;
     PlVkShared::getDrawableSize(m_Instance.window(), &drawableWidth, &drawableHeight);
     if (!pl_swapchain_resize(m_Swapchain, &drawableWidth, &drawableHeight)) {
@@ -1127,6 +1231,20 @@ PyrowaveVulkanRenderer::present(const pl_swapchain_frame& swapchainFrame, bool d
     pl_frame targetFrame;
     pl_frame_from_swapchain(&targetFrame, &swapchainFrame);
 
+    // libplacebo maps to whatever the surface gave it. An HDR stream on an
+    // SDR swapchain (the display left HDR mode) is tone mapped, not refused,
+    // but it is never silent.
+    if (m_Contract.isHdr() && !pl_color_transfer_is_hdr(swapchainFrame.color_space.transfer)) {
+        if (!m_LoggedSdrTarget) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "PyroWave %s frames are being tone mapped to an SDR swapchain",
+                        m_Contract.signalName());
+            m_LoggedSdrTarget = true;
+        }
+    } else {
+        m_LoggedSdrTarget = false;
+    }
+
     // Reserve enough space to avoid allocating under the overlay lock
     pl_overlay_part overlayParts[Overlay::OverlayMax] = {};
     std::vector<pl_tex> texturesToDestroy;
@@ -1143,11 +1261,12 @@ PyrowaveVulkanRenderer::present(const pl_swapchain_frame& swapchainFrame, bool d
         image.planes[i].components = 1;
         image.planes[i].component_mapping[0] = channels[i];
     }
-    image.repr.sys = PL_COLOR_SYSTEM_BT_709;
+    image.repr.sys = m_Contract.isHdr() ? PL_COLOR_SYSTEM_BT_2020_NC : PL_COLOR_SYSTEM_BT_709;
     image.repr.levels = m_Params.fullRange ? PL_COLOR_LEVELS_FULL : PL_COLOR_LEVELS_LIMITED;
-    image.repr.bits.sample_depth = 8;
-    image.repr.bits.color_depth = 8;
-    image.color = pl_color_space_bt709;
+    image.repr.bits.sample_depth = m_PlaneEncoding.sampleDepth;
+    image.repr.bits.color_depth = m_PlaneEncoding.colorDepth;
+    image.repr.bits.bit_shift = m_PlaneEncoding.bitShift;
+    image.color = m_FrameColor;
     image.crop.x0 = 0;
     image.crop.y0 = 0;
     image.crop.x1 = (float)m_Params.width;
@@ -1177,10 +1296,17 @@ PyrowaveVulkanRenderer::present(const pl_swapchain_frame& swapchainFrame, bool d
     targetFrame.crop.x1 = dst.x + dst.w;
     targetFrame.crop.y1 = dst.y + dst.h;
 
+    // Like PlVkRenderer without HDR10+: HDR is tone mapped against the
+    // measured frame where the target needs it, not only the static metadata.
+    pl_render_params renderParams = pl_render_fast_params;
+    if (m_Contract.isHdr()) {
+        renderParams.peak_detect_params = &pl_peak_detect_default_params;
+    }
+
     targetFrame.num_overlays = (int)overlays.size();
     targetFrame.overlays = overlays.data();
     if (!pl_render_image(m_Renderer, m_HasDecodedFrame ? &image : nullptr, &targetFrame,
-                         &pl_render_fast_params)) {
+                         &renderParams)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "pl_render_image() failed");
         // NB: We must fallthrough to call pl_swapchain_submit_frame()
     }

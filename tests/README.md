@@ -17,6 +17,7 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | clipboard_payload_routing | 剪贴板状态、复合内容、文件保护、IPC 分帧和本地 TLS 传输回归（offscreen） | Windows |
 | clipboard_helper_lifecycle | helper 异常退出、响应超时和进程管道背压 | Windows |
 | overlay_button_position | 悬浮按钮归一化/还原坐标的跨分辨率往返 | Windows |
+| pyrowave_color | PyroWave 颜色合同表（SDR/HDR10/HLG × 范围）、HDR 平面位编码、SS_HDR_METADATA 解析与快照保留规则、libplacebo 元数据映射 | Windows |
 | file_mapping_websocket_framing | 文件映射 WS 帧解析(fin/分片/ping-pong) | Windows |
 | shared_helpers | 配对证书策略、版本比较与 GFE 兼容性回退 | Windows |
 | amf_lifecycle | AMF 会话探测、初始化/重配/帧处理失败、析构与多会话的对象/DLL 释放顺序 | Windows |

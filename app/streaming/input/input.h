@@ -11,6 +11,8 @@
 
 #include "SDL_compat.h"
 
+#include "shortcuts.h"
+
 #include <QByteArray>
 #include <QHash>
 #include <QSet>
@@ -162,6 +164,13 @@ public:
 #endif
 
     void handleKeyEvent(SDL_KeyboardEvent* event);
+
+    // Actions triggered by keyboard shortcuts, by ID. Other UI (e.g. an
+    // in-stream menu) may trigger them or register extra handlers here.
+    ShortcutDispatcher& getShortcutDispatcher() { return m_ShortcutDispatcher; }
+
+    // Re-reads the keyboard shortcut bindings from settings
+    void reloadShortcuts();
 
     void handleMouseButtonEvent(SDL_MouseButtonEvent* event);
 
@@ -473,12 +482,8 @@ private:
     // 隐藏的去抖定时器。见 updateRemoteCursorVisibility()。
     SDL_TimerID m_RemoteCursorHideTimer;
 
-    struct {
-        KeyCombo keyCombo;
-        SDL_Keycode keyCode;
-        SDL_Scancode scanCode;
-        bool enabled;
-    } m_SpecialKeyCombos[KeyComboMax];
+    ShortcutMatcher m_ShortcutMatcher;
+    ShortcutDispatcher m_ShortcutDispatcher;
 
     SDL_TouchFingerEvent m_LastTouchDownEvent;
     SDL_TouchFingerEvent m_LastTouchUpEvent;

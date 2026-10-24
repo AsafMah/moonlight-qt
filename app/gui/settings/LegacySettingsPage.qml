@@ -450,6 +450,10 @@ Column {
         }
     }
 
+    ShortcutSettingsCard {
+        visible: settingsPage.category === "input" && hasVisibleContent
+    }
+
     SettingsCard {
         visible: settingsPage.category === "input" && hasVisibleContent
         title: qsTr("Touch input")

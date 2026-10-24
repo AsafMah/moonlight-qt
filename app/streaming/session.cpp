@@ -1006,7 +1006,16 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     // its Vulkan decode and presentation. Session only asks for this format
     // after PyrowaveVideoDecoder::preflight() has passed.
     if (videoFormat == VIDEO_FORMAT_PYROWAVE) {
-        chosenDecoder = new PyrowaveVideoDecoder(testOnly);
+        // The decoder checks every frame against the negotiated range and
+        // follows the delivery model that the advertised capabilities chose.
+        PyrowaveSessionContract contract;
+        if (s_ActiveSession != nullptr) {
+            contract.colorRange = s_ActiveSession->m_StreamConfig.colorRange;
+            contract.hdrMode = s_ActiveSession->m_StreamConfig.hdrMode;
+            contract.pullRenderer =
+                (s_ActiveSession->m_VideoCallbacks.capabilities & CAPABILITY_PULL_RENDERER) != 0;
+        }
+        chosenDecoder = new PyrowaveVideoDecoder(testOnly, contract);
         if (chosenDecoder->initialize(&params)) {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave video decoder chosen");
             return true;
@@ -3838,6 +3847,21 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
     case SDL_CODE_FLUSH_WINDOW_EVENT_BARRIER:
         m_FlushingWindowEventsRef--;
         break;
+    case SDL_CODE_PYROWAVE_FATAL: {
+        // PyroWave gave up after its bounded recovery. End the stream with
+        // the failing stage; the codec is never switched mid-stream.
+        QString* reason = static_cast<QString*>(event.data2);
+        m_UnexpectedTermination = true;
+        emit displayLaunchError(
+            PyrowaveVideoDecoder::fatalErrorText((int)(intptr_t)event.data1, *reason));
+        delete reason;
+
+        SDL_Event quitEvent = {};
+        quitEvent.type = SDL_QUIT;
+        quitEvent.quit.timestamp = SDL_GetTicks();
+        pushEventOrWarn(quitEvent);
+        break;
+    }
     case SDL_CODE_PYROWAVE_FALLBACK_NOTICE:
         showStreamingToast(PyrowaveVideoDecoder::fallbackNotice((int)(intptr_t)event.data1), 8000);
         break;

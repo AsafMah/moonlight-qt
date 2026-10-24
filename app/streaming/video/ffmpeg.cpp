@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "streaming/session.h"
 #include "streaming/stats/videostatsbridge.h"
+#include "streaming/stats/statsmath.h"
 
 #include <cmath>
 
@@ -1023,6 +1024,28 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS &stats, char *output, i
                        //    (float)stats.minHostProcessingLatency / 10,
                        //    (float)stats.maxHostProcessingLatency / 10,
                        (float)stats.totalHostProcessingLatency / 10 / stats.framesWithHostProcessingLatency);
+        if (ret < 0 || ret >= length - offset) {
+            SDL_assert(false);
+            return;
+        }
+
+        offset += ret;
+    }
+
+    // Frame rate lows, jitter and the latency estimate from the stats model.
+    // The global stats logged at the end get whole-session lows.
+    if (stats.renderedFrames != 0 && Session::get() != nullptr) {
+        const StatsSnapshot snapshot =
+            Session::get()->getStatsModel().snapshot(LiGetMicroseconds());
+        const FrameTimeSummary& lows =
+            &stats == &m_GlobalVideoStats ? snapshot.sessionFrameTimes : snapshot.frameTimes;
+        const LatencyBreakdown latency =
+            StatsMath::estimateLatency(VideoStatsBridge::toStatsWindow(stats));
+        ret = snprintf(&output[offset], length - offset,
+                       "\n {18}1%% Low **%.1f** · 0.1%% Low **%.1f** {16}|  {18}"
+                       "Jitter **%.2f**ms {16}|  {18}Latency ~**%.1f**ms ",
+                       lows.onePercentLowFps, lows.pointOnePercentLowFps, snapshot.jitterMs,
+                       latency.totalMs());
         if (ret < 0 || ret >= length - offset) {
             SDL_assert(false);
             return;

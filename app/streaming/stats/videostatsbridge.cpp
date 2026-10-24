@@ -82,6 +82,15 @@ void readRtpCounters(StatsWindow& window)
     // unreported (-1) rather than showing a misleading zero.
     window.fecRecoveredFrames = -1;
     window.fecUnrecoverableFrames = -1;
+
+#ifdef LI_HAS_RTP_VIDEO_FEC_STATS
+    // Moonlight V+: moonlight-common-c builds that count video FEC results
+    // (LI_HAS_RTP_VIDEO_FEC_STATS) report them per frame
+    RTP_VIDEO_FEC_STATS fecStats = {};
+    LiGetRTPVideoFecStats(&fecStats);
+    window.fecRecoveredFrames = static_cast<int64_t>(fecStats.framesRecovered);
+    window.fecUnrecoverableFrames = static_cast<int64_t>(fecStats.framesUnrecoverable);
+#endif
 }
 
 int formatMetrics(const StatsSnapshot& snapshot, const VIDEO_STATS& stats, bool sessionWide,

@@ -472,7 +472,8 @@ PanelContent OverlayStatsWindow::panelContent(QVector<Cell>& cells) const
         if (!m_Snapshot.renderer.isEmpty()) {
             pipeline += QStringLiteral(" · ") + m_Snapshot.renderer;
         }
-        content.headerLines = { lows, cellFor(Metric::Resolution).value, pipeline };
+        // Spelled out: Qt 5 finds assigning a braced list to a QStringList ambiguous
+        content.headerLines = QStringList{ lows, cellFor(Metric::Resolution).value, pipeline };
     }
 
     cells = cellsFor(panelMetrics());

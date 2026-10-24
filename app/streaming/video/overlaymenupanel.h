@@ -110,6 +110,9 @@ public:
         SelectStreamFps,
         ApplyStreamQuality,
         SaveStreamQualityAsDefault,
+        // Live session totals (SessionStatsProvider). Marks the submenu entry
+        // and its read-only rows; never dispatched.
+        OpenSessionStats,
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         OpenStylusReplayPanel,
 #endif
@@ -234,6 +237,11 @@ public:
     {
         m_StreamQualityCallback = std::move(cb);
     }
+
+    // Rows (label, value) of the Session level. Polled when the level opens
+    // and about once a second while it is shown; keep the row count fixed.
+    using SessionStatsProvider = std::function<std::vector<std::pair<QString, QString>>()>;
+    void setSessionStatsProvider(SessionStatsProvider provider);
 
     // Human-readable bitrate label shared with toast/log formatting.
     static QString formatBitrateKbps(int kbps);
@@ -452,6 +460,12 @@ private:
     int m_StatsOverlayLevel = -1;
     StatsOverlay::Preset m_StatsOverlayPreset = StatsOverlay::Preset::Off;
     bool m_StatsOverlayEditable = true;
+
+    // Session level: appended and looked up like the overlay level
+    void refreshSessionStats();
+    int m_SessionStatsLevel = -1;
+    SessionStatsProvider m_SessionStatsProvider;
+    QTimer m_SessionStatsTimer;
 
     std::vector<MenuLevel> m_MenuLevels;
     // Level indices of the visible tab roots, in display order

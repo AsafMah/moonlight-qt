@@ -1011,6 +1011,30 @@
         <source>Reset</source>
         <translation>重置</translation>
     </message>
+    <message>
+        <source>Show summary after streaming</source>
+        <translation>串流结束后显示小结</translation>
+    </message>
+    <message>
+        <source>When a stream ends normally, show its duration, frame times, lows, drops, bitrate and latency.</source>
+        <translation>串流正常结束时，显示本次的时长、帧时间、低帧、丢帧、码率和延迟。</translation>
+    </message>
+    <message>
+        <source>Record session stats to CSV</source>
+        <translation>将会话统计记录为 CSV</translation>
+    </message>
+    <message>
+        <source>Writes one row per second of stream statistics to a CSV file in %1.</source>
+        <translation>串流期间每秒向 %1 中的 CSV 文件写入一行统计数据。</translation>
+    </message>
+    <message>
+        <source>Session stats folder</source>
+        <translation>会话统计文件夹</translation>
+    </message>
+    <message>
+        <source>Open CSV folder</source>
+        <translation>打开 CSV 文件夹</translation>
+    </message>
 </context>
 <context>
     <name>EcosystemPlatformCatalog</name>
@@ -2396,6 +2420,10 @@
         <source>Tabs</source>
         <translation>切换页</translation>
     </message>
+    <message>
+        <source>No stats yet</source>
+        <translation>暂无统计</translation>
+    </message>
 </context>
 <context>
     <name>OverlayStatsWindow</name>
@@ -3590,6 +3618,181 @@
     <message>
         <source>Host commands need a Foundation Sunshine host</source>
         <translation>超级指令需要 Foundation Sunshine 主机</translation>
+    </message>
+    <message>
+        <source>Duration</source>
+        <translation>时长</translation>
+    </message>
+    <message>
+        <source>Average FPS</source>
+        <translation>平均帧率</translation>
+    </message>
+    <message>
+        <source>1% / 0.1% low</source>
+        <translation>1% / 0.1% 低帧</translation>
+    </message>
+    <message>
+        <source>%1 / %2 FPS</source>
+        <translation>%1 / %2 FPS</translation>
+    </message>
+    <message>
+        <source>Frame time, 99th percentile</source>
+        <translation>帧时间（99 百分位）</translation>
+    </message>
+    <message>
+        <source>%1 ms</source>
+        <translation>%1 ms</translation>
+    </message>
+    <message>
+        <source>Network loss</source>
+        <translation>网络丢帧</translation>
+    </message>
+    <message>
+        <source>%1% (%2 frames)</source>
+        <translation>%1%（%2 帧）</translation>
+    </message>
+    <message>
+        <source>Pacer drops</source>
+        <translation>帧同步丢帧</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>码率</translation>
+    </message>
+    <message>
+        <source>%1 Mbps</source>
+        <translation>%1 Mbps</translation>
+    </message>
+    <message>
+        <source>Latency</source>
+        <translation>延迟</translation>
+    </message>
+    <message>
+        <source>%1 recovered, %2 unrecoverable</source>
+        <translation>已修复 %1，无法修复 %2</translation>
+    </message>
+    <message>
+        <source>Not reported</source>
+        <translation>未报告</translation>
+    </message>
+    <message>
+        <source>FEC frames</source>
+        <translation>FEC 帧</translation>
+    </message>
+</context>
+<context>
+    <name>SessionSummaryDialog</name>
+    <message>
+        <source>Session summary</source>
+        <translation>会话小结</translation>
+    </message>
+    <message>
+        <source>Duration</source>
+        <translation>时长</translation>
+    </message>
+    <message>
+        <source>Stream</source>
+        <translation>画面</translation>
+    </message>
+    <message>
+        <source>%1×%2 at %3 FPS, %4</source>
+        <translation>%1×%2，%3 FPS，%4</translation>
+    </message>
+    <message>
+        <source>Average FPS</source>
+        <translation>平均帧率</translation>
+    </message>
+    <message>
+        <source>1% / 0.1% low</source>
+        <translation>1% / 0.1% 低帧</translation>
+    </message>
+    <message>
+        <source>%1 / %2 FPS</source>
+        <translation>%1 / %2 FPS</translation>
+    </message>
+    <message>
+        <source>Frame time</source>
+        <translation>帧时间</translation>
+    </message>
+    <message>
+        <source>%1 ms average, %2 ms 99th percentile, %3 ms max</source>
+        <translation>平均 %1 ms，99 百分位 %2 ms，最大 %3 ms</translation>
+    </message>
+    <message>
+        <source>Network loss</source>
+        <translation>网络丢帧</translation>
+    </message>
+    <message>
+        <source>%1% (%2 frames)</source>
+        <translation>%1%（%2 帧）</translation>
+    </message>
+    <message>
+        <source>Pacer drops</source>
+        <translation>帧同步丢帧</translation>
+    </message>
+    <message>
+        <source>Bitrate</source>
+        <translation>码率</translation>
+    </message>
+    <message>
+        <source>%1 Mbps average, %2 Mbps peak</source>
+        <translation>平均 %1 Mbps，峰值 %2 Mbps</translation>
+    </message>
+    <message>
+        <source>Latency</source>
+        <translation>延迟</translation>
+    </message>
+    <message>
+        <source>%1 ms average</source>
+        <translation>平均 %1 ms</translation>
+    </message>
+    <message>
+        <source>Round trip</source>
+        <translation>往返时间</translation>
+    </message>
+    <message>
+        <source>%1 ms average, %2 ms max, %3 ms jitter</source>
+        <translation>平均 %1 ms，最大 %2 ms，抖动 %3 ms</translation>
+    </message>
+    <message>
+        <source>FEC</source>
+        <translation>FEC</translation>
+    </message>
+    <message>
+        <source>%1 frames recovered, %2 unrecoverable</source>
+        <translation>已修复 %1 帧，%2 帧无法修复</translation>
+    </message>
+    <message>
+        <source>%1 of %2 packets, frame results not reported by the host</source>
+        <translation>%2 个包中有 %1 个 FEC 包，主机未报告帧修复结果</translation>
+    </message>
+    <message>
+        <source>Moonlight session summary</source>
+        <translation>Moonlight 会话小结</translation>
+    </message>
+    <message>
+        <source>%1 on %2</source>
+        <translation>%2 上的 %1</translation>
+    </message>
+    <message>
+        <source>CSV</source>
+        <translation>CSV</translation>
+    </message>
+    <message>
+        <source>Recorded to %1</source>
+        <translation>已记录到 %1</translation>
+    </message>
+    <message>
+        <source>Copy summary</source>
+        <translation>复制小结</translation>
+    </message>
+    <message>
+        <source>Open CSV folder</source>
+        <translation>打开 CSV 文件夹</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>已复制</translation>
     </message>
 </context>
 <context>

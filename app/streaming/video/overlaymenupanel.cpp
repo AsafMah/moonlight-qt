@@ -253,6 +253,17 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode
         }
     });
 
+    // Keeps the Session level's numbers live while it is shown
+    m_SessionStatsTimer.setInterval(1000);
+    connect(&m_SessionStatsTimer, &QTimer::timeout, this, [this]() {
+        if (!m_Visible || m_CurrentLevel != m_SessionStatsLevel) {
+            m_SessionStatsTimer.stop();
+            return;
+        }
+        refreshSessionStats();
+        forceRepaint();
+    });
+
     m_BitrateCommitTimer.setSingleShot(true);
     connect(&m_BitrateCommitTimer, &QTimer::timeout, this, [this]() {
         commitBitrateNow();
@@ -425,6 +436,8 @@ void OverlayMenuPanel::buildMenuLevels()
     // can change between builds; follow it by identity.
     const bool onStreamQualityLevel =
         m_StreamQualityLevel >= 0 && m_CurrentLevel == m_StreamQualityLevel;
+    const bool inSessionStatsLevel =
+        m_SessionStatsLevel >= 0 && m_CurrentLevel == m_SessionStatsLevel;
 
     m_MenuLevels.clear();
     m_TabLevels.clear();
@@ -697,6 +710,21 @@ void OverlayMenuPanel::buildMenuLevels()
     if (onStreamQualityLevel) {
         m_CurrentLevel = m_StreamQualityLevel;
     }
+
+    // === Session (live totals) ===
+    MenuLevel session;
+    session.title = tr("Session");
+    m_SessionStatsLevel = static_cast<int>(m_MenuLevels.size());
+    m_MenuLevels.push_back(std::move(session));
+    for (MenuItem& item : m_MenuLevels[0].items) {
+        if (item.action == MenuAction::OpenSessionStats) {
+            item.targetLevel = m_SessionStatsLevel;
+        }
+    }
+    if (inSessionStatsLevel) {
+        m_CurrentLevel = m_SessionStatsLevel;
+    }
+    refreshSessionStats();
 
     // Point SubMenu rows at their levels by the Open* action they carry. This
     // covers tab entries and rows inside a sub-level that link to another
@@ -981,6 +1009,41 @@ void OverlayMenuPanel::updateStatsOverlayState(StatsOverlay::Preset preset, bool
     m_StatsOverlayEditable = canEditPosition;
     applyStatsOverlayState();
     forceRepaint();
+}
+
+void OverlayMenuPanel::setSessionStatsProvider(SessionStatsProvider provider)
+{
+    m_SessionStatsProvider = std::move(provider);
+    refreshSessionStats();
+}
+
+void OverlayMenuPanel::refreshSessionStats()
+{
+    if (m_SessionStatsLevel < 0 ||
+        m_MenuLevels.size() <= static_cast<size_t>(m_SessionStatsLevel)) {
+        return;
+    }
+
+    std::vector<std::pair<QString, QString>> rows;
+    if (m_SessionStatsProvider) {
+        rows = m_SessionStatsProvider();
+    }
+    if (rows.empty()) {
+        rows.emplace_back(tr("No stats yet"), QString());
+    }
+
+    auto& items = m_MenuLevels[m_SessionStatsLevel].items;
+    const size_t previousCount = items.size();
+    items.clear();
+    for (auto& row : rows) {
+        // Read-only rows: disabled, so they never take focus or dispatch
+        items.push_back({ std::move(row.first), std::move(row.second), MenuItemType::Action,
+                          MenuAction::OpenSessionStats, 0, false, false, false });
+    }
+
+    if (previousCount != items.size() && m_Visible && m_CurrentLevel == m_SessionStatsLevel) {
+        repositionWindow();
+    }
 }
 
 void OverlayMenuPanel::applyStatsOverlayState()
@@ -1628,6 +1691,12 @@ void OverlayMenuPanel::navigateToLevel(int level)
 
     m_CurrentLevel = level;
     m_HoveredIndex = -1;
+    if (level == m_SessionStatsLevel) {
+        refreshSessionStats();
+        m_SessionStatsTimer.start();
+    } else {
+        m_SessionStatsTimer.stop();
+    }
     repositionWindow();
 
     if (goingForward) {

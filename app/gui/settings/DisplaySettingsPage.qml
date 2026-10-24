@@ -5,6 +5,7 @@ import "../theme"
 import ".."
 
 import StreamingPreferences 1.0
+import SessionStatsSettings 1.0
 import StatsOverlaySettings 1.0
 import SystemProperties 1.0
 
@@ -267,6 +268,35 @@ Column {
             HardButton {
                 text: qsTr("Reset")
                 onClicked: StatsOverlaySettings.resetPlacements()
+            }
+        }
+
+        // 会话统计：和浮层用同一套数据，所以放在同一张卡里；与浮层是否显示无关
+        ToggleRow {
+            title: qsTr("Show summary after streaming")
+            description: qsTr("When a stream ends normally, show its duration, frame times, lows, drops, bitrate and latency.")
+            checked: SessionStatsSettings.showSummary
+            onToggled: function(value) {
+                SessionStatsSettings.showSummary = value
+            }
+        }
+
+        ToggleRow {
+            title: qsTr("Record session stats to CSV")
+            description: qsTr("Writes one row per second of stream statistics to a CSV file in %1.")
+                             .arg(SessionStatsSettings.statsDirectory)
+            checked: SessionStatsSettings.recordCsv
+            onToggled: function(value) {
+                SessionStatsSettings.recordCsv = value
+            }
+        }
+
+        SettingsRow {
+            title: qsTr("Session stats folder")
+
+            HardButton {
+                text: qsTr("Open CSV folder")
+                onClicked: SessionStatsSettings.openStatsFolder()
             }
         }
     }

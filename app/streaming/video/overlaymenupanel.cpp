@@ -680,11 +680,16 @@ void OverlayMenuPanel::buildMenuLevels()
         m_MenuLevels.push_back(std::move(hostCommands));
     }
 
-    // Point the tab entries at their sub-levels
-    for (int level : m_TabLevels) {
-        for (MenuItem& item : m_MenuLevels[level].items) {
+    // Point SubMenu rows at their levels by the Open* action they carry. This
+    // covers tab entries and rows inside a sub-level that link to another
+    // one (e.g. a Bitrate row tagged MenuAction::OpenBitrate).
+    for (MenuLevel& level : m_MenuLevels) {
+        for (MenuItem& item : level.items) {
             if (item.type == MenuItemType::SubMenu) {
-                item.targetLevel = levelForOpenAction(item.action);
+                const int target = levelForOpenAction(item.action);
+                if (target >= 0) {
+                    item.targetLevel = target;
+                }
             }
         }
     }

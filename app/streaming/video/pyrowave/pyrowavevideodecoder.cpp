@@ -353,6 +353,15 @@ bool PyrowaveVideoDecoder::initialize(PDECODER_PARAMETERS params)
     m_DisplayFps = StreamUtils::getDisplayRefreshRate(params->window);
     m_PacerDisplayFps = m_DisplayFps;
     m_FramePacer.configure(m_EnableFramePacing, m_StreamFps, m_PacerDisplayFps);
+    // VRR turns V-Sync and frame pacing off (see VrrPolicy::decide()), so the
+    // swapchain presents without waiting; only the cap is left to apply here
+    m_VrrLimiter =
+        VrrPolicy::FrameLimiter(params->enableVrr ? VrrPolicy::frameCapFps(m_DisplayFps) : 0);
+    if (params->enableVrr) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "PyroWave VRR mode: presenting on arrival, capped at %d FPS",
+                    VrrPolicy::frameCapFps(m_DisplayFps));
+    }
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave pacing: %d FPS stream, %d Hz display, %s",
                 m_StreamFps, m_PacerDisplayFps,
                 m_FramePacer.isDecimating() ? "presenting an even share of frames"
@@ -612,6 +621,16 @@ int PyrowaveVideoDecoder::processFrame(PDECODE_UNIT du)
         return DR_OK;
     }
 
+    // VRR: wait for the present-rate cap. A newer frame arriving meanwhile
+    // replaces this one, as above.
+    if (const uint64_t waitUs = m_VrrLimiter.waitUs(LiGetMicroseconds()); waitUs > 0) {
+        SDL_Delay((Uint32)((waitUs + 999) / 1000));
+        if (LiGetPendingVideoFrames() > 0) {
+            m_ActiveWndVideoStats.pacerDroppedFrames++;
+            return DR_OK;
+        }
+    }
+
     // The decoder takes the payload in one piece.
     m_FrameBuffer.resize((size_t)du->fullLength);
     size_t offset = 0;
@@ -662,6 +681,7 @@ int PyrowaveVideoDecoder::processFrame(PDECODE_UNIT du)
     case PyrowaveVulkanRenderer::FrameResult::Presented:
         // Present times feed the frame time percentiles (1% and 0.1% lows)
         Session::get()->getStatsModel().recordFramePresented(LiGetMicroseconds());
+        m_VrrLimiter.onPresented(LiGetMicroseconds());
 
         // Only a decoded and presented frame clears the failure count.
         m_ConsecutiveFailures = 0;

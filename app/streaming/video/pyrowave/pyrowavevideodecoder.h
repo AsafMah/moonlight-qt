@@ -2,6 +2,7 @@
 
 #include "pyrowavecolor.h"
 #include "pyrowavepacing.h"
+#include "streaming/video/vrrpolicy.h"
 #include "streaming/bandwidth.h"
 #include "streaming/video/decoder.h"
 #include "streaming/video/overlaymanager.h"
@@ -194,6 +195,9 @@ private:
     bool m_EnableFramePacing = false;
     int m_PacerDisplayFps = 0;
     PyrowavePacing::FramePacer m_FramePacer;
+    // VRR mode: presents capped just below the refresh rate, like the Pacer
+    // does for FFmpeg, so they stay inside the display's VRR range
+    VrrPolicy::FrameLimiter m_VrrLimiter;
 
     // Wire-level video bitrate (with FEC), read once per stats window
     BandwidthMeter m_BandwidthMeter;

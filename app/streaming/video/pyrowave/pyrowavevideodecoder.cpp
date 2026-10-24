@@ -123,11 +123,12 @@ PyrowavePreflightResult PyrowaveVideoDecoder::preflight(const PyrowavePreflightR
         return result;
     }
 
-    // HDR10 and HLG are PW-3. Never stream SDR in their place: an explicit
-    // PyroWave choice with HDR on fails here with the reason.
-    if (request.hdrMode != 0) {
-        result.reason = tr("PyroWave HDR isn't available in this build yet. Turn off HDR in "
-                           "Settings to stream with PyroWave.");
+    // HDR10 and HLG need HDR output on this GPU and window, which the
+    // renderer below checks. When it can't, the launch fails with the reason;
+    // SDR is never streamed in HDR's place.
+    if (!PyrowaveColor::Contract(request.hdrMode, false).isValid()) {
+        result.reason = tr("PyroWave doesn't support the selected HDR mode (%1).")
+                            .arg(request.hdrMode);
         return result;
     }
 
@@ -148,13 +149,29 @@ PyrowavePreflightResult PyrowaveVideoDecoder::preflight(const PyrowavePreflightR
     PyrowavePresentParams params;
     params.width = request.width;
     params.height = request.height;
+    params.hdrMode = request.hdrMode;
     if (!renderer.initialize(params, failure)) {
         result.reason = failure.reason;
+
+        // Say so when only HDR is the problem. The same GPU and window are
+        // tried in SDR just to tell, never to stream SDR instead.
+        if (request.hdrMode != 0) {
+            PyrowaveVulkanRenderer sdrRenderer(instance);
+            PyrowavePresentParams sdrParams = params;
+            sdrParams.hdrMode = 0;
+            PyrowaveFailure sdrFailure;
+            if (sdrRenderer.initialize(sdrParams, sdrFailure)) {
+                result.reason = tr("This PC can't show PyroWave in HDR: %1 Turn off HDR in "
+                                   "Settings to stream with PyroWave in SDR.")
+                                    .arg(failure.reason);
+            }
+        }
         return result;
     }
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave preflight passed on '%s' (%dx%d)",
-                renderer.deviceName().c_str(), request.width, request.height);
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave preflight passed on '%s' (%dx%d, %s)",
+                renderer.deviceName().c_str(), request.width, request.height,
+                PyrowaveColor::Contract(request.hdrMode, false).signalName());
     result.ok = true;
     return result;
 #endif
@@ -299,10 +316,9 @@ bool PyrowaveVideoDecoder::initialize(PDECODER_PARAMETERS params)
     m_EnableVsync = params->enableVsync;
     m_IgnoreAspectRatio = params->ignoreAspectRatio;
 
-    // preflight() refused HDR, so an HDR session can't get here.
-    // TODO(PW-3): HDR10/HLG.
-    if (m_Contract.hdrMode != 0) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "PyroWave HDR (mode %d) isn't supported yet",
+    // preflight() refused anything else, so this can't happen.
+    if (!PyrowaveColor::Contract(m_Contract.hdrMode, false).isValid()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "PyroWave doesn't support HDR mode %d",
                      m_Contract.hdrMode);
         return false;
     }
@@ -362,15 +378,25 @@ bool PyrowaveVideoDecoder::createRenderer(PyrowaveFailure& failure)
     params.width = m_Width;
     params.height = m_Height;
     params.fullRange = m_Contract.colorRange == COLOR_RANGE_FULL;
+    params.hdrMode = m_Contract.hdrMode;
     params.enableVsync = m_EnableVsync;
     params.ignoreAspectRatio = m_IgnoreAspectRatio;
 
     auto renderer = std::make_unique<PyrowaveVulkanRenderer>(*m_Instance);
+    {
+        // The swapchain is first hinted during initialize(), so it gets the
+        // metadata the session already has.
+        std::lock_guard<std::mutex> hdrLock(m_HdrLock);
+        renderer->setHdrSnapshot(m_HdrSnapshot);
+    }
     if (!renderer->initialize(params, failure)) {
         failure.stage = PyrowaveStage::Create;
         return false;
     }
 
+    if (m_Contract.hdrMode != 0) {
+        m_HdrVerified = true;
+    }
     m_Renderer = std::move(renderer);
     return true;
 }
@@ -523,6 +549,10 @@ int PyrowaveVideoDecoder::processFrame(PDECODE_UNIT du)
             rebuilt = createRenderer(failure);
         }
         if (m_Renderer != nullptr) {
+            {
+                std::lock_guard<std::mutex> hdrLock(m_HdrLock);
+                m_Renderer->setHdrSnapshot(m_HdrSnapshot);
+            }
             result = m_Renderer->submitFrame(m_FrameBuffer.data(), offset, timings, failure);
             if (result == PyrowaveVulkanRenderer::FrameResult::Failed) {
                 m_Renderer.reset();
@@ -568,6 +598,51 @@ int PyrowaveVideoDecoder::processFrame(PDECODE_UNIT du)
 #endif
 }
 
+int PyrowaveVideoDecoder::getDecoderColorspace()
+{
+    return m_Contract.hdrMode != 0 ? COLORSPACE_REC_2020 : COLORSPACE_REC_709;
+}
+
+void PyrowaveVideoDecoder::setHdrMode(bool enabled)
+{
+    if (m_TestOnly || m_Contract.hdrMode == 0) {
+        // An SDR stream stays SDR whatever the host's display does.
+        return;
+    }
+
+    SS_HDR_METADATA raw = {};
+    const bool haveMetadata = enabled && LiGetHdrMetadata(&raw);
+
+    PyrowaveColor::HdrSnapshot::Update update;
+    bool valid;
+    {
+        std::lock_guard<std::mutex> lock(m_HdrLock);
+        update = m_HdrSnapshot.update(enabled, haveMetadata ? &raw : nullptr);
+        valid = m_HdrSnapshot.valid();
+    }
+
+    // The stream keeps its HDR signal either way. Without valid metadata the
+    // frames are shown without mastering data instead of invented values.
+    switch (update) {
+    case PyrowaveColor::HdrSnapshot::Update::Accepted:
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "PyroWave HDR metadata: max %u nits, min %.4f nits, MaxCLL %u, MaxFALL %u",
+                    (unsigned)raw.maxDisplayLuminance, raw.minDisplayLuminance / 10000.0,
+                    (unsigned)raw.maxContentLightLevel, (unsigned)raw.maxFrameAverageLightLevel);
+        break;
+    case PyrowaveColor::HdrSnapshot::Update::Cleared:
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "PyroWave host HDR mode is off; frames stay HDR without mastering metadata");
+        break;
+    case PyrowaveColor::HdrSnapshot::Update::Missing:
+    case PyrowaveColor::HdrSnapshot::Update::Invalid:
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "PyroWave HDR metadata %s; %s",
+                    PyrowaveColor::updateName(update),
+                    valid ? "keeping the previous snapshot" : "none applied");
+        break;
+    }
+}
+
 void PyrowaveVideoDecoder::notifyOverlayUpdated(Overlay::OverlayType type)
 {
 #ifdef HAVE_LIBPLACEBO_VULKAN
@@ -602,10 +677,13 @@ void PyrowaveVideoDecoder::stringifyVideoStats(const VIDEO_STATS& stats, char* o
 
     if (stats.receivedFps > 0) {
         appendFormatted(output, length, offset,
-                        " {18}%dx%d@%.0f    PyroWave SDR   {18}FPS  %.1f {14}Rx{18} · %.1f "
+                        " {18}%dx%d@%.0f    PyroWave %s   {18}FPS  %.1f {14}Rx{18} · %.1f "
                         "{14}De{18} · %.1f {14}Rd{18} \n",
-                        m_Width, m_Height, stats.totalFps, stats.receivedFps, stats.decodedFps,
-                        stats.renderedFps);
+                        m_Width, m_Height, stats.totalFps,
+                        m_Contract.hdrMode == 2   ? "HLG"
+                        : m_Contract.hdrMode == 1 ? "HDR10"
+                                                  : "SDR",
+                        stats.receivedFps, stats.decodedFps, stats.renderedFps);
     }
 
     if (stats.renderedFrames != 0) {

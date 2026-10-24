@@ -372,6 +372,7 @@ HEADERS += \
 # provides the Vulkan headers and libplacebo.
 SOURCES += \
     streaming/video/pyrowave/pyrowavecapabilities.cpp \
+    streaming/video/pyrowave/pyrowavecolor.cpp \
     streaming/video/pyrowave/pyrowavehoststore.cpp \
     streaming/video/pyrowave/pyrowaveruntime.cpp \
     streaming/video/pyrowave/pyrowavestatus.cpp \
@@ -380,6 +381,7 @@ SOURCES += \
 HEADERS += \
     streaming/video/pyrowave/pyrowaveabi.h \
     streaming/video/pyrowave/pyrowavecapabilities.h \
+    streaming/video/pyrowave/pyrowavecolor.h \
     streaming/video/pyrowave/pyrowavehoststore.h \
     streaming/video/pyrowave/pyrowaveruntime.h \
     streaming/video/pyrowave/pyrowavestatus.h \

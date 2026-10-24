@@ -2,6 +2,13 @@
 
 #include "SDL_compat.h"
 
+#ifdef HAVE_LIBPLACEBO_VULKAN
+// Checks pyrowaveabi.h against third-party/pyrowave/pyrowave.h when the
+// submodule is checked out. Only this file may see both declarations.
+#define PYROWAVE_ABI_CHECK
+#include "pyrowaveabi.h"
+#endif
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>

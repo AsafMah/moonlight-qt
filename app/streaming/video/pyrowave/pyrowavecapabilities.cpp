@@ -484,6 +484,27 @@ std::vector<VkExtensionProperties> instanceExtensions(PFN_vkGetInstanceProcAddr 
 
 }
 
+PyrowaveGpuCapabilities readPyrowaveGpuCapabilities(PFN_vkGetInstanceProcAddr getInstanceProcAddr,
+                                                    VkInstance instance, VkPhysicalDevice device)
+{
+    InstanceFunctions vk;
+    vk.getInstanceProcAddr = getInstanceProcAddr;
+    vk.instance = instance;
+    vk.load(vk.destroyInstance, "vkDestroyInstance");
+    vk.load(vk.enumeratePhysicalDevices, "vkEnumeratePhysicalDevices");
+    vk.load(vk.getPhysicalDeviceProperties, "vkGetPhysicalDeviceProperties");
+    vk.load(vk.getPhysicalDeviceProperties2, "vkGetPhysicalDeviceProperties2");
+    vk.load(vk.getPhysicalDeviceFeatures, "vkGetPhysicalDeviceFeatures");
+    vk.load(vk.getPhysicalDeviceFeatures2, "vkGetPhysicalDeviceFeatures2");
+    vk.load(vk.getQueueFamilyProperties, "vkGetPhysicalDeviceQueueFamilyProperties");
+    vk.load(vk.enumerateDeviceExtensionProperties, "vkEnumerateDeviceExtensionProperties");
+    if (!vk.complete()) {
+        // Reported as missing everything, which is the safe answer.
+        return PyrowaveGpuCapabilities();
+    }
+    return readDevice(vk, device);
+}
+
 PyrowaveCapabilityReport probePyrowaveCapabilities()
 {
     using Failure = PyrowaveCapabilityReport::Failure;

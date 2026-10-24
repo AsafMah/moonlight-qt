@@ -76,3 +76,12 @@ public:
 // no logical device, surface or decoder, runs no shaders and changes no
 // settings. Blocking: call it off the GUI thread.
 PyrowaveCapabilityReport probePyrowaveCapabilities();
+
+#ifdef HAVE_LIBPLACEBO_VULKAN
+#include <vulkan/vulkan.h>
+
+// The same per-GPU read on an instance the caller already has. Used by the
+// stream setup to judge each GPU exactly like the capability report does.
+PyrowaveGpuCapabilities readPyrowaveGpuCapabilities(PFN_vkGetInstanceProcAddr getInstanceProcAddr,
+                                                    VkInstance instance, VkPhysicalDevice device);
+#endif

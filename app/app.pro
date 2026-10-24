@@ -197,6 +197,9 @@ SOURCES += \
     gui/computermodel.cpp \
     gui/appmodel.cpp \
     streaming/bandwidth.cpp \
+    streaming/sessionstatsrecording.cpp \
+    streaming/stats/sessionstatsrecorder.cpp \
+    streaming/stats/sessionsummary.cpp \
     streaming/stats/statsmath.cpp \
     streaming/stats/streamstatsmodel.cpp \
     streaming/stats/videostatsbridge.cpp \
@@ -238,6 +241,8 @@ HEADERS += \
     gui/appmodel.h \
     streaming/video/decoder.h \
     streaming/bandwidth.h \
+    streaming/stats/sessionstatsrecorder.h \
+    streaming/stats/sessionsummary.h \
     streaming/stats/statsmath.h \
     streaming/stats/statssnapshot.h \
     streaming/stats/streamstatsmodel.h \

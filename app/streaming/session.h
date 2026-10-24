@@ -11,6 +11,9 @@
 #include "audio/renderers/renderer.h"
 #include "video/overlaymanager.h"
 #include "stats/streamstatsmodel.h"
+#include "stats/sessionstatsrecorder.h"
+
+#include <memory>
 
 class SupportedVideoFormatList : public QList<int>
 {
@@ -124,6 +127,13 @@ public:
 
     StreamStatsModel& getStatsModel() { return m_StatsModel; }
 
+    // Summary of the stream that just ended, as SessionSummary::toVariantMap()
+    // fields. Empty if it ended with an error or never produced stats.
+    Q_INVOKABLE QVariantMap sessionSummary() const;
+
+    // Where session stats CSVs are written
+    static QString sessionStatsDirectory();
+
     void flushWindowEvents();
 
     void setShouldExit(bool quitHostApp = false);
@@ -173,6 +183,10 @@ private:
     void notifyMouseEmulationMode(bool enabled);
 
     void updateOptimalWindowDisplayMode();
+
+    void startSessionStatsRecorder();
+
+    void finishSessionStatsRecorder();
 
     enum class DecoderAvailability {
         None,
@@ -285,6 +299,9 @@ private:
 
     Overlay::OverlayManager m_OverlayManager;
     StreamStatsModel m_StatsModel;
+    // Declared after m_StatsModel, which it reads until destroyed
+    std::unique_ptr<SessionStatsRecorder> m_StatsRecorder;
+    SessionSummary m_SessionSummary;
 
     static CONNECTION_LISTENER_CALLBACKS k_ConnCallbacks;
     static Session* s_ActiveSession;

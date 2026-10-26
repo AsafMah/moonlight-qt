@@ -33,6 +33,9 @@ struct StatsWindow
     uint32_t totalFrames = 0;
     uint32_t networkDroppedFrames = 0;
     uint32_t pacerDroppedFrames = 0;
+    // Frames eligible for a Pacer drop. PyroWave can drop before decode, so
+    // this may exceed decodedFrames; zero falls back to decodedFrames.
+    uint32_t pacerDropEligibleFrames = 0;
 
     // Host processing latency, in units of 0.1 ms as reported over RTP
     uint32_t framesWithHostProcessingLatency = 0;
@@ -44,6 +47,11 @@ struct StatsWindow
     uint64_t totalDecodeTimeUs = 0;
     uint64_t totalPacerTimeUs = 0;
     uint64_t totalRenderTimeUs = 0;
+    // Timed successful presents; the separate denominator excludes failed or unavailable samples.
+    uint32_t timedRenderFrames = 0;
+    uint64_t totalPrePresentTimeUs = 0;
+    uint64_t totalPresentTimeUs = 0;
+    bool queueMeasured = true;
 
     // ENet RTT estimate; 0 when not known yet
     uint32_t rttMs = 0;
@@ -68,8 +76,8 @@ struct StatsWindow
     int64_t fecUnrecoverableFrames = -1;
 };
 
-// Estimated glass-to-glass latency, split into the stages we can measure or
-// estimate. Every value is an average in milliseconds.
+// Estimated client-side pipeline latency, split into the stages we can measure
+// or estimate. This is not a glass-to-glass measurement.
 struct LatencyBreakdown
 {
     double hostMs = 0;    // capture + encode on the host (reported over RTP)
@@ -80,8 +88,12 @@ struct LatencyBreakdown
 
     bool hasHost = false;    // the host reported processing latency
     bool hasNetwork = false; // an RTT estimate exists
+    bool hasQueue = false;   // the decoder measured time spent in the Pacer queue
 
-    double totalMs() const { return hostMs + networkMs + decodeMs + queueMs + renderMs; }
+    double totalMs() const
+    {
+        return hostMs + networkMs + decodeMs + (hasQueue ? queueMs : 0) + renderMs;
+    }
 };
 
 // Frame pacing as seen at present time
@@ -95,6 +107,14 @@ struct FrameTimeSummary
     double fps = 0;                   // 1000 / averageMs
     double onePercentLowFps = 0;      // 1000 / p99Ms
     double pointOnePercentLowFps = 0; // 1000 / p999Ms
+};
+
+struct PresentTiming
+{
+    bool measured = false;
+    uint32_t samples = 0;
+    double prePresentMs = 0;
+    double presentMs = 0;
 };
 
 // Everything the overlay and the logs show, in one copyable value
@@ -138,6 +158,7 @@ struct StatsSnapshot
     double jitterMs = 0;           // RFC 3550 interarrival jitter of video frames
     double networkLossPercent = 0; // frames lost by the network
     double pacerDropPercent = 0;   // decoded frames dropped by the Pacer
+    uint32_t queueSamples = 0;     // rendered frames with a measured Pacer queue time
     double bitrateMbps = std::nan("");
     uint32_t videoPackets = 0;
     uint32_t fecPackets = 0;
@@ -145,6 +166,7 @@ struct StatsSnapshot
     int64_t fecUnrecoverableFrames = -1;
 
     // Per-stage averages over the last two windows
+    PresentTiming presentTiming;
     double reassemblyMs = 0; // first to last packet of a frame
     double hostMinMs = 0;
     double hostMaxMs = 0;
@@ -157,4 +179,5 @@ struct StatsSnapshot
     uint64_t sessionFramesRendered = 0;
     uint64_t sessionFramesNetworkDropped = 0;
     uint64_t sessionFramesPacerDropped = 0;
+    uint64_t sessionFramesPacerEligible = 0;
 };

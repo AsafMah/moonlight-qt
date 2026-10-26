@@ -51,9 +51,10 @@ enum class Metric
     SessionTime,
     FrameTimeGraph,
     LatencyBar,
+    Present,
 };
 
-constexpr int MetricCount = static_cast<int>(Metric::LatencyBar) + 1;
+constexpr int MetricCount = static_cast<int>(Metric::Present) + 1;
 
 QVector<Metric> allMetrics();
 QString metricId(Metric metric);
@@ -99,6 +100,8 @@ struct Thresholds
     // Multiple of the target frame time above which a frame is a spike
     double spikeWarnRatio = 1.5;
     double spikeBadRatio = 2.0;
+    double presentWarnRatio = 0.5;
+    double presentBadRatio = 1.0;
 };
 
 // Higher is worse
@@ -107,6 +110,8 @@ Grade gradeFps(double fps, int targetFps, const Thresholds& thresholds = Thresho
 Grade gradeLow(double lowFps, double fps, const Thresholds& thresholds = Thresholds());
 Grade gradeFrameTime(double frameTimeMs, int targetFps,
                      const Thresholds& thresholds = Thresholds());
+Grade gradePresent(double prePresentMs, double presentMs, int targetFps,
+                   const Thresholds& thresholds = Thresholds());
 
 // Scale and background opacity limits, in percent
 constexpr int MinScalePercent = 75;

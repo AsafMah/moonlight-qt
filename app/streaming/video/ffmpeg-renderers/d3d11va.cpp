@@ -875,6 +875,8 @@ bool D3D11VARenderer::prepareDecoderContextInGetFormat(AVCodecContext *context, 
 
 void D3D11VARenderer::renderFrame(AVFrame* frame)
 {
+    m_HasRenderTiming = false;
+    const uint64_t renderStartUs = LiGetMicroseconds();
     if (m_RenderResetPending) {
         return;
     }
@@ -958,7 +960,9 @@ void D3D11VARenderer::renderFrame(AVFrame* frame)
     }
 
     // Present according to the decoder parameters
+    const uint64_t presentStartUs = LiGetMicroseconds();
     hr = m_SwapChain->Present(0, flags);
+    const uint64_t presentEndUs = LiGetMicroseconds();
 
     if (m_DecodeDevice == m_RenderDevice) {
         // Release the context lock
@@ -976,6 +980,21 @@ void D3D11VARenderer::renderFrame(AVFrame* frame)
         SDL_PushEvent(&event);
         return;
     }
+
+    m_RenderTiming.prePresentUs = presentStartUs - renderStartUs;
+    m_RenderTiming.presentUs = presentEndUs - presentStartUs;
+    m_HasRenderTiming = true;
+}
+
+bool D3D11VARenderer::takeRenderTiming(RenderTiming* timing)
+{
+    if (!m_HasRenderTiming || timing == nullptr) {
+        return false;
+    }
+
+    *timing = m_RenderTiming;
+    m_HasRenderTiming = false;
+    return true;
 }
 
 void D3D11VARenderer::renderOverlay(Overlay::OverlayType type)

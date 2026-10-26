@@ -31,7 +31,6 @@ void SessionSummaryBuilder::addWindow(const StatsSnapshot& snapshot)
         m_LatencySumMs += totalMs;
         m_MaxLatencyMs = std::max(m_MaxLatencyMs, totalMs);
         m_LatencySum.decodeMs += latency.decodeMs;
-        m_LatencySum.queueMs += latency.queueMs;
         m_LatencySum.renderMs += latency.renderMs;
         if (latency.hasHost) {
             m_HostLatencyWindows++;
@@ -40,6 +39,10 @@ void SessionSummaryBuilder::addWindow(const StatsSnapshot& snapshot)
         if (latency.hasNetwork) {
             m_NetworkLatencyWindows++;
             m_LatencySum.networkMs += latency.networkMs;
+        }
+        if (latency.hasQueue && snapshot.queueSamples > 0) {
+            m_QueueLatencySamples += snapshot.queueSamples;
+            m_LatencySum.queueMs += latency.queueMs * snapshot.queueSamples;
         }
     }
 
@@ -81,10 +84,13 @@ SessionSummary SessionSummaryBuilder::build(const StatsSnapshot& last) const
     summary.framesRendered = last.sessionFramesRendered;
     summary.framesNetworkDropped = last.sessionFramesNetworkDropped;
     summary.framesPacerDropped = last.sessionFramesPacerDropped;
+    summary.framesPacerEligible = last.sessionFramesPacerEligible > 0
+                                      ? last.sessionFramesPacerEligible
+                                      : last.sessionFramesDecoded;
     summary.networkLossPercent =
         StatsMath::lossPercent(last.sessionFramesNetworkDropped, last.sessionFramesTotal);
     summary.pacerDropPercent =
-        StatsMath::lossPercent(last.sessionFramesPacerDropped, last.sessionFramesDecoded);
+        StatsMath::lossPercent(last.sessionFramesPacerDropped, summary.framesPacerEligible);
 
     if (m_BitrateWindows > 0) {
         summary.hasBitrate = true;
@@ -97,8 +103,11 @@ SessionSummary SessionSummaryBuilder::build(const StatsSnapshot& last) const
         summary.averageLatencyMs = m_LatencySumMs / m_LatencyWindows;
         summary.maxLatencyMs = m_MaxLatencyMs;
         summary.averageLatency.decodeMs = m_LatencySum.decodeMs / m_LatencyWindows;
-        summary.averageLatency.queueMs = m_LatencySum.queueMs / m_LatencyWindows;
         summary.averageLatency.renderMs = m_LatencySum.renderMs / m_LatencyWindows;
+        if (m_QueueLatencySamples > 0) {
+            summary.averageLatency.hasQueue = true;
+            summary.averageLatency.queueMs = m_LatencySum.queueMs / m_QueueLatencySamples;
+        }
         if (m_HostLatencyWindows > 0) {
             summary.averageLatency.hasHost = true;
             summary.averageLatency.hostMs = m_LatencySum.hostMs / m_HostLatencyWindows;
@@ -164,6 +173,7 @@ QVariantMap SessionSummary::toVariantMap() const
     map.insert(QStringLiteral("framesRendered"), static_cast<double>(framesRendered));
     map.insert(QStringLiteral("framesNetworkDropped"), static_cast<double>(framesNetworkDropped));
     map.insert(QStringLiteral("framesPacerDropped"), static_cast<double>(framesPacerDropped));
+    map.insert(QStringLiteral("framesPacerEligible"), static_cast<double>(framesPacerEligible));
     map.insert(QStringLiteral("networkLossPercent"), networkLossPercent);
     map.insert(QStringLiteral("pacerDropPercent"), pacerDropPercent);
 
@@ -182,7 +192,9 @@ QVariantMap SessionSummary::toVariantMap() const
             map.insert(QStringLiteral("latencyNetworkMs"), averageLatency.networkMs);
         }
         map.insert(QStringLiteral("latencyDecodeMs"), averageLatency.decodeMs);
-        map.insert(QStringLiteral("latencyQueueMs"), averageLatency.queueMs);
+        if (averageLatency.hasQueue) {
+            map.insert(QStringLiteral("latencyQueueMs"), averageLatency.queueMs);
+        }
         map.insert(QStringLiteral("latencyRenderMs"), averageLatency.renderMs);
     }
 
@@ -239,21 +251,26 @@ QString SessionSummary::toText() const
                  .arg(frameTimes.onePercentLowFps, 0, 'f', 1)
                  .arg(frameTimes.pointOnePercentLowFps, 0, 'f', 1);
     lines << QStringLiteral("Frames: %1 total, %2 lost by the network (%3%), %4 dropped by the "
-                            "pacer (%5%)")
+                            "pacer (%5%; %4 of %6 eligible frames)")
                  .arg(framesTotal)
                  .arg(framesNetworkDropped)
                  .arg(networkLossPercent, 0, 'f', 2)
                  .arg(framesPacerDropped)
-                 .arg(pacerDropPercent, 0, 'f', 2);
+                 .arg(pacerDropPercent, 0, 'f', 2)
+                 .arg(framesPacerEligible);
     if (hasBitrate) {
         lines << QStringLiteral("Bitrate: %1 Mbps average, %2 Mbps peak")
                      .arg(averageBitrateMbps, 0, 'f', 2)
                      .arg(peakBitrateMbps, 0, 'f', 2);
     }
     if (hasLatency) {
-        lines << QStringLiteral("Latency: %1 ms average, %2 ms worst window")
+        lines << QStringLiteral("Estimated latency (not glass-to-glass): %1 ms average, "
+                                "%2 ms worst window")
                      .arg(averageLatencyMs, 0, 'f', 1)
                      .arg(maxLatencyMs, 0, 'f', 1);
+        lines << (averageLatency.hasQueue ? QStringLiteral("Pacer queue: %1 ms average")
+                                                .arg(averageLatency.queueMs, 0, 'f', 1)
+                                          : QStringLiteral("Pacer queue: Not measured"));
     }
     if (hasRtt) {
         lines << QStringLiteral("Network: %1 ms average RTT, %2 ms max, %3 ms jitter")

@@ -3381,6 +3381,10 @@
         <translation>影格同步丟影格</translation>
     </message>
     <message>
+        <source>%1% (%2 of %3 eligible frames)</source>
+        <translation>%1%（%2 / %3 個符合條件的影格）</translation>
+    </message>
+    <message>
         <source>Bitrate</source>
         <translation>位元率</translation>
     </message>
@@ -4276,6 +4280,10 @@
         <translation>影格同步丟影格</translation>
     </message>
     <message>
+        <source>%1% (%2 of %3 eligible frames)</source>
+        <translation>%1%（%2 / %3 個符合條件的影格）</translation>
+    </message>
+    <message>
         <source>Bitrate</source>
         <translation>位元率</translation>
     </message>
@@ -4284,12 +4292,20 @@
         <translation>平均 %1 Mbps，峰值 %2 Mbps</translation>
     </message>
     <message>
-        <source>Latency</source>
-        <translation>延遲</translation>
+        <source>Estimated latency</source>
+        <translation>估算延遲</translation>
     </message>
     <message>
         <source>%1 ms average</source>
         <translation>平均 %1 ms</translation>
+    </message>
+    <message>
+        <source>Pacer queue</source>
+        <translation>影格同步佇列</translation>
+    </message>
+    <message>
+        <source>Not measured</source>
+        <translation>未測量</translation>
     </message>
     <message>
         <source>Round trip</source>

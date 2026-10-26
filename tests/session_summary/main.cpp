@@ -108,8 +108,10 @@ bool testBuilder(QTextStream& err)
     a.latency.hasNetwork = true;
     a.latency.networkMs = 5;
     a.latency.decodeMs = 2;
+    a.latency.hasQueue = true;
     a.latency.queueMs = 1;
     a.latency.renderMs = 3; // total 15
+    a.queueSamples = 100;
     a.hasRtt = true;
     a.rttMs = 10;
     a.jitterMs = 1;
@@ -120,21 +122,30 @@ bool testBuilder(QTextStream& err)
     b.latency.hasHost = false;
     b.latency.hostMs = 0;
     b.latency.decodeMs = 4; // total 13
+    b.latency.hasQueue = false;
+    b.latency.queueMs = 8;
     b.rttMs = 20;
     b.jitterMs = 3;
+
+    StatsSnapshot c = a;
+    c.sequence = 3;
+    c.bitrateMbps = -1;
+    c.latency.queueMs = 3;
+    c.queueSamples = 300;
 
     // A stalled window: no bitrate, no decoded frames, no RTT
     StatsSnapshot stall;
     stall.valid = true;
-    stall.sequence = 3;
+    stall.sequence = 4;
     stall.jitterMs = 2;
 
     // Invalid snapshots are ignored entirely
     builder.addWindow(StatsSnapshot());
     builder.addWindow(a);
     builder.addWindow(b);
+    builder.addWindow(c);
     builder.addWindow(stall);
-    ok &= require(builder.windows() == 3, describe("windows", builder.windows(), 3), err);
+    ok &= require(builder.windows() == 4, describe("windows", builder.windows(), 4), err);
 
     StatsSnapshot last = stall;
     last.width = 1920;
@@ -143,9 +154,10 @@ bool testBuilder(QTextStream& err)
     last.codec = QStringLiteral("AV1");
     last.sessionDurationUs = 90500000;
     last.sessionFramesTotal = 1000;
-    last.sessionFramesDecoded = 990;
+    last.sessionFramesDecoded = 90;
     last.sessionFramesNetworkDropped = 10;
-    last.sessionFramesPacerDropped = 99;
+    last.sessionFramesPacerDropped = 10;
+    last.sessionFramesPacerEligible = 100;
     last.sessionFrameTimes.samples = 900;
     last.sessionFrameTimes.averageMs = 16.7;
     last.sessionFrameTimes.onePercentLowFps = 50;
@@ -153,7 +165,7 @@ bool testBuilder(QTextStream& err)
     last.fecPackets = 100;
 
     const SessionSummary summary = builder.build(last);
-    ok &= require(summary.valid && summary.windows == 3, QStringLiteral("summary not valid"), err);
+    ok &= require(summary.valid && summary.windows == 4, QStringLiteral("summary not valid"), err);
     ok &= require(summary.width == 1920 && summary.height == 1080 && summary.targetFps == 60 &&
                       summary.codec == QLatin1String("AV1"),
                   QStringLiteral("stream description not taken from the last snapshot"), err);
@@ -162,23 +174,26 @@ bool testBuilder(QTextStream& err)
                   QStringLiteral("session frame times not carried"), err);
     ok &= require(near(summary.networkLossPercent, 1.0, 1e-9),
                   describe("network loss", summary.networkLossPercent, 1), err);
-    ok &= require(near(summary.pacerDropPercent, 10.0, 1e-9),
+    ok &= require(summary.framesPacerEligible == 100 && near(summary.pacerDropPercent, 10.0, 1e-9),
                   describe("pacer drops", summary.pacerDropPercent, 10), err);
     ok &= require(summary.hasBitrate && near(summary.averageBitrateMbps, 50, 1e-9) &&
                       summary.peakBitrateMbps == 60,
                   describe("average bitrate", summary.averageBitrateMbps, 50), err);
-    ok &= require(summary.hasLatency && near(summary.averageLatencyMs, 14, 1e-9) &&
-                      near(summary.maxLatencyMs, 15, 1e-9),
-                  describe("average latency", summary.averageLatencyMs, 14), err);
+    ok &= require(summary.hasLatency && near(summary.averageLatencyMs, 44.0 / 3.0, 1e-9) &&
+                      near(summary.maxLatencyMs, 17, 1e-9),
+                  describe("average latency", summary.averageLatencyMs, 44.0 / 3.0), err);
     ok &= require(summary.averageLatency.hasHost && near(summary.averageLatency.hostMs, 4, 1e-9),
                   QStringLiteral("host latency must average only windows that report it"), err);
-    ok &= require(near(summary.averageLatency.decodeMs, 3, 1e-9) &&
+    ok &= require(near(summary.averageLatency.decodeMs, 8.0 / 3.0, 1e-9) &&
+                      summary.averageLatency.hasQueue &&
+                      near(summary.averageLatency.queueMs, 2.5, 1e-9) &&
                       near(summary.averageLatency.networkMs, 5, 1e-9),
                   QStringLiteral("per-stage latency averages are wrong"), err);
-    ok &= require(summary.hasRtt && near(summary.averageRttMs, 15, 1e-9) && summary.maxRttMs == 20,
-                  describe("average RTT", summary.averageRttMs, 15), err);
-    ok &= require(near(summary.averageJitterMs, 2, 1e-9),
-                  describe("average jitter", summary.averageJitterMs, 2), err);
+    ok &= require(summary.hasRtt && near(summary.averageRttMs, 40.0 / 3.0, 1e-9) &&
+                      summary.maxRttMs == 20,
+                  describe("average RTT", summary.averageRttMs, 40.0 / 3.0), err);
+    ok &= require(near(summary.averageJitterMs, 1.75, 1e-9),
+                  describe("average jitter", summary.averageJitterMs, 1.75), err);
     ok &= require(summary.fecRecoveredFrames == -1 && summary.fecUnrecoverableFrames == -1,
                   QStringLiteral("unreported FEC results are not -1"), err);
 
@@ -186,12 +201,19 @@ bool testBuilder(QTextStream& err)
     ok &= require(map.value(QStringLiteral("valid")).toBool() &&
                       near(map.value(QStringLiteral("durationSeconds")).toDouble(), 90.5, 1e-9) &&
                       map.value(QStringLiteral("averageBitrateMbps")).toDouble() == 50 &&
-                      map.value(QStringLiteral("onePercentLowFps")).toDouble() == 50,
+                      map.value(QStringLiteral("onePercentLowFps")).toDouble() == 50 &&
+                      map.value(QStringLiteral("framesPacerEligible")).toDouble() == 100,
                   QStringLiteral("variant map values are wrong"), err);
     ok &= require(!map.contains(QStringLiteral("fecRecoveredFrames")) &&
                       !map.contains(QStringLiteral("csvPath")),
                   QStringLiteral("variant map has unknown values"), err);
-    ok &= require(summary.toText().contains(QStringLiteral("0:01:30")),
+    ok &= require(
+        near(map.value(QStringLiteral("latencyQueueMs")).toDouble(), 2.5, 1e-9),
+        QStringLiteral("queue average included an unmeasured window or was not sample-weighted"),
+        err);
+    ok &= require(summary.toText().contains(QStringLiteral("0:01:30")) &&
+                      summary.toText().contains(QStringLiteral("Pacer queue: 2.5 ms average")) &&
+                      summary.toText().contains(QStringLiteral("10 of 100 eligible frames")),
                   QStringLiteral("text summary duration is wrong:\n") + summary.toText(), err);
 
     // Nothing measurable at all
@@ -203,8 +225,25 @@ bool testBuilder(QTextStream& err)
     const QVariantMap bareMap = bare.toVariantMap();
     ok &= require(!bareMap.contains(QStringLiteral("averageBitrateMbps")) &&
                       !bareMap.contains(QStringLiteral("averageLatencyMs")) &&
-                      !bareMap.contains(QStringLiteral("averageRttMs")),
+                      !bareMap.contains(QStringLiteral("averageRttMs")) &&
+                      !bareMap.contains(QStringLiteral("latencyQueueMs")),
                   QStringLiteral("variant map has values that were never measured"), err);
+    ok &= require(bare.toText().contains(QStringLiteral("No stream statistics")) ||
+                      !bare.toText().contains(QStringLiteral("Pacer queue:")),
+                  QStringLiteral("unmeasured queue was reported in the text summary"), err);
+
+    StatsSnapshot pyrowave = a;
+    pyrowave.sequence = 1;
+    pyrowave.latency.hasQueue = false;
+    pyrowave.queueSamples = 0;
+    SessionSummaryBuilder pyrowaveBuilder;
+    pyrowaveBuilder.addWindow(pyrowave);
+    const SessionSummary pyrowaveSummary = pyrowaveBuilder.build(last);
+    const QVariantMap pyrowaveMap = pyrowaveSummary.toVariantMap();
+    ok &= require(
+        pyrowaveSummary.hasLatency && !pyrowaveMap.contains(QStringLiteral("latencyQueueMs")) &&
+            pyrowaveSummary.toText().contains(QStringLiteral("Pacer queue: Not measured")),
+        QStringLiteral("unmeasured PyroWave queue was not reported as unavailable"), err);
 
     return ok;
 }
@@ -214,9 +253,53 @@ bool testCsvFormat(QTextStream& err)
     bool ok = true;
 
     const QStringList columns = SessionStatsRecorder::csvColumns();
-    ok &= require(columns.size() == 43, describe("column count", columns.size(), 43), err);
-    ok &= require(columns.first() == QLatin1String("timestamp") &&
-                      columns.last() == QLatin1String("frames_pacer_dropped"),
+    const QStringList expectedPrefix = { "timestamp",
+                                         "elapsed_s",
+                                         "width",
+                                         "height",
+                                         "target_fps",
+                                         "codec",
+                                         "decoder",
+                                         "hw_decode",
+                                         "total_fps",
+                                         "received_fps",
+                                         "decoded_fps",
+                                         "rendered_fps",
+                                         "frametime_avg_ms",
+                                         "frametime_max_ms",
+                                         "frametime_p99_ms",
+                                         "frametime_p999_ms",
+                                         "low_1pct_fps",
+                                         "low_01pct_fps",
+                                         "rtt_ms",
+                                         "rtt_var_ms",
+                                         "jitter_ms",
+                                         "network_loss_pct",
+                                         "pacer_drop_pct",
+                                         "bitrate_mbps",
+                                         "latency_host_ms",
+                                         "latency_network_ms",
+                                         "latency_decode_ms",
+                                         "latency_queue_ms",
+                                         "latency_render_ms",
+                                         "latency_total_ms",
+                                         "host_min_ms",
+                                         "host_max_ms",
+                                         "reassembly_ms",
+                                         "video_packets",
+                                         "fec_packets",
+                                         "fec_recovered_frames",
+                                         "fec_unrecoverable_frames",
+                                         "frames_total",
+                                         "frames_received",
+                                         "frames_decoded",
+                                         "frames_rendered",
+                                         "frames_network_dropped",
+                                         "frames_pacer_dropped" };
+    ok &= require(columns.size() == 45, describe("column count", columns.size(), 45), err);
+    ok &= require(columns.size() == 45 && columns.mid(0, expectedPrefix.size()) == expectedPrefix &&
+                      columns.at(43) == QLatin1String("render_submit_ms") &&
+                      columns.at(44) == QLatin1String("render_present_ms"),
                   QStringLiteral("column order changed"), err);
     ok &= require(SessionStatsRecorder::csvHeader() == columns.join(QLatin1Char(',')),
                   QStringLiteral("header is not the joined columns"), err);
@@ -231,7 +314,8 @@ bool testCsvFormat(QTextStream& err)
     window.fecRecoveredFrames = 7;
     window.fecUnrecoverableFrames = 1;
     model.publishWindow(window, window, 2700000);
-    const StatsSnapshot snapshot = model.snapshot(2700000);
+    StatsSnapshot snapshot = model.snapshot(2700000);
+    snapshot.presentTiming = { true, 2, 3.5, 0.8 };
 
     const QString row = SessionStatsRecorder::csvRow(snapshot, fixedWallTime());
     const QStringList fields = row.split(QLatin1Char(','));
@@ -243,7 +327,8 @@ bool testCsvFormat(QTextStream& err)
     }
 
     auto field = [&](const char* name) {
-        return fields.at(columns.indexOf(QLatin1String(name)));
+        const int index = columns.indexOf(QLatin1String(name));
+        return index >= 0 && index < fields.size() ? fields.at(index) : QString();
     };
     ok &= require(field("timestamp") == QLatin1String("2026-10-24T21:05:03.250+03:00"),
                   QStringLiteral("timestamp is not ISO 8601 with offset: ") + field("timestamp"),
@@ -257,6 +342,7 @@ bool testCsvFormat(QTextStream& err)
     ok &= require(field("rtt_ms") == QLatin1String("10") &&
                       field("latency_network_ms") == QLatin1String("5.00") &&
                       field("latency_host_ms") == QLatin1String("4.00") &&
+                      field("latency_queue_ms") == QLatin1String("1.00") &&
                       field("latency_total_ms") == QLatin1String("15.00"),
                   QStringLiteral("latency fields are wrong: ") + row, err);
     ok &= require(field("bitrate_mbps") == QLatin1String("80.000"),
@@ -267,6 +353,9 @@ bool testCsvFormat(QTextStream& err)
     ok &= require(field("frames_total") == QLatin1String("120") &&
                       field("frames_pacer_dropped") == QLatin1String("1"),
                   QStringLiteral("session totals are wrong"), err);
+    ok &= require(field("render_submit_ms") == QLatin1String("3.500") &&
+                      field("render_present_ms") == QLatin1String("0.800"),
+                  QStringLiteral("present timing CSV fields are wrong"), err);
     ok &= require(!field("low_1pct_fps").isEmpty(), QStringLiteral("1% low is missing"), err);
 
     // Unknown values are empty fields, never zeros
@@ -283,11 +372,13 @@ bool testCsvFormat(QTextStream& err)
                   describe("fields in an empty row", unknownFields.size(), columns.size()), err);
     if (unknownFields.size() == columns.size()) {
         auto unknownField = [&](const char* name) {
-            return unknownFields.at(columns.indexOf(QLatin1String(name)));
+            const int index = columns.indexOf(QLatin1String(name));
+            return index >= 0 && index < unknownFields.size() ? unknownFields.at(index) : QString();
         };
-        for (const char* name : { "rtt_ms", "bitrate_mbps", "latency_host_ms", "latency_network_ms",
-                                  "fec_recovered_frames", "fec_unrecoverable_frames",
-                                  "frametime_p99_ms", "host_min_ms" }) {
+        for (const char* name :
+             { "rtt_ms", "bitrate_mbps", "latency_host_ms", "latency_network_ms",
+               "latency_queue_ms", "render_submit_ms", "render_present_ms", "fec_recovered_frames",
+               "fec_unrecoverable_frames", "frametime_p99_ms", "host_min_ms" }) {
             ok &= require(unknownField(name).isEmpty(),
                           QStringLiteral("unknown %1 is not empty: %2")
                               .arg(QLatin1String(name), unknownField(name)),

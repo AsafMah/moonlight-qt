@@ -41,8 +41,9 @@ struct SessionSummary
     uint64_t framesRendered = 0;
     uint64_t framesNetworkDropped = 0;
     uint64_t framesPacerDropped = 0;
+    uint64_t framesPacerEligible = 0;
     double networkLossPercent = 0; // of framesTotal
-    double pacerDropPercent = 0;   // of framesDecoded
+    double pacerDropPercent = 0;   // of framesPacerEligible
 
     // Averaged over the windows that had a value
     bool hasBitrate = false;
@@ -108,6 +109,7 @@ private:
     LatencyBreakdown m_LatencySum;
     uint64_t m_HostLatencyWindows = 0;
     uint64_t m_NetworkLatencyWindows = 0;
+    uint64_t m_QueueLatencySamples = 0;
 
     uint64_t m_RttWindows = 0;
     double m_RttSumMs = 0;

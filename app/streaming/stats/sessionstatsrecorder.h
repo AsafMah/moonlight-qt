@@ -40,11 +40,12 @@
 //   rtt_ms, rtt_var_ms      ENet round trip time and its variance
 //   jitter_ms               RFC 3550 frame arrival jitter
 //   network_loss_pct        frames lost by the network
-//   pacer_drop_pct          decoded frames dropped by the pacer
+//   pacer_drop_pct          eligible frames dropped by the pacer
 //   bitrate_mbps            video bitrate
 //   latency_host_ms, latency_network_ms, latency_decode_ms,
 //   latency_queue_ms, latency_render_ms, latency_total_ms
-//                           latency estimate per stage, and its total
+//                           estimated client-pipeline stages (not glass-to-glass);
+//                           an unavailable queue measurement is blank
 //   host_min_ms, host_max_ms  host processing latency range
 //   reassembly_ms           first to last packet of a frame
 //   video_packets, fec_packets

@@ -348,6 +348,8 @@ QString StatsOverlaySettings::metricName(Metric metric)
         return tr("Frame time graph");
     case Metric::LatencyBar:
         return tr("Latency breakdown bar");
+    case Metric::Present:
+        return tr("Pre-Present / Present");
     }
     return QString();
 }
@@ -407,6 +409,10 @@ QString StatsOverlaySettings::metricDescription(Metric metric)
     case Metric::LatencyBar:
         return tr("How the estimated latency splits between the host, the network, decoding, "
                   "queueing and rendering.");
+    case Metric::Present:
+        return tr("Elapsed time from render start to the Present call, and time spent inside "
+                  "Present. The pre-Present phase can include lock waits and GPU or display "
+                  "back-pressure.");
     }
     return QString();
 }

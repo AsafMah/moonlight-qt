@@ -280,6 +280,7 @@ void FFmpegVideoDecoder::reset()
 
     delete m_Pacer;
     m_Pacer = nullptr;
+    m_PacerStats.take();
 
     // This must be called after deleting Pacer because it
     // may be holding AVFrames to free in its destructor.
@@ -496,7 +497,7 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
 
     // Don't bother initializing Pacer if we're not actually going to render
     if (testMode != TestMode::TestFrameOnly) {
-        m_Pacer = new Pacer(m_FrontendRenderer, &m_ActiveWndVideoStats);
+        m_Pacer = new Pacer(m_FrontendRenderer, &m_PacerStats);
         if (!m_Pacer->initialize(
                 params->window, params->frameRate,
                 params->enableFramePacing ||
@@ -812,6 +813,9 @@ void FFmpegVideoDecoder::addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst)
     dst.totalDecodeTimeUs += src.totalDecodeTimeUs;
     dst.totalPacerTimeUs += src.totalPacerTimeUs;
     dst.totalRenderTimeUs += src.totalRenderTimeUs;
+    dst.timedRenderFrames += src.timedRenderFrames;
+    dst.totalPrePresentTimeUs += src.totalPrePresentTimeUs;
+    dst.totalPresentTimeUs += src.totalPresentTimeUs;
 
     if (dst.minHostProcessingLatency == 0) {
         dst.minHostProcessingLatency = src.minHostProcessingLatency;
@@ -1021,12 +1025,11 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS &stats, char *output, i
     }
 
     if (stats.framesWithHostProcessingLatency > 0) {
-        ret = snprintf(&output[offset],
-                       length - offset,
-                       "· Encode **%.1f**ms ",
+        ret = snprintf(&output[offset], length - offset, "· Host processing **%.1f**ms ",
                        //    (float)stats.minHostProcessingLatency / 10,
                        //    (float)stats.maxHostProcessingLatency / 10,
-                       (float)stats.totalHostProcessingLatency / 10 / stats.framesWithHostProcessingLatency);
+                       (float)stats.totalHostProcessingLatency / 10 /
+                           stats.framesWithHostProcessingLatency);
         if (ret < 0 || ret >= length - offset) {
             SDL_assert(false);
             return;
@@ -2213,6 +2216,17 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 
     // Flip stats windows roughly every second
     if (LiGetMicroseconds() > m_ActiveWndVideoStats.measurementStartUs + 1000000) {
+        const PacerStatsWindow pacerWindow = m_PacerStats.take();
+        m_ActiveWndVideoStats.pacerDroppedFrames +=
+            static_cast<uint32_t>(pacerWindow.droppedFrames);
+        m_ActiveWndVideoStats.renderedFrames += static_cast<uint32_t>(pacerWindow.renderedFrames);
+        m_ActiveWndVideoStats.totalPacerTimeUs += pacerWindow.totalPacerTimeUs;
+        m_ActiveWndVideoStats.totalRenderTimeUs += pacerWindow.totalRenderTimeUs;
+        m_ActiveWndVideoStats.timedRenderFrames +=
+            static_cast<uint32_t>(pacerWindow.timedRenderFrames);
+        m_ActiveWndVideoStats.totalPrePresentTimeUs += pacerWindow.totalPrePresentTimeUs;
+        m_ActiveWndVideoStats.totalPresentTimeUs += pacerWindow.totalPresentTimeUs;
+
         VIDEO_STATS lastTwoWndStats = {};
         addVideoStats(m_LastWndVideoStats, lastTwoWndStats);
         addVideoStats(m_ActiveWndVideoStats, lastTwoWndStats);
@@ -2326,4 +2340,3 @@ void FFmpegVideoDecoder::renderFrameOnMainThread()
 {
     m_Pacer->renderOnMainThread();
 }
-

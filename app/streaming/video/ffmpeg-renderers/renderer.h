@@ -3,6 +3,7 @@
 #include "SDL_compat.h"
 
 #include <array>
+#include <cstdint>
 
 #include "streaming/video/decoder.h"
 #include "streaming/video/overlaymanager.h"
@@ -177,6 +178,14 @@ public:
     virtual bool initialize(PDECODER_PARAMETERS params) = 0;
     virtual bool prepareDecoderContext(AVCodecContext* context, AVDictionary** options) = 0;
     virtual void renderFrame(AVFrame* frame) = 0;
+
+    struct RenderTiming
+    {
+        uint64_t prePresentUs = 0;
+        uint64_t presentUs = 0;
+    };
+
+    virtual bool takeRenderTiming(RenderTiming *) { return false; }
 
     enum class InitFailureReason
     {

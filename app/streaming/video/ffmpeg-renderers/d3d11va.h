@@ -24,6 +24,7 @@ public:
     virtual bool prepareDecoderContext(AVCodecContext* context, AVDictionary**) override;
     virtual bool prepareDecoderContextInGetFormat(AVCodecContext* context, AVPixelFormat pixelFormat) override;
     virtual void renderFrame(AVFrame* frame) override;
+    virtual bool takeRenderTiming(RenderTiming* timing) override;
     virtual void notifyOverlayUpdated(Overlay::OverlayType) override;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo) override;
     virtual int getRendererAttributes() override;
@@ -118,6 +119,8 @@ private:
     bool m_AutoStreamSuperResolution = false;
     bool m_VideoProcessorOutputRGBA = false;
     bool m_RenderResetPending = false;
+    bool m_HasRenderTiming = false;
+    RenderTiming m_RenderTiming;
 
     DECODER_PARAMETERS m_DecoderParams;
     DXGI_FORMAT m_TextureFormat;
@@ -162,4 +165,3 @@ private:
     AmfSession m_Amf;
     bool m_AmfUpScalerSharpness = false;
 };
-

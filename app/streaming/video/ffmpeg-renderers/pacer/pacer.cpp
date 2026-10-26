@@ -34,16 +34,10 @@ static_assert(PACER_MAX_OUTSTANDING_FRAMES == MAX_QUEUED_FRAMES + 2,
 // V-sync happens.
 #define TIMER_SLACK_MS 3
 
-Pacer::Pacer(IFFmpegRenderer* renderer, PVIDEO_STATS videoStats) :
-    m_RenderThread(nullptr),
-    m_VsyncThread(nullptr),
-    m_DeferredFreeFrame(nullptr),
-    m_Stopping(false),
-    m_VsyncSource(nullptr),
-    m_VsyncRenderer(renderer),
-    m_MaxVideoFps(0),
-    m_DisplayFps(0),
-    m_VideoStats(videoStats)
+Pacer::Pacer(IFFmpegRenderer* renderer, PacerStats* stats)
+    : m_RenderThread(nullptr), m_VsyncThread(nullptr), m_DeferredFreeFrame(nullptr),
+      m_Stopping(false), m_VsyncSource(nullptr), m_VsyncRenderer(renderer), m_MaxVideoFps(0),
+      m_DisplayFps(0), m_Stats(stats)
 {
 
 }
@@ -254,7 +248,7 @@ void Pacer::handleVsync(int timeUntilNextVsyncMillis)
 
         // Drop the lock while we call av_frame_free()
         m_FrameQueueLock.unlock();
-        m_VideoStats->pacerDroppedFrames++;
+        m_Stats->recordDrop();
         av_frame_free(&frame);
         m_FrameQueueLock.lock();
     }
@@ -355,6 +349,23 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, b
         }
     }
 
+    if (qgetenv("MOONLIGHT_PRESENT_DRAIN") == "1" &&
+        m_VsyncRenderer->getRendererType() == IFFmpegRenderer::RendererType::D3D11VA &&
+        m_VsyncRenderer->isRenderThreadSupported()) {
+        const bool vrrLimiterActive = enableVrr && m_VrrLimiter.isEnabled();
+        const unsigned int vrrCapFps =
+            vrrLimiterActive ? static_cast<unsigned int>(VrrPolicy::frameCapFps(m_DisplayFps)) : 0;
+        m_PresentStallDetector = std::make_unique<PresentStallDetector>(
+            static_cast<unsigned int>(SDL_max(maxVideoFps, 0)),
+            static_cast<unsigned int>(SDL_max(m_DisplayFps, 0)), m_VsyncSource != nullptr,
+            vrrLimiterActive, vrrCapFps);
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "MOONLIGHT_PRESENT_DRAIN=1: armed one-shot D3D11 experiment "
+                    "(effective rate %u FPS, slow-frame threshold %llu us, drain 500 ms)",
+                    m_PresentStallDetector->effectiveFps(),
+                    static_cast<unsigned long long>(m_PresentStallDetector->thresholdUs()));
+    }
+
     if (m_VsyncRenderer->isRenderThreadSupported()) {
         m_RenderThread = SDL_CreateThread(Pacer::renderThread, "PacerRender", this);
     }
@@ -369,9 +380,24 @@ void Pacer::signalVsync()
 
 void Pacer::renderFrame(AVFrame* frame)
 {
+    if (m_PresentStallDetector != nullptr) {
+        if (m_PresentStallDetector->shouldSkipFrame(LiGetMicroseconds())) {
+            {
+                QMutexLocker locker(&m_FrameQueueLock);
+                updateRenderQueueHistoryLocked();
+            }
+            ++m_DrainSkippedFrames;
+            m_Stats->recordDrop();
+            av_frame_free(&frame);
+            return;
+        }
+        if (m_PresentStallDetector->takeDrainEnded()) {
+            m_PostDrainCollectionPending = true;
+        }
+    }
+
     // Count time spent in Pacer's queues
     uint64_t beforeRender = LiGetMicroseconds();
-    m_VideoStats->totalPacerTimeUs += (beforeRender - (uint64_t)frame->pkt_dts);
 
     // Render it
     {
@@ -381,9 +407,19 @@ void Pacer::renderFrame(AVFrame* frame)
         m_VsyncRenderer->renderFrame(frame);
     }
     uint64_t afterRender = LiGetMicroseconds();
+    const uint64_t renderUs = afterRender - beforeRender;
+    IFFmpegRenderer::RenderTiming renderTiming;
+    const bool hasRenderTiming = m_VsyncRenderer->takeRenderTiming(&renderTiming);
 
-    m_VideoStats->totalRenderTimeUs += (afterRender - beforeRender);
-    m_VideoStats->renderedFrames++;
+    if (hasRenderTiming) {
+        m_Stats->recordPresent(beforeRender - static_cast<uint64_t>(frame->pkt_dts), renderUs,
+                               renderTiming.prePresentUs, renderTiming.presentUs);
+    } else {
+        m_Stats->recordPresent(beforeRender - static_cast<uint64_t>(frame->pkt_dts), renderUs);
+        if (m_PresentStallDetector != nullptr) {
+            m_PresentStallDetector->resetStreak();
+        }
+    }
 
     // Present times feed the frame time percentiles (1% and 0.1% lows)
     Session::get()->getStatsModel().recordFramePresented(afterRender);
@@ -398,6 +434,7 @@ void Pacer::renderFrame(AVFrame* frame)
     QMutexLocker frameQueueLocker(&m_FrameQueueLock);
 
     int frameDropTarget;
+    int queuedFrames = 0;
 
     if (m_RendererAttributes & RENDERER_ATTRIBUTE_NO_BUFFERING) {
         // Renderers that don't buffer any frames but don't support waitToRender() need us to buffer
@@ -415,12 +452,15 @@ void Pacer::renderFrame(AVFrame* frame)
             }
         }
 
-        // Keep a rolling 500 ms window of render queue history
-        if (m_RenderQueueHistory.count() == m_MaxVideoFps / 2) {
-            m_RenderQueueHistory.dequeue();
-        }
+        updateRenderQueueHistoryLocked();
+    }
 
-        m_RenderQueueHistory.enqueue(m_RenderQueue.count());
+    queuedFrames = m_RenderQueue.count();
+    bool drainStarted = false;
+    if (hasRenderTiming && m_PresentStallDetector != nullptr) {
+        drainStarted = m_PresentStallDetector->observe(
+            afterRender, renderUs, static_cast<size_t>(queuedFrames), renderTiming.prePresentUs,
+            renderTiming.presentUs);
     }
 
     // Catch up if we're several frames ahead
@@ -429,10 +469,81 @@ void Pacer::renderFrame(AVFrame* frame)
 
         // Drop the lock while we call av_frame_free()
         frameQueueLocker.unlock();
-        m_VideoStats->pacerDroppedFrames++;
+        m_Stats->recordDrop();
         av_frame_free(&frame);
         frameQueueLocker.relock();
     }
+    frameQueueLocker.unlock();
+
+    if (drainStarted) {
+        const uint64_t avgRenderUs = m_PresentStallDetector->triggerAverageRenderUs();
+        const uint64_t avgPrePresentUs = m_PresentStallDetector->triggerAveragePrePresentUs();
+        const uint64_t avgPresentUs = m_PresentStallDetector->triggerAveragePresentUs();
+        const char* classification =
+            avgPresentUs >= avgPrePresentUs ? "Present-dominant" : "pre-Present-dominant";
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION,
+            "MOONLIGHT_PRESENT_DRAIN: one-shot drain started (%s); last %u queued slow frames "
+            "averaged render=%llu us, pre-Present=%llu us, Present=%llu us; queue=%d, "
+            "threshold=%llu us",
+            classification, PresentStallDetector::RequiredSlowFrames,
+            static_cast<unsigned long long>(avgRenderUs),
+            static_cast<unsigned long long>(avgPrePresentUs),
+            static_cast<unsigned long long>(avgPresentUs), queuedFrames,
+            static_cast<unsigned long long>(m_PresentStallDetector->thresholdUs()));
+    }
+
+    if (m_PostDrainCollectionPending) {
+        m_PostDrainCollectionPending = false;
+        m_CollectingPostDrainTiming = true;
+        m_PostDrainStartUs = afterRender;
+        m_PostDrainFrames = 0;
+        m_PostDrainTotalRenderUs = 0;
+        m_PostDrainTimedFrames = 0;
+        m_PostDrainTotalPrePresentUs = 0;
+        m_PostDrainTotalPresentUs = 0;
+    }
+
+    if (m_CollectingPostDrainTiming) {
+        ++m_PostDrainFrames;
+        m_PostDrainTotalRenderUs += renderUs;
+        if (hasRenderTiming) {
+            ++m_PostDrainTimedFrames;
+            m_PostDrainTotalPrePresentUs += renderTiming.prePresentUs;
+            m_PostDrainTotalPresentUs += renderTiming.presentUs;
+        }
+        if (afterRender - m_PostDrainStartUs >= 2000000) {
+            const uint64_t averageRenderUs =
+                m_PostDrainFrames > 0 ? m_PostDrainTotalRenderUs / m_PostDrainFrames : 0;
+            const uint64_t averagePrePresentUs =
+                m_PostDrainTimedFrames > 0 ? m_PostDrainTotalPrePresentUs / m_PostDrainTimedFrames
+                                           : 0;
+            const uint64_t averagePresentUs =
+                m_PostDrainTimedFrames > 0 ? m_PostDrainTotalPresentUs / m_PostDrainTimedFrames : 0;
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "MOONLIGHT_PRESENT_DRAIN: one-shot drain ended; skipped %llu frames; "
+                        "post-drain 2 s averages over %llu rendered / %llu timed frames: "
+                        "render=%llu us, pre-Present=%llu us, Present=%llu us",
+                        static_cast<unsigned long long>(m_DrainSkippedFrames),
+                        static_cast<unsigned long long>(m_PostDrainFrames),
+                        static_cast<unsigned long long>(m_PostDrainTimedFrames),
+                        static_cast<unsigned long long>(averageRenderUs),
+                        static_cast<unsigned long long>(averagePrePresentUs),
+                        static_cast<unsigned long long>(averagePresentUs));
+            m_CollectingPostDrainTiming = false;
+        }
+    }
+}
+
+void Pacer::updateRenderQueueHistoryLocked()
+{
+    if (m_RendererAttributes & RENDERER_ATTRIBUTE_NO_BUFFERING) {
+        return;
+    }
+    if (m_RenderQueueHistory.count() == m_MaxVideoFps / 2) {
+        m_RenderQueueHistory.dequeue();
+    }
+    m_RenderQueueHistory.enqueue(m_RenderQueue.count());
 }
 
 // Called on the render thread with m_FrameQueueLock held and a frame queued.
@@ -464,6 +575,7 @@ void Pacer::dropFrameForEnqueue(QQueue<AVFrame*>& queue)
     SDL_assert(queue.size() <= MAX_QUEUED_FRAMES);
     if (queue.size() == MAX_QUEUED_FRAMES) {
         AVFrame* frame = queue.dequeue();
+        m_Stats->recordDrop();
         av_frame_free(&frame);
     }
 }

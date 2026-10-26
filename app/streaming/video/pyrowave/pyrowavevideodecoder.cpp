@@ -572,6 +572,8 @@ void PyrowaveVideoDecoder::publishStatsWindow(const VIDEO_STATS& recent,
                                               const VIDEO_STATS& completed)
 {
     StatsWindow window = VideoStatsBridge::toStatsWindow(recent);
+    window.queueMeasured = false;
+    window.pacerDropEligibleFrames = recent.decodedFrames + recent.pacerDroppedFrames;
 
     window.width = m_Width;
     window.height = m_Height;
@@ -584,8 +586,11 @@ void PyrowaveVideoDecoder::publishStatsWindow(const VIDEO_STATS& recent,
     window.bitrateMbps = m_BandwidthMbps;
     VideoStatsBridge::readRtpCounters(window);
 
-    Session::get()->getStatsModel().publishWindow(
-        window, VideoStatsBridge::toStatsWindow(completed), LiGetMicroseconds());
+    StatsWindow completedWindow = VideoStatsBridge::toStatsWindow(completed);
+    completedWindow.queueMeasured = false;
+    completedWindow.pacerDropEligibleFrames =
+        completed.decodedFrames + completed.pacerDroppedFrames;
+    Session::get()->getStatsModel().publishWindow(window, completedWindow, LiGetMicroseconds());
 }
 
 int PyrowaveVideoDecoder::processFrame(PDECODE_UNIT du)
@@ -826,7 +831,7 @@ void PyrowaveVideoDecoder::stringifyVideoStats(const VIDEO_STATS& stats, char* o
     }
 
     if (stats.framesWithHostProcessingLatency > 0) {
-        appendFormatted(output, length, offset, "· Encode **%.1f**ms ",
+        appendFormatted(output, length, offset, "· Host processing **%.1f**ms ",
                         (float)stats.totalHostProcessingLatency / 10 /
                             stats.framesWithHostProcessingLatency);
     }

@@ -46,6 +46,7 @@ void StreamStatsModel::publishWindow(const StatsWindow& recent, const StatsWindo
         m_SessionFramesRendered += completed.renderedFrames;
         m_SessionFramesNetworkDropped += completed.networkDroppedFrames;
         m_SessionFramesPacerDropped += completed.pacerDroppedFrames;
+        m_SessionFramesPacerEligible += StatsMath::pacerDropDenominator(completed);
 
         // Bumped under the lock so a snapshot's sequence always matches its data
         m_Sequence.fetch_add(1, std::memory_order_acq_rel);
@@ -79,6 +80,7 @@ StatsSnapshot StreamStatsModel::snapshot(uint64_t nowUs) const
         snapshot.sessionFramesRendered = m_SessionFramesRendered;
         snapshot.sessionFramesNetworkDropped = m_SessionFramesNetworkDropped;
         snapshot.sessionFramesPacerDropped = m_SessionFramesPacerDropped;
+        snapshot.sessionFramesPacerEligible = m_SessionFramesPacerEligible;
     }
 
     // The percentile work happens outside the lock so the render thread is
@@ -114,12 +116,14 @@ StatsSnapshot StreamStatsModel::snapshot(uint64_t nowUs) const
     snapshot.networkLossPercent =
         StatsMath::lossPercent(window.networkDroppedFrames, window.totalFrames);
     snapshot.pacerDropPercent =
-        StatsMath::lossPercent(window.pacerDroppedFrames, window.decodedFrames);
+        StatsMath::lossPercent(window.pacerDroppedFrames, StatsMath::pacerDropDenominator(window));
+    snapshot.queueSamples = window.queueMeasured ? window.renderedFrames : 0;
     snapshot.bitrateMbps = window.bitrateMbps;
     snapshot.videoPackets = window.videoPackets;
     snapshot.fecPackets = window.fecPackets;
     snapshot.fecRecoveredFrames = window.fecRecoveredFrames;
     snapshot.fecUnrecoverableFrames = window.fecUnrecoverableFrames;
+    snapshot.presentTiming = StatsMath::estimatePresentTiming(window);
 
     if (window.receivedFrames > 0) {
         snapshot.reassemblyMs =
@@ -149,5 +153,6 @@ void StreamStatsModel::reset()
     m_SessionFramesRendered = 0;
     m_SessionFramesNetworkDropped = 0;
     m_SessionFramesPacerDropped = 0;
+    m_SessionFramesPacerEligible = 0;
     m_Sequence.store(0, std::memory_order_release);
 }

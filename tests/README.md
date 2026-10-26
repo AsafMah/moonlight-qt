@@ -19,6 +19,7 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | overlay_button_position | 悬浮按钮归一化/还原坐标的跨分辨率往返 | Windows |
 | pyrowave_color | PyroWave 颜色合同表（SDR/HDR10/HLG × 范围）、HDR 平面位编码、SS_HDR_METADATA 解析与快照保留规则、libplacebo 元数据映射 | Windows |
 | pyrowave_pacing | PyroWave 呈现策略：延迟呈现后切换三重缓冲的阈值、串流快于显示器时的帧节奏抽帧 | Windows |
+| present_stall | Pacer 一次性卡顿检测：有效呈现帧率、连续慢帧重置和 500ms 丢帧窗口 | Windows |
 | file_mapping_websocket_framing | 文件映射 WS 帧解析(fin/分片/ping-pong) | Windows |
 | shared_helpers | 配对证书策略、版本比较与 GFE 兼容性回退 | Windows |
 | amf_lifecycle | AMF 会话探测、初始化/重配/帧处理失败、析构与多会话的对象/DLL 释放顺序 | Windows |
@@ -38,8 +39,8 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | overlay_toast_event_state | 悬浮 toast 事件状态 | Windows |
 | overlay_menu_navigation | 悬浮菜单键盘/鼠标导航(QTest 事件,需 offscreen) | Windows |
 | stream_quality | 串流画质菜单的分辨率/帧率预设生成、配置差异与切换路径判定 | Windows |
-| settings_localization | 中文翻译 .qm + 设置页布局(qmltestrunner) | Windows |
 | app_picker | 名称/类型/运行状态/隐藏状态筛选，排序与分组顺序 | Windows |
+| settings_localization | 中文翻译 .qm + 设置页布局(qmltestrunner) | Windows |
 | linux_display_event_monitor | Linux 显示事件唤醒 | Linux |
 
 ## 仅本地/手动

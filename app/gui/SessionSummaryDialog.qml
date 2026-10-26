@@ -78,9 +78,10 @@ NavigableDialog {
                                .arg(fixed(summary.networkLossPercent, 2))
                                .arg(summary.framesNetworkDropped) })
         rows.push({ label: qsTr("Pacer drops"),
-                    value: qsTr("%1% (%2 frames)")
+                    value: qsTr("%1% (%2 of %3 eligible frames)")
                                .arg(fixed(summary.pacerDropPercent, 2))
-                               .arg(summary.framesPacerDropped) })
+                               .arg(summary.framesPacerDropped)
+                               .arg(summary.framesPacerEligible) })
         if (has("averageBitrateMbps")) {
             rows.push({ label: qsTr("Bitrate"),
                         value: qsTr("%1 Mbps average, %2 Mbps peak")
@@ -88,8 +89,12 @@ NavigableDialog {
                                    .arg(fixed(summary.peakBitrateMbps, 1)) })
         }
         if (has("averageLatencyMs")) {
-            rows.push({ label: qsTr("Latency"),
+            rows.push({ label: qsTr("Estimated latency"),
                         value: qsTr("%1 ms average").arg(fixed(summary.averageLatencyMs, 1)) })
+            rows.push({ label: qsTr("Pacer queue"),
+                        value: has("latencyQueueMs")
+                               ? qsTr("%1 ms average").arg(fixed(summary.latencyQueueMs, 1))
+                               : qsTr("Not measured") })
         }
         if (has("averageRttMs")) {
             rows.push({ label: qsTr("Round trip"),

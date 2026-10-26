@@ -26,8 +26,15 @@ FrameTimeSummary summarizeFrameTimes(std::vector<double> frameTimesMs);
 // Packets or frames lost, as a percentage of the total
 double lossPercent(uint64_t lost, uint64_t total);
 
+// Uses a producer-supplied eligible-frame count when present; older producers
+// fall back to decoded frames.
+uint64_t pacerDropDenominator(const StatsWindow& window);
+
 // Averages the per-stage timings of one window into a latency estimate
 LatencyBreakdown estimateLatency(const StatsWindow& window);
+
+// Averages pre-Present and Present timing over successful, timed presents.
+PresentTiming estimatePresentTiming(const StatsWindow& window);
 
 // Fixed-capacity ring of present timestamps (microseconds). When full, the
 // oldest timestamp is overwritten.

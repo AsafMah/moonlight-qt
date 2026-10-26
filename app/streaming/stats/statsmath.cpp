@@ -56,6 +56,12 @@ double lossPercent(uint64_t lost, uint64_t total)
     return static_cast<double>(lost) * 100.0 / static_cast<double>(total);
 }
 
+uint64_t pacerDropDenominator(const StatsWindow& window)
+{
+    return window.pacerDropEligibleFrames > 0 ? window.pacerDropEligibleFrames
+                                              : window.decodedFrames;
+}
+
 LatencyBreakdown estimateLatency(const StatsWindow& window)
 {
     LatencyBreakdown latency;
@@ -76,14 +82,34 @@ LatencyBreakdown estimateLatency(const StatsWindow& window)
             static_cast<double>(window.totalDecodeTimeUs) / 1000.0 / window.decodedFrames;
     }
 
-    if (window.renderedFrames > 0) {
+    if (window.queueMeasured && window.renderedFrames > 0) {
+        latency.hasQueue = true;
         latency.queueMs =
             static_cast<double>(window.totalPacerTimeUs) / 1000.0 / window.renderedFrames;
+    }
+
+    if (window.renderedFrames > 0) {
         latency.renderMs =
             static_cast<double>(window.totalRenderTimeUs) / 1000.0 / window.renderedFrames;
     }
 
     return latency;
+}
+
+PresentTiming estimatePresentTiming(const StatsWindow& window)
+{
+    PresentTiming timing;
+    if (window.timedRenderFrames == 0) {
+        return timing;
+    }
+
+    timing.measured = true;
+    timing.samples = window.timedRenderFrames;
+    timing.prePresentMs =
+        static_cast<double>(window.totalPrePresentTimeUs) / 1000.0 / window.timedRenderFrames;
+    timing.presentMs =
+        static_cast<double>(window.totalPresentTimeUs) / 1000.0 / window.timedRenderFrames;
+    return timing;
 }
 
 PresentTimeRing::PresentTimeRing(size_t capacity) : m_Buffer(std::max(capacity, size_t(2)), 0) {}

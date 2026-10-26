@@ -428,6 +428,8 @@ int metricPriority(Metric metric)
         return 35;
     case Metric::Render:
         return 30;
+    case Metric::Present:
+        return 28;
     case Metric::Queue:
         return 25;
     case Metric::DisplayHz:

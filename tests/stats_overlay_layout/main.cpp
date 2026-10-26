@@ -94,6 +94,10 @@ bool testGrades(QTextStream& err)
     ok &= require(gradeFrameTime(9, 120) == Grade::Good && gradeFrameTime(14, 120) == Grade::Warn &&
                       gradeFrameTime(20, 120) == Grade::Bad,
                   QStringLiteral("frame time spike grades"), err);
+    ok &= require(
+        gradePresent(4, 1, 60, t) == Grade::Good && gradePresent(8.5, 0, 60, t) == Grade::Warn &&
+            gradePresent(17, 0, 60, t) == Grade::Bad && gradePresent(0, 0, 0, t) == Grade::Neutral,
+        QStringLiteral("present timing grades"), err);
 
     return ok;
 }

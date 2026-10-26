@@ -1,10 +1,12 @@
 #include "streaming/stats/statsmath.h"
 #include "streaming/stats/streamstatsmodel.h"
+#include "streaming/video/ffmpeg-renderers/pacer/pacerstats.h"
 
 #include <QCoreApplication>
 #include <QTextStream>
 
 #include <cmath>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -252,13 +254,26 @@ bool testLatency(QTextStream& err)
     ok &= require(latency.hasNetwork && latency.networkMs == 10,
                   describe("network", latency.networkMs, 10), err);
     ok &= require(latency.decodeMs == 3, describe("decode", latency.decodeMs, 3), err);
-    ok &= require(latency.queueMs == 2, describe("queue", latency.queueMs, 2), err);
+    ok &= require(latency.hasQueue && latency.queueMs == 2, describe("queue", latency.queueMs, 2),
+                  err);
     ok &= require(latency.renderMs == 1, describe("render", latency.renderMs, 1), err);
     ok &= require(latency.totalMs() == 21, describe("total", latency.totalMs(), 21), err);
+
+    window.queueMeasured = false;
+    latency = StatsMath::estimateLatency(window);
+    ok &= require(!latency.hasQueue && latency.queueMs == 0 && latency.totalMs() == 19,
+                  QStringLiteral("unmeasured queue was included in latency"), err);
+
+    window.queueMeasured = true;
+    window.renderedFrames = 0;
+    latency = StatsMath::estimateLatency(window);
+    ok &= require(!latency.hasQueue && latency.queueMs == 0,
+                  QStringLiteral("queue was measured with no rendered frames"), err);
 
     // Without host reports or an RTT estimate those stages are absent, not 0
     window.framesWithHostProcessingLatency = 0;
     window.rttMs = 0;
+    window.renderedFrames = 10;
     latency = StatsMath::estimateLatency(window);
     ok &= require(!latency.hasHost && !latency.hasNetwork && latency.totalMs() == 6,
                   describe("total without host and network", latency.totalMs(), 6), err);
@@ -269,6 +284,19 @@ bool testLatency(QTextStream& err)
 
     ok &= require(StatsMath::lossPercent(1, 200) == 0.5 && StatsMath::lossPercent(5, 0) == 0,
                   QStringLiteral("loss percent"), err);
+
+    window.timedRenderFrames = 2;
+    window.totalPrePresentTimeUs = 6000;
+    window.totalPresentTimeUs = 4000;
+    const PresentTiming timing = StatsMath::estimatePresentTiming(window);
+    ok &= require(timing.measured && timing.samples == 2 && timing.prePresentMs == 3 &&
+                      timing.presentMs == 2,
+                  QStringLiteral("present timing did not use timed-frame denominator"), err);
+    window.timedRenderFrames = 0;
+    const PresentTiming unavailable = StatsMath::estimatePresentTiming(window);
+    ok &= require(!unavailable.measured && unavailable.samples == 0 &&
+                      unavailable.prePresentMs == 0 && unavailable.presentMs == 0,
+                  QStringLiteral("present timing should be unavailable without samples"), err);
 
     return ok;
 }
@@ -300,6 +328,10 @@ bool testModel(QTextStream& err)
     recent.networkDroppedFrames = 3;
     recent.decodedFrames = 200;
     recent.pacerDroppedFrames = 4;
+    recent.pacerDropEligibleFrames = 204;
+    recent.timedRenderFrames = 2;
+    recent.totalPrePresentTimeUs = 6000;
+    recent.totalPresentTimeUs = 4000;
     recent.rttMs = 8;
     recent.rttVarianceMs = 1;
     recent.renderedFps = 119.5;
@@ -310,6 +342,7 @@ bool testModel(QTextStream& err)
     completed.receivedFrames = 118;
     completed.networkDroppedFrames = 2;
     completed.renderedFrames = 117;
+    completed.pacerDropEligibleFrames = 204;
 
     model.publishWindow(recent, completed, lastPresentUs);
     model.publishWindow(recent, completed, lastPresentUs);
@@ -320,6 +353,10 @@ bool testModel(QTextStream& err)
     ok &= require(snapshot.width == 2560 && snapshot.height == 1440 && snapshot.targetFps == 120 &&
                       snapshot.codec == QLatin1String("HEVC"),
                   QStringLiteral("stream description was not copied"), err);
+    ok &= require(snapshot.presentTiming.measured && snapshot.presentTiming.samples == 2 &&
+                      snapshot.presentTiming.prePresentMs == 3 &&
+                      snapshot.presentTiming.presentMs == 2,
+                  QStringLiteral("present timing was not copied into the snapshot"), err);
     ok &= require(snapshot.frameTimes.samples == 999,
                   describe("recent frame time samples", snapshot.frameTimes.samples, 999), err);
     ok &= require(near(snapshot.frameTimes.onePercentLowFps, 1000.0 / 8.333, 1e-6),
@@ -332,8 +369,10 @@ bool testModel(QTextStream& err)
                       near(snapshot.frameTimeHistoryMs.back(), 8.333, 1e-4),
                   QStringLiteral("frame time history is wrong"), err);
     ok &= require(near(snapshot.networkLossPercent, 1.0, 1e-9) &&
-                      near(snapshot.pacerDropPercent, 2.0, 1e-9),
+                      near(snapshot.pacerDropPercent, 4.0 * 100.0 / 204.0, 1e-9),
                   QStringLiteral("loss percentages are wrong"), err);
+    ok &= require(snapshot.sessionFramesPacerEligible == 408,
+                  QStringLiteral("eligible pacer frames were not accumulated"), err);
     ok &= require(snapshot.hasRtt && snapshot.rttMs == 8 && snapshot.latency.networkMs == 4,
                   QStringLiteral("RTT was not carried into the snapshot"), err);
     ok &= require(snapshot.bitrateMbps == 50, QStringLiteral("bitrate was not copied"), err);
@@ -359,6 +398,48 @@ bool testModel(QTextStream& err)
 
     return ok;
 }
+
+bool testPacerStats(QTextStream& err)
+{
+    bool ok = true;
+    PacerStats stats;
+    stats.recordDrop();
+    stats.recordPresent(100, 20);
+    stats.recordPresent(120, 30, 10, 5);
+
+    const PacerStatsWindow first = stats.take();
+    ok &= require(first.droppedFrames == 1 && first.renderedFrames == 2 &&
+                      first.totalPacerTimeUs == 220 && first.totalRenderTimeUs == 50 &&
+                      first.timedRenderFrames == 1 && first.totalPrePresentTimeUs == 10 &&
+                      first.totalPresentTimeUs == 5,
+                  QStringLiteral("Pacer counters were not taken as one window"), err);
+    const PacerStatsWindow empty = stats.take();
+    ok &= require(empty.droppedFrames == 0 && empty.renderedFrames == 0 &&
+                      empty.totalPacerTimeUs == 0 && empty.totalRenderTimeUs == 0 &&
+                      empty.timedRenderFrames == 0 && empty.totalPrePresentTimeUs == 0 &&
+                      empty.totalPresentTimeUs == 0,
+                  QStringLiteral("Pacer window was not reset after taking"), err);
+
+    constexpr uint64_t Drops = 50000;
+    std::atomic<bool> done{ false };
+    std::thread producer([&] {
+        for (uint64_t i = 0; i < Drops; ++i) {
+            stats.recordDrop();
+        }
+        done.store(true, std::memory_order_release);
+    });
+
+    uint64_t observed = 0;
+    while (!done.load(std::memory_order_acquire)) {
+        observed += stats.take().droppedFrames;
+    }
+    producer.join();
+    observed += stats.take().droppedFrames;
+    ok &= require(observed == Drops,
+                  QStringLiteral("Pacer drops were lost across concurrent window snapshots"), err);
+    return ok;
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -375,7 +456,7 @@ int main(int argc, char* argv[])
     ok &= testJitter(err);
     ok &= testLatency(err);
     ok &= testModel(err);
-
+    ok &= testPacerStats(err);
     out << (ok ? "PASS" : "FAILED") << '\n';
     return ok ? 0 : 1;
 }

@@ -2,11 +2,15 @@
 
 #include "../../decoder.h"
 #include "../renderer.h"
+#include "pacerstats.h"
+#include "presentstalldetector.h"
 #include "../../vrrpolicy.h"
 
 #include <QQueue>
 #include <QMutex>
 #include <QWaitCondition>
+
+#include <memory>
 
 // The maximum number of frames pacer will ever hold is:
 // - 3 frames in the pacing queue
@@ -34,7 +38,7 @@ public:
 class Pacer
 {
 public:
-    Pacer(IFFmpegRenderer* renderer, PVIDEO_STATS videoStats);
+    Pacer(IFFmpegRenderer* renderer, PacerStats* stats);
 
     ~Pacer();
 
@@ -60,6 +64,7 @@ private:
     void dropFrameForEnqueue(QQueue<AVFrame*>& queue);
 
     void waitForVrrPresentSlot();
+    void updateRenderQueueHistoryLocked();
 
 #ifdef HAS_QT_SDL_WAYLAND_BRIDGE
     SDL_Window* m_Window = nullptr;
@@ -81,9 +86,19 @@ private:
     IFFmpegRenderer* m_VsyncRenderer;
     int m_MaxVideoFps;
     int m_DisplayFps;
-    PVIDEO_STATS m_VideoStats;
+    PacerStats* m_Stats;
     int m_RendererAttributes;
 
     // Present-rate cap for VRR mode (disabled otherwise)
     VrrPolicy::FrameLimiter m_VrrLimiter;
+    std::unique_ptr<PresentStallDetector> m_PresentStallDetector;
+    uint64_t m_DrainSkippedFrames = 0;
+    bool m_PostDrainCollectionPending = false;
+    bool m_CollectingPostDrainTiming = false;
+    uint64_t m_PostDrainStartUs = 0;
+    uint64_t m_PostDrainFrames = 0;
+    uint64_t m_PostDrainTotalRenderUs = 0;
+    uint64_t m_PostDrainTimedFrames = 0;
+    uint64_t m_PostDrainTotalPrePresentUs = 0;
+    uint64_t m_PostDrainTotalPresentUs = 0;
 };

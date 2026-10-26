@@ -15,6 +15,7 @@ StatsWindow toStatsWindow(const VIDEO_STATS& stats)
     window.totalFrames = stats.totalFrames;
     window.networkDroppedFrames = stats.networkDroppedFrames;
     window.pacerDroppedFrames = stats.pacerDroppedFrames;
+    window.pacerDropEligibleFrames = stats.decodedFrames;
 
     window.framesWithHostProcessingLatency = stats.framesWithHostProcessingLatency;
     window.totalHostProcessingLatency = stats.totalHostProcessingLatency;
@@ -25,6 +26,9 @@ StatsWindow toStatsWindow(const VIDEO_STATS& stats)
     window.totalDecodeTimeUs = stats.totalDecodeTimeUs;
     window.totalPacerTimeUs = stats.totalPacerTimeUs;
     window.totalRenderTimeUs = stats.totalRenderTimeUs;
+    window.timedRenderFrames = stats.timedRenderFrames;
+    window.totalPrePresentTimeUs = stats.totalPrePresentTimeUs;
+    window.totalPresentTimeUs = stats.totalPresentTimeUs;
 
     window.rttMs = stats.lastRtt;
     window.rttVarianceMs = stats.lastRttVariance;
@@ -96,10 +100,12 @@ void readRtpCounters(StatsWindow& window)
 int formatMetrics(const StatsSnapshot& snapshot, const VIDEO_STATS& stats, bool sessionWide,
                   char* output, int length)
 {
+    Q_UNUSED(stats);
+
     const FrameTimeSummary& frameTimes =
         sessionWide ? snapshot.sessionFrameTimes : snapshot.frameTimes;
     // Estimated from the same window as the rest of the text
-    const LatencyBreakdown latency = StatsMath::estimateLatency(toStatsWindow(stats));
+    const LatencyBreakdown& latency = snapshot.latency;
 
     char lowsString[64];
     if (frameTimes.samples > 0) {
@@ -113,26 +119,35 @@ int formatMetrics(const StatsSnapshot& snapshot, const VIDEO_STATS& stats, bool 
     // the breakdown, rather than counted as zero
     char hostString[24] = "";
     char networkString[24] = "";
+    char queueString[32] = "";
     if (latency.hasHost) {
         snprintf(hostString, sizeof(hostString), "host %.1f + ", latency.hostMs);
     }
     if (latency.hasNetwork) {
         snprintf(networkString, sizeof(networkString), "network %.1f + ", latency.networkMs);
     }
+    if (latency.hasQueue) {
+        snprintf(queueString, sizeof(queueString), "queue %.1f + ", latency.queueMs);
+    } else {
+        snprintf(queueString, sizeof(queueString), "queue N/A + ");
+    }
 
     return snprintf(output, length,
                     "Frame rate 1%%/0.1%% lows: %s\n"
                     "Network jitter: %.2f ms\n"
-                    "Estimated latency: %.1f ms (%s%sdecode %.1f + queue %.1f + render %.1f)\n",
+                    "Estimated client pipeline latency (not glass-to-glass): %.1f ms "
+                    "(%s%sdecode %.1f + %srender %.1f)\n",
                     lowsString, snapshot.jitterMs, latency.totalMs(), hostString, networkString,
-                    latency.decodeMs, latency.queueMs, latency.renderMs);
+                    latency.decodeMs, queueString, latency.renderMs);
 }
 
 int formatOverlayLows(const StatsSnapshot& snapshot, const VIDEO_STATS& stats, bool sessionWide,
                       char* output, int length)
 {
+    Q_UNUSED(stats);
+
     const FrameTimeSummary& lows = sessionWide ? snapshot.sessionFrameTimes : snapshot.frameTimes;
-    const LatencyBreakdown latency = StatsMath::estimateLatency(toStatsWindow(stats));
+    const LatencyBreakdown& latency = snapshot.latency;
 
     return snprintf(output, length,
                     "\n {18}1%% Low **%.1f** · 0.1%% Low **%.1f** {16}|  {18}"

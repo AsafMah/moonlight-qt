@@ -43,19 +43,20 @@ std::vector<std::pair<QString, QString>> Session::sessionStatsMenuRows() const
         s.sessionFramesTotal > 0
             ? 100.0 * s.sessionFramesNetworkDropped / static_cast<double>(s.sessionFramesTotal)
             : 0;
-    const double dropPercent =
-        s.sessionFramesDecoded > 0
-            ? 100.0 * s.sessionFramesPacerDropped / static_cast<double>(s.sessionFramesDecoded)
-            : 0;
+    const double dropPercent = s.sessionFramesPacerEligible > 0
+                                   ? 100.0 * s.sessionFramesPacerDropped /
+                                         static_cast<double>(s.sessionFramesPacerEligible)
+                                   : 0;
     rows.emplace_back(
         tr("Network loss"),
         s.valid
             ? tr("%1% (%2 frames)").arg(lossPercent, 0, 'f', 2).arg(s.sessionFramesNetworkDropped)
             : unknown);
-    rows.emplace_back(
-        tr("Pacer drops"),
-        s.valid ? tr("%1% (%2 frames)").arg(dropPercent, 0, 'f', 2).arg(s.sessionFramesPacerDropped)
-                : unknown);
+    rows.emplace_back(tr("Pacer drops"), s.valid ? tr("%1% (%2 of %3 eligible frames)")
+                                                       .arg(dropPercent, 0, 'f', 2)
+                                                       .arg(s.sessionFramesPacerDropped)
+                                                       .arg(s.sessionFramesPacerEligible)
+                                                 : unknown);
 
     rows.emplace_back(tr("Bitrate"), s.valid && !std::isnan(s.bitrateMbps)
                                          ? tr("%1 Mbps").arg(s.bitrateMbps, 0, 'f', 1)

@@ -3815,6 +3815,10 @@
         <translation>帧同步丢帧</translation>
     </message>
     <message>
+        <source>%1% (%2 of %3 eligible frames)</source>
+        <translation>%1%（%2 / %3 个符合条件的帧）</translation>
+    </message>
+    <message>
         <source>Bitrate</source>
         <translation>码率</translation>
     </message>
@@ -3918,6 +3922,10 @@
         <translation>帧同步丢帧</translation>
     </message>
     <message>
+        <source>%1% (%2 of %3 eligible frames)</source>
+        <translation>%1%（%2 / %3 个符合条件的帧）</translation>
+    </message>
+    <message>
         <source>Bitrate</source>
         <translation>码率</translation>
     </message>
@@ -3926,12 +3934,20 @@
         <translation>平均 %1 Mbps，峰值 %2 Mbps</translation>
     </message>
     <message>
-        <source>Latency</source>
-        <translation>延迟</translation>
+        <source>Estimated latency</source>
+        <translation>估算延迟</translation>
     </message>
     <message>
         <source>%1 ms average</source>
         <translation>平均 %1 ms</translation>
+    </message>
+    <message>
+        <source>Pacer queue</source>
+        <translation>帧同步队列</translation>
+    </message>
+    <message>
+        <source>Not measured</source>
+        <translation>未测量</translation>
     </message>
     <message>
         <source>Round trip</source>

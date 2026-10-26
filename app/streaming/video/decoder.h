@@ -23,6 +23,9 @@ typedef struct _VIDEO_STATS {
     uint64_t totalDecodeTimeUs;                // high-res (1us)
     uint64_t totalPacerTimeUs;                 // high-res (1us)
     uint64_t totalRenderTimeUs;                // high-res (1us)
+    uint32_t timedRenderFrames;                // successful presents with phase timing
+    uint64_t totalPrePresentTimeUs;            // high-res (1us)
+    uint64_t totalPresentTimeUs;               // high-res (1us)
     uint32_t lastRtt;                          // low-res from enet (1ms)
     uint32_t lastRttVariance;                  // low-res from enet (1ms)
     double totalFps;                           // high-res

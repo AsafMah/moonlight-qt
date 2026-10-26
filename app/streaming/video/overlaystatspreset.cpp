@@ -21,9 +21,9 @@ const PresetName k_Presets[] = {
 };
 
 const char* const k_MetricIds[MetricCount] = {
-    "resolution", "fps",  "low1",   "latency", "bitrate",    "loss", "rtt",
-    "jitter",     "host", "decode", "queue",   "render",     "fec",  "abr",
-    "pacerdrops", "hz",   "time",   "graph",   "latencybar",
+    "resolution", "fps",  "low1",   "latency", "bitrate",    "loss",    "rtt",
+    "jitter",     "host", "decode", "queue",   "render",     "fec",     "abr",
+    "pacerdrops", "hz",   "time",   "graph",   "latencybar", "present",
 };
 
 const char* const k_AnchorIds[] = {
@@ -184,6 +184,17 @@ Grade gradeFrameTime(double frameTimeMs, int targetFps, const Thresholds& thresh
     const double targetMs = 1000.0 / targetFps;
     return gradeAbove(frameTimeMs, targetMs * thresholds.spikeWarnRatio,
                       targetMs * thresholds.spikeBadRatio);
+}
+
+Grade gradePresent(double prePresentMs, double presentMs, int targetFps,
+                   const Thresholds& thresholds)
+{
+    if (targetFps <= 0 || !(prePresentMs >= 0) || !(presentMs >= 0)) {
+        return Grade::Neutral;
+    }
+    const double targetMs = 1000.0 / targetFps;
+    return gradeAbove(prePresentMs + presentMs, targetMs * thresholds.presentWarnRatio,
+                      targetMs * thresholds.presentBadRatio);
 }
 
 int clampScalePercent(int percent)

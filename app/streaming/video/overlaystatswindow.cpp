@@ -294,7 +294,7 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
     case Metric::Queue:
         cell.label = tr("Queue");
         if (s.valid) {
-            cell.value = milliseconds(s.latency.queueMs);
+            cell.value = s.latency.hasQueue ? milliseconds(s.latency.queueMs) : dash();
         }
         break;
     case Metric::Render:
@@ -302,6 +302,18 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         cell.shortLabel = tr("Rend", "Short form of the Render label");
         if (s.valid) {
             cell.value = milliseconds(s.latency.renderMs);
+        }
+        break;
+    case Metric::Present:
+        cell.label = tr("Pre-Present / Present");
+        cell.shortLabel = tr("Phases");
+        cell.value = dash();
+        if (s.valid && s.presentTiming.measured) {
+            cell.value = QStringLiteral("%1 / %2 ms")
+                             .arg(number(s.presentTiming.prePresentMs, 1),
+                                  number(s.presentTiming.presentMs, 1));
+            cell.grade = gradePresent(s.presentTiming.prePresentMs, s.presentTiming.presentMs,
+                                      s.targetFps, t);
         }
         break;
     case Metric::Fec:
@@ -374,6 +386,10 @@ QVector<OverlayStatsWindow::Cell> OverlayStatsWindow::cellsFor(const QVector<Met
         if (metric == Metric::FrameTimeGraph || metric == Metric::LatencyBar) {
             continue;
         }
+        if (metric == Metric::Present && m_Preset == Preset::Detailed &&
+            !m_Snapshot.presentTiming.measured) {
+            continue;
+        }
         cells.append(cellFor(metric));
     }
     return cells;
@@ -388,6 +404,9 @@ QVector<Metric> OverlayStatsWindow::panelMetrics() const
     QVector<Metric> metrics = { Metric::Rtt,  Metric::Jitter,     Metric::Bitrate,
                                 Metric::Loss, Metric::PacerDrops, Metric::DisplayHz,
                                 Metric::Abr,  Metric::SessionTime };
+    if (m_Snapshot.presentTiming.measured) {
+        metrics.append(Metric::Present);
+    }
     // FEC only when the transport reports it
     if (m_Snapshot.videoPackets > 0) {
         metrics.insert(4, Metric::Fec);
@@ -397,6 +416,10 @@ QVector<Metric> OverlayStatsWindow::panelMetrics() const
 
 bool OverlayStatsWindow::panelHas(Metric metric) const
 {
+    if (metric == Metric::Present && m_Preset == Preset::Detailed &&
+        !m_Snapshot.presentTiming.measured) {
+        return false;
+    }
     return m_Preset == Preset::Detailed || m_Metrics.contains(metric);
 }
 
@@ -531,7 +554,9 @@ PanelContent OverlayStatsWindow::panelContent(QVector<Cell>& cells) const
                                   number(latency.networkMs, 1));
         }
         content.legend.append(tr("Decode") + QStringLiteral(" ") + number(latency.decodeMs, 1));
-        content.legend.append(tr("Queue") + QStringLiteral(" ") + number(latency.queueMs, 1));
+        if (latency.hasQueue) {
+            content.legend.append(tr("Queue") + QStringLiteral(" ") + number(latency.queueMs, 1));
+        }
         content.legend.append(tr("Render") + QStringLiteral(" ") + number(latency.renderMs, 1));
     }
 
@@ -711,7 +736,9 @@ void OverlayStatsWindow::paintLatencyBar(QPainter* painter, const PanelLayout& l
         stages.append({ latency.networkMs, kAccent });
     }
     stages.append({ latency.decodeMs, kAcid });
-    stages.append({ latency.queueMs, kWarn });
+    if (latency.hasQueue) {
+        stages.append({ latency.queueMs, kWarn });
+    }
     stages.append({ latency.renderMs, kStageRender });
 
     const Grade totalGrade =

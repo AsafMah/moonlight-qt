@@ -270,6 +270,8 @@ QStringList SessionStatsRecorder::csvColumns()
         QStringLiteral("frames_rendered"),
         QStringLiteral("frames_network_dropped"),
         QStringLiteral("frames_pacer_dropped"),
+        QStringLiteral("render_submit_ms"),
+        QStringLiteral("render_present_ms"),
     };
 }
 
@@ -285,7 +287,7 @@ QString SessionStatsRecorder::csvRow(const StatsSnapshot& s, const QDateTime& wi
     const bool hasFrames = frames.samples > 0;
 
     QStringList fields;
-    fields.reserve(43);
+    fields.reserve(45);
     fields << windowTime.toOffsetFromUtc(windowTime.offsetFromUtc()).toString(Qt::ISODateWithMs);
     fields << number(static_cast<double>(s.sessionDurationUs) / 1000000.0, 3);
     fields << QString::number(s.width) << QString::number(s.height) << QString::number(s.targetFps);
@@ -310,7 +312,8 @@ QString SessionStatsRecorder::csvRow(const StatsSnapshot& s, const QDateTime& wi
     fields << number(s.bitrateMbps, 3);
     fields << (latency.hasHost ? number(latency.hostMs, 2) : QString());
     fields << (latency.hasNetwork ? number(latency.networkMs, 2) : QString());
-    fields << number(latency.decodeMs, 2) << number(latency.queueMs, 2)
+    fields << number(latency.decodeMs, 2)
+           << (latency.hasQueue ? number(latency.queueMs, 2) : QString())
            << number(latency.renderMs, 2) << number(latency.totalMs(), 2);
     if (latency.hasHost) {
         fields << number(s.hostMinMs, 1) << number(s.hostMaxMs, 1);
@@ -326,6 +329,11 @@ QString SessionStatsRecorder::csvRow(const StatsSnapshot& s, const QDateTime& wi
            << QString::number(s.sessionFramesDecoded) << QString::number(s.sessionFramesRendered)
            << QString::number(s.sessionFramesNetworkDropped)
            << QString::number(s.sessionFramesPacerDropped);
+    if (s.presentTiming.measured) {
+        fields << number(s.presentTiming.prePresentMs, 3) << number(s.presentTiming.presentMs, 3);
+    } else {
+        fields << QString() << QString();
+    }
 
     return fields.join(QLatin1Char(','));
 }

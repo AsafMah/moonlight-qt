@@ -490,6 +490,8 @@ ffmpeg {
         streaming/video/ffmpeg-renderers/sdlvid.h \
         streaming/video/ffmpeg-renderers/swframemapper.h \
         streaming/video/ffmpeg-renderers/pacer/pacer.h \
+        streaming/video/ffmpeg-renderers/pacer/pacerstats.h \
+        streaming/video/ffmpeg-renderers/pacer/presentstalldetector.h \
         streaming/video/vrrpolicy.h
 }
 libva {

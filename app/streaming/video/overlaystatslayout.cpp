@@ -383,16 +383,72 @@ PanelLayout build(const PanelContent& content, int width, const Drops& drops, in
     return layout;
 }
 
+PanelLayout buildCompactStrip(const PanelContent& content, int width, const TextMeasurer& m)
+{
+    PanelLayout layout;
+    layout.style = CellStyle::Inline;
+    layout.columns = content.cells.size();
+    layout.size =
+        QSize(width, Pad * 2 + std::max(m.height(TextRole::Label), m.height(TextRole::Value)) + 2);
+
+    const int inner = std::max(innerWidth(width), 1);
+    int needed = std::max(int(content.cells.size()) - 1, 0) * CellPadX;
+    QVector<int> labelWidths;
+    QVector<int> valueWidths;
+    QVector<bool> shortLabels;
+    for (const PanelCell& cell : content.cells) {
+        const bool useShortLabel = !cell.shortLabel.isEmpty();
+        const QString& label = useShortLabel ? cell.shortLabel : cell.label;
+        const int labelWidth = m.width(TextRole::Label, label);
+        const int valueWidth = m.width(TextRole::Value, stableText(cell.value));
+        labelWidths.append(labelWidth);
+        valueWidths.append(valueWidth);
+        shortLabels.append(useShortLabel);
+        needed += labelWidth + LabelGap * 2 + valueWidth;
+    }
+    if (needed > inner) {
+        layout.fits = false;
+        return layout;
+    }
+
+    int x = contentLeft();
+    const int y = Pad;
+    const int rowHeight = layout.size.height() - Pad * 2;
+    for (int i = 0; i < content.cells.size(); i++) {
+        const int cellWidth = labelWidths[i] + LabelGap * 2 + valueWidths[i];
+        PlacedCell placed;
+        placed.index = i;
+        placed.rect = QRect(x, y, cellWidth, rowHeight);
+        placed.labelRect = QRect(x, y, labelWidths[i], rowHeight);
+        placed.valueRect = QRect(x + labelWidths[i] + LabelGap * 2, y, valueWidths[i], rowHeight);
+        placed.shortLabel = shortLabels[i];
+        layout.cells.append(placed);
+        x += cellWidth + CellPadX;
+    }
+    return layout;
+}
+
 } // namespace
+
+QVector<Metric> compactMetrics()
+{
+    return { Metric::Resolution, Metric::Fps,    Metric::OnePercentLow, Metric::Latency,
+             Metric::Bitrate,    Metric::Rtt,    Metric::Jitter,        Metric::Loss,
+             Metric::Host,       Metric::Decode, Metric::Queue,         Metric::Render,
+             Metric::PacerDrops };
+}
 
 bool presetIsResizable(Preset preset)
 {
-    return preset == Preset::Detailed || preset == Preset::Custom;
+    return preset == Preset::Compact || preset == Preset::Detailed || preset == Preset::Custom;
 }
 
 int defaultPanelWidth(Preset preset)
 {
-    return preset == Preset::Detailed ? DefaultDetailedWidth : DefaultCustomWidth;
+    if (preset == Preset::Detailed) {
+        return DefaultDetailedWidth;
+    }
+    return preset == Preset::Compact ? DefaultCompactWidth : DefaultCustomWidth;
 }
 
 int metricPriority(Metric metric)
@@ -457,6 +513,16 @@ PanelLayout layoutPanel(const PanelContent& content, const QSize& size,
                         const TextMeasurer& measurer)
 {
     const int width = size.width();
+    if (content.compactStrip) {
+        PanelLayout strip = buildCompactStrip(content, width, measurer);
+        if (strip.fits && (size.height() <= 0 || strip.size.height() <= size.height())) {
+            if (size.height() > 0) {
+                strip.size.setHeight(size.height());
+            }
+            return strip;
+        }
+    }
+
     const Drops none = dropsFor(content, {}, 0);
 
     if (size.height() <= 0) {

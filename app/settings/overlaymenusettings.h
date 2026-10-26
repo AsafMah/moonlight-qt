@@ -20,7 +20,6 @@
 class OverlayMenuSettings : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(int placement READ placement WRITE setPlacement NOTIFY changed)
     Q_PROPERTY(int layout READ layout WRITE setLayout NOTIFY changed)
     Q_PROPERTY(int scalePercent READ scalePercent WRITE setScalePercent NOTIFY changed)
     Q_PROPERTY(int opacityPercent READ opacityPercent WRITE setOpacityPercent NOTIFY changed)
@@ -39,25 +38,6 @@ class OverlayMenuSettings : public QObject
     Q_PROPERTY(int maxEdgeDelayMs READ maxEdgeDelayMs CONSTANT)
 
 public:
-    enum PlacementValue
-    {
-        PlacementAuto = int(OverlayMenu::Placement::Auto),
-        PlacementCenter = int(OverlayMenu::Placement::Center),
-        PlacementCursor = int(OverlayMenu::Placement::Cursor),
-        PlacementTop = int(OverlayMenu::Placement::Top),
-        PlacementBottom = int(OverlayMenu::Placement::Bottom),
-        PlacementLeft = int(OverlayMenu::Placement::Left),
-        PlacementRight = int(OverlayMenu::Placement::Right),
-        PlacementTopLeft = int(OverlayMenu::Placement::TopLeft),
-        PlacementTopRight = int(OverlayMenu::Placement::TopRight),
-        PlacementBottomLeft = int(OverlayMenu::Placement::BottomLeft),
-        PlacementBottomRight = int(OverlayMenu::Placement::BottomRight),
-        PlacementLeftPanel = int(OverlayMenu::Placement::LeftPanel),
-        PlacementRightPanel = int(OverlayMenu::Placement::RightPanel),
-        PlacementDragged = int(OverlayMenu::Placement::Dragged),
-    };
-    Q_ENUM(PlacementValue)
-
     enum LayoutValue
     {
         LayoutCompact = int(OverlayMenu::Layout::Compact),
@@ -104,10 +84,6 @@ public:
 
     explicit OverlayMenuSettings(QObject* parent = nullptr);
 
-    OverlayMenu::Placement placementValue() const;
-    int placement() const { return int(placementValue()); }
-    void setPlacement(int placement);
-
     OverlayMenu::Layout layoutValue() const;
     int layout() const { return int(layoutValue()); }
     void setLayout(int layout);
@@ -149,12 +125,12 @@ public:
     int gamepadTrigger() const { return int(gamepadTriggerValue()); }
     void setGamepadTrigger(int trigger);
 
-    // Where the menu was last dragged, as OverlayMenu::normalizedPosition()
+    // Where the menu was last manually dragged, as OverlayMenu::normalizedPosition()
     std::optional<QPointF> draggedPosition() const;
     bool hasDraggedPosition() const { return draggedPosition().has_value(); }
-    // Remembers the position and switches the placement to Dragged
+    // Remembers the position; when present, the menu follows it instead of its trigger.
     void setDraggedPosition(const QPointF& position);
-    // Forgets it; a Dragged placement goes back to Auto
+    // Forgets the manual position so the menu opens at its trigger again.
     Q_INVOKABLE void resetDraggedPosition();
 
     // Re-reads everything, for a page that may have missed in-stream changes

@@ -17,7 +17,7 @@ enum class Preset
 {
     Off = 0,
     Minimal,  // one chip: FPS, 1% low, latency
-    Compact,  // one bar of cells
+    Compact,  // dense, resizable strip of the core session metrics
     Detailed, // panel with frame time graph, latency bar and a key/value grid
     Custom,   // the metrics the user picked
 };
@@ -57,6 +57,8 @@ enum class Metric
 constexpr int MetricCount = static_cast<int>(Metric::Present) + 1;
 
 QVector<Metric> allMetrics();
+// Metrics shown by the dense Compact preset, in reading order.
+QVector<Metric> compactMetrics();
 QString metricId(Metric metric);
 std::optional<Metric> metricFromId(const QString& id);
 

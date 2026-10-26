@@ -8,7 +8,7 @@
 #include <QStringList>
 #include <QVector>
 
-// Responsive layout of the panel presets (Detailed and Custom) of
+// Responsive layout of the panel presets (Compact, Detailed and Custom) of
 // OverlayStatsWindow. It is a pure function of the content, the size and the
 // text metrics, so it is unit tested without a window
 // (tests/stats_overlay_layout), and it does not depend on where the window
@@ -59,6 +59,7 @@ constexpr int MinHeaderTextWidth = 110;
 // Default panel widths at 100% scale; the height follows the content until the
 // user resizes the panel
 constexpr int DefaultDetailedWidth = 360;
+constexpr int DefaultCompactWidth = 1600;
 constexpr int DefaultCustomWidth = 300;
 constexpr int MinPanelWidth = 160;
 constexpr int MaxPanelWidth = 1600;
@@ -85,6 +86,10 @@ struct PanelCell
 
 struct PanelContent
 {
+    // Compact preset: place cells at their natural inline widths, preferring
+    // short labels, before falling back to the responsive grid.
+    bool compactStrip = false;
+
     // Detailed preset: a big frame rate with detail lines next to it
     bool header = false;
     QString fpsValue;

@@ -772,44 +772,6 @@ Column {
             }
         }
 
-        // 以下选项的默认值都与原来的菜单完全一致：位置、触发方式「跟随上面的位置」，
-        // 紧凑布局，100% 缩放，不透明
-        ChoiceRow {
-            applicable: overlayMenuCard.menuEnabled
-            title: qsTr("Where the menu opens")
-            description: qsTr("Follow the position above, or open the menu somewhere else. Drag the menu by its title bar to choose a spot of your own.")
-            selectedValue: OverlayMenuSettings.placement
-            onValueActivated: function(value) { OverlayMenuSettings.placement = value }
-
-            model: ListModel {
-                ListElement { text: qsTr("Follow the position above (default)"); val: OverlayMenuSettings.PlacementAuto }
-                ListElement { text: qsTr("Centered"); val: OverlayMenuSettings.PlacementCenter }
-                ListElement { text: qsTr("At the pointer"); val: OverlayMenuSettings.PlacementCursor }
-                ListElement { text: qsTr("Top edge"); val: OverlayMenuSettings.PlacementTop }
-                ListElement { text: qsTr("Bottom edge"); val: OverlayMenuSettings.PlacementBottom }
-                ListElement { text: qsTr("Left edge"); val: OverlayMenuSettings.PlacementLeft }
-                ListElement { text: qsTr("Right edge"); val: OverlayMenuSettings.PlacementRight }
-                ListElement { text: qsTr("Top-left corner"); val: OverlayMenuSettings.PlacementTopLeft }
-                ListElement { text: qsTr("Top-right corner"); val: OverlayMenuSettings.PlacementTopRight }
-                ListElement { text: qsTr("Bottom-left corner"); val: OverlayMenuSettings.PlacementBottomLeft }
-                ListElement { text: qsTr("Bottom-right corner"); val: OverlayMenuSettings.PlacementBottomRight }
-                ListElement { text: qsTr("Left side panel"); val: OverlayMenuSettings.PlacementLeftPanel }
-                ListElement { text: qsTr("Right side panel"); val: OverlayMenuSettings.PlacementRightPanel }
-                ListElement { text: qsTr("Where I last dragged it"); val: OverlayMenuSettings.PlacementDragged }
-            }
-        }
-
-        SettingsRow {
-            applicable: overlayMenuCard.menuEnabled && OverlayMenuSettings.hasDraggedPosition
-            title: qsTr("Dragged position")
-            description: qsTr("Forget where the menu was dragged to.")
-
-            HardButton {
-                text: qsTr("Reset")
-                onClicked: OverlayMenuSettings.resetDraggedPosition()
-            }
-        }
-
         ChoiceRow {
             applicable: overlayMenuCard.menuEnabled
             title: qsTr("Menu layout")

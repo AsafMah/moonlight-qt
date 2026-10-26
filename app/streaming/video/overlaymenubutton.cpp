@@ -473,7 +473,6 @@ void OverlayMenuButton::finishInteraction(const QPoint& globalPosition)
         return;
     }
 
-    const InputSource source = m_InputSource;
     const bool dragged = m_Dragging;
     const bool activate = !m_Dragging && geometry().contains(globalPosition);
 
@@ -488,9 +487,7 @@ void OverlayMenuButton::finishInteraction(const QPoint& globalPosition)
     cancelInteraction();
 
     if (activate && m_ClickCallback) {
-        // Touch input has no reliable QCursor position, so it must not use
-        // mouse-hover auto-close checks after opening the menu.
-        m_ClickCallback(globalPosition, source == InputSource::Mouse);
+        m_ClickCallback(globalPosition);
     }
 }
 

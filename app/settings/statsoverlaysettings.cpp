@@ -13,7 +13,6 @@
 #define SER_DISPLAYS "displays"
 #define SER_ANCHOR "anchor"
 #define SER_SIZE "size"
-#define SER_DETACHED "detached"
 #define SER_DETACHED_POS "detached/pos"
 
 using namespace StatsOverlay;
@@ -58,21 +57,6 @@ Preset StatsOverlaySettings::presetValue() const
 {
     const QString id = QSettings().value(key(SER_PRESET)).toString();
     return visiblePreset(presetFromId(id, DefaultPreset));
-}
-
-bool StatsOverlaySettings::detached() const
-{
-    return QSettings().value(key(SER_DETACHED), false).toBool();
-}
-
-void StatsOverlaySettings::setDetached(bool detached)
-{
-    if (detached == this->detached()) {
-        return;
-    }
-
-    QSettings().setValue(key(SER_DETACHED), detached);
-    emit detachedChanged();
 }
 
 int StatsOverlaySettings::scalePercent() const
@@ -221,7 +205,6 @@ void StatsOverlaySettings::reload()
     emit scalePercentChanged();
     emit opacityPercentChanged();
     emit metricsChanged();
-    emit detachedChanged();
 }
 
 StatsOverlaySettings::DisplayState

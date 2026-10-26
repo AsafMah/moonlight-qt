@@ -1,4 +1,5 @@
 #include "panel_layout_tests.h"
+#include "streaming/video/overlaystatslayout.h"
 #include "streaming/video/overlaystatspreset.h"
 
 #include <QGuiApplication>
@@ -50,6 +51,12 @@ bool testMetricLists(QTextStream& err)
                       QStringLiteral("metric id '%1' is not storable").arg(id), err);
     }
     ok &= require(allMetrics().size() == MetricCount, QStringLiteral("metric count"), err);
+    ok &= require(metricId(Metric::Present) == QLatin1String("present") &&
+                      metricFromId(QStringLiteral("present")) == Metric::Present &&
+                      !compactMetrics().contains(Metric::Present),
+                  QStringLiteral("Present metric id or preset membership is wrong"), err);
+    ok &= require(metricPriority(Metric::Present) > 0,
+                  QStringLiteral("Present metric has no layout priority"), err);
 
     // Unknown ids and duplicates are dropped; the result is in display order
     const QVector<Metric> parsed = parseMetricList(QStringLiteral("graph, fps,bogus,fps,LOW1"));

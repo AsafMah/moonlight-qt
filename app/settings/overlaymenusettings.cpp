@@ -3,7 +3,6 @@
 #include <QSettings>
 
 #define SER_OVERLAYMENU "overlaymenu"
-#define SER_PLACEMENT "placement"
 #define SER_LAYOUT "layout"
 #define SER_SCALE "scale"
 #define SER_OPACITY "opacity"
@@ -63,23 +62,6 @@ template <int N> bool validIndex(const char* const (&)[N], int index)
 } // namespace
 
 OverlayMenuSettings::OverlayMenuSettings(QObject* parent) : QObject(parent) {}
-
-Placement OverlayMenuSettings::placementValue() const
-{
-    const Placement placement = placementFromId(value(SER_PLACEMENT).toString(), Placement::Auto);
-    // Without a remembered position, Dragged behaves as Auto
-    return placement == Placement::Dragged && !hasDraggedPosition() ? Placement::Auto : placement;
-}
-
-void OverlayMenuSettings::setPlacement(int placement)
-{
-    if (placement < 0 || placement >= int(Placement::Count)) {
-        return;
-    }
-    if (store(SER_PLACEMENT, placementId(Placement(placement)))) {
-        emit changed();
-    }
-}
 
 Layout OverlayMenuSettings::layoutValue() const
 {
@@ -225,17 +207,11 @@ void OverlayMenuSettings::setDraggedPosition(const QPointF& position)
 {
     QSettings settings;
     settings.setValue(key(SER_DRAGGED), position);
-    settings.setValue(key(SER_PLACEMENT), placementId(Placement::Dragged));
     emit changed();
 }
 
 void OverlayMenuSettings::resetDraggedPosition()
 {
-    QSettings settings;
-    settings.remove(key(SER_DRAGGED));
-    if (placementFromId(settings.value(key(SER_PLACEMENT)).toString(), Placement::Auto) ==
-        Placement::Dragged) {
-        settings.setValue(key(SER_PLACEMENT), placementId(Placement::Auto));
-    }
+    QSettings().remove(key(SER_DRAGGED));
     emit changed();
 }

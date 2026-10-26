@@ -260,8 +260,7 @@ private:
     void toggleFullscreen();
 
     // Qt-based overlay menu
-    void showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition = std::nullopt,
-                           bool closeWhenPointerOutside = true);
+    void showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition = std::nullopt);
     OverlayMenu::GamepadTrigger overlayMenuGamepadTrigger() const
     {
         return m_OverlayMenuOptions.gamepadTrigger;
@@ -280,12 +279,11 @@ private:
 
     // Overlay menu options integration (sessionoverlaymenu.cpp)
     void reloadOverlayMenuOptions();
-    // Applies layout, scale, opacity and Esc; returns the placement option
-    OverlayMenu::Placement applyOverlayMenuOptionsToPanel();
-    // Opens the menu at the placement option; false for Auto
-    bool showQtOverlayMenuWithPlacement(const QRect& parentRect,
-                                        std::optional<QPoint> pointerPosition,
-                                        bool closeWhenPointerOutside);
+    // Applies layout, scale, opacity and Esc
+    void applyOverlayMenuOptionsToPanel();
+    // Opens at the only independent position override: the user's dragged position.
+    bool showQtOverlayMenuAtDraggedPosition(const QRect& parentRect);
+    QRect overlayMenuBounds() const;
     QPoint currentOverlayPointerPosition() const;
     bool handleOverlayMenuOptionAction(OverlayMenuPanel::MenuAction action);
     bool handleOverlayMenuOptionPayload(OverlayMenuPanel::MenuAction action,
@@ -533,6 +531,9 @@ private:
     std::optional<StreamQuality::Settings> m_StreamQualityOverride;
     OverlayMenuPanel* m_MenuPanel; // Qt-based overlay menu window
     OverlayMenuButton* m_MenuButton = nullptr; // Qt-based floating menu button
+    bool m_MenuDetached = false;
+    std::optional<bool> m_PendingMenuDetached;
+    std::optional<bool> m_PendingStatsOverlayDetached;
     OverlayToast* m_Toast;           // Qt-based toast notification
     std::unique_ptr<OverlayStatsController> m_StatsOverlay; // performance overlay
     bool m_WasCapturedBeforeStatsEdit = false;

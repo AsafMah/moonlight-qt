@@ -5,8 +5,11 @@
 
 #include "session.h"
 #include "settings/overlaymenusettings.h"
+#include "video/overlaystatscontroller.h"
 
 #include <QCursor>
+#include <QGuiApplication>
+#include <QScreen>
 
 using OverlayMenu::Placement;
 using OverlayMenu::TriggerMode;
@@ -60,40 +63,62 @@ void Session::reloadOverlayMenuOptions()
     m_MenuEdgeDwell.reset();
 }
 
-OverlayMenu::Placement Session::applyOverlayMenuOptionsToPanel()
+void Session::applyOverlayMenuOptionsToPanel()
 {
     const OverlayMenuSettings settings;
     m_MenuPanel->setStyle(settings.layoutValue(), settings.scalePercent(),
                           settings.opacityPercent());
     m_MenuPanel->setEscapeAction(settings.escapeActionValue());
     m_MenuPanel->updateMenuStyleState();
-    return settings.placementValue();
 }
 
-bool Session::showQtOverlayMenuWithPlacement(const QRect& parentRect,
-                                             std::optional<QPoint> pointerPosition,
-                                             bool closeWhenPointerOutside)
+bool Session::showQtOverlayMenuAtDraggedPosition(const QRect& parentRect)
 {
     const OverlayMenuSettings settings;
-    const Placement placement = settings.placementValue();
-    if (placement == Placement::Auto) {
+    const std::optional<QPointF> draggedPosition = settings.draggedPosition();
+    if (!draggedPosition) {
         return false;
     }
 
-    if (placement == Placement::Cursor && !pointerPosition) {
-        pointerPosition = currentOverlayPointerPosition();
-    }
-    m_MenuPanel->showWithPlacement(placement, parentRect.x(), parentRect.y(), parentRect.width(),
-                                   parentRect.height(), pointerPosition, settings.draggedPosition(),
-                                   closeWhenPointerOutside);
+    m_MenuPanel->showWithPlacement(Placement::Dragged, parentRect.x(), parentRect.y(),
+                                   parentRect.width(), parentRect.height(), std::nullopt,
+                                   draggedPosition);
     if (m_MenuButton) {
         m_MenuButton->hideButton();
     }
     return true;
 }
 
+QRect Session::overlayMenuBounds() const
+{
+    if (!m_MenuDetached) {
+        return qtOverlayParentGeometry();
+    }
+
+    QScreen* screen = nullptr;
+    if (m_MenuPanel) {
+        const std::optional<QPoint> position = m_MenuPanel->detachedPosition();
+        if (position) {
+            screen = QGuiApplication::screenAt(*position);
+        }
+        if (screen == nullptr) {
+            screen = m_MenuPanel->screen();
+        }
+    }
+    if (screen == nullptr && m_WaylandStreamWindow != nullptr) {
+        screen = m_WaylandStreamWindow->screen();
+    }
+    if (screen == nullptr) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    return screen != nullptr ? screen->availableGeometry() : QRect();
+}
+
 QPoint Session::currentOverlayPointerPosition() const
 {
+    if (m_MenuDetached) {
+        return QCursor::pos();
+    }
     if (m_WaylandStreamWindow != nullptr) {
         // Native Wayland children use parent-local coordinates, and Qt cannot
         // read the global pointer position there
@@ -107,8 +132,8 @@ QPoint Session::currentOverlayPointerPosition() const
 
 bool Session::handleOverlayMenuOptionAction(OverlayMenuPanel::MenuAction action)
 {
-    if (const auto placement = OverlayMenuPanel::placementForAction(action)) {
-        OverlayMenuSettings().setPlacement(int(*placement));
+    if (action == OverlayMenuPanel::MenuAction::ToggleMenuDetached) {
+        m_PendingMenuDetached = !m_MenuDetached;
         return true;
     }
     if (const auto layout = OverlayMenuPanel::layoutForAction(action)) {
@@ -121,6 +146,14 @@ bool Session::handleOverlayMenuOptionAction(OverlayMenuPanel::MenuAction action)
 bool Session::handleOverlayMenuOptionPayload(OverlayMenuPanel::MenuAction action,
                                              const QString& payload)
 {
+    if (action == OverlayMenuPanel::MenuAction::SetStatsOpacity) {
+        bool ok = false;
+        const int percent = payload.toInt(&ok);
+        if (ok && m_StatsOverlay) {
+            m_StatsOverlay->setOpacityPercent(percent);
+        }
+        return true;
+    }
     if (action != OverlayMenuPanel::MenuAction::SetMenuScale) {
         return false;
     }
@@ -160,8 +193,11 @@ void Session::setupOverlayMenuShortcut()
             }
         });
 
-    m_MenuPanel->setDragFinishedCallback(
-        [](const QPointF& position) { OverlayMenuSettings().setDraggedPosition(position); });
+    m_MenuPanel->setDragFinishedCallback([this](const QPointF& position) {
+        if (!m_MenuDetached) {
+            OverlayMenuSettings().setDraggedPosition(position);
+        }
+    });
 }
 
 void Session::updateOverlayMenuEdgeTrigger()
@@ -182,7 +218,7 @@ void Session::updateOverlayMenuEdgeTrigger()
         return;
     }
 
-    const QRect parentRect = qtOverlayParentGeometry();
+    const QRect parentRect = overlayMenuBounds();
     const QPoint pointer = currentOverlayPointerPosition();
     const bool inZone =
         parentRect.isValid() &&

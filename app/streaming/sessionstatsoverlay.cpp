@@ -75,7 +75,7 @@ void Session::createStatsOverlay(OverlayWindowMode windowMode)
         if (m_InputHandler->isCaptureActive() || (m_MenuPanel && m_MenuPanel->isMenuVisible())) {
             return std::nullopt;
         }
-        if (m_WaylandStreamWindow != nullptr) {
+        if (m_WaylandStreamWindow != nullptr && !(m_StatsOverlay && m_StatsOverlay->isDetached())) {
             // Native Wayland children use parent-local coordinates, and Qt
             // cannot read the global pointer position there
             int x = 0;
@@ -101,6 +101,13 @@ bool Session::handleStatsOverlayMenuAction(OverlayMenuPanel::MenuAction action)
     if (action == OverlayMenuPanel::MenuAction::EditStatsOverlayPosition) {
         if (m_StatsOverlay) {
             m_StatsOverlay->beginEditing();
+        }
+        return true;
+    }
+
+    if (action == OverlayMenuPanel::MenuAction::ToggleStatsOverlayDetached) {
+        if (m_StatsOverlay) {
+            m_PendingStatsOverlayDetached = !m_StatsOverlay->isDetached();
         }
         return true;
     }

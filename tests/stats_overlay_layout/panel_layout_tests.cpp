@@ -76,6 +76,40 @@ PanelContent detailedContent()
     return content;
 }
 
+PanelCell compactCell(Metric metric)
+{
+    switch (metric) {
+    case Metric::Resolution:
+        return cell(metric, "Stream", "Res", QStringLiteral("3840x2160@120 HEVC"));
+    case Metric::Fps:
+        return cell(metric, "Rx/De/Rd", "Rx/De/Rd", QStringLiteral("120/120/120"));
+    case Metric::OnePercentLow:
+        return cell(metric, "1% low", "", QStringLiteral("118"));
+    case Metric::Latency:
+        return cell(metric, "Latency", "Lat", QStringLiteral("~23.4 ms"));
+    case Metric::Bitrate:
+        return cell(metric, "Bitrate", "Rate", QStringLiteral("148.7 / 150 Mbps"));
+    case Metric::Loss:
+        return cell(metric, "Loss", "", QStringLiteral("0.00%"));
+    case Metric::Rtt:
+        return cell(metric, "RTT", "", QStringLiteral("12 ± 3 ms"));
+    case Metric::Jitter:
+        return cell(metric, "Jitter", "Jit", QStringLiteral("0.42 ms"));
+    case Metric::Host:
+        return cell(metric, "Host", "", QStringLiteral("4.1 ms"));
+    case Metric::Decode:
+        return cell(metric, "Decode", "Dec", QStringLiteral("1.2 ms"));
+    case Metric::Queue:
+        return cell(metric, "Queue", "", QStringLiteral("0.4 ms"));
+    case Metric::Render:
+        return cell(metric, "Render", "Rend", QStringLiteral("0.8 ms"));
+    case Metric::PacerDrops:
+        return cell(metric, "Pacer drops", "Drops", QStringLiteral("0.0%"));
+    default:
+        return cell(metric, "Other", "", QStringLiteral("—"));
+    }
+}
+
 QString labelOf(const PanelContent& content, const PlacedCell& placed, const PanelLayout& layout)
 {
     if (placed.index < 0) {
@@ -164,6 +198,58 @@ bool testDefaultSize(const TextMeasurer& m, const QString& fonts, QTextStream& e
     ok &=
         require(minimum.width() <= DefaultDetailedWidth && minimum.height() <= layout.size.height(),
                 name + QStringLiteral(": default is below the minimum size"), err);
+    return ok;
+}
+
+bool testCompactStrip(const TextMeasurer& m, const QString& fonts, QTextStream& err)
+{
+    const QVector<Metric> expected = {
+        Metric::Resolution, Metric::Fps,    Metric::OnePercentLow, Metric::Latency, Metric::Bitrate,
+        Metric::Rtt,        Metric::Jitter, Metric::Loss,          Metric::Host,    Metric::Decode,
+        Metric::Queue,      Metric::Render, Metric::PacerDrops,
+    };
+    bool ok = require(compactMetrics() == expected,
+                      QStringLiteral("Compact does not preserve the legacy stats and timing "
+                                     "details"),
+                      err);
+
+    PanelContent content;
+    content.compactStrip = true;
+    for (Metric metric : compactMetrics()) {
+        content.cells.append(compactCell(metric));
+    }
+    const QString name = QStringLiteral("Compact default strip (%1)").arg(fonts);
+    const PanelLayout wide = layoutPanel(content, QSize(DefaultCompactWidth, 0), m);
+    ok &=
+        require(wide.fits && wide.hiddenCount == 0 && wide.cells.size() == compactMetrics().size(),
+                name + QStringLiteral(": metrics were dropped"), err);
+    ok &= require(wide.style == CellStyle::Inline, name + QStringLiteral(": labels are not inline"),
+                  err);
+    int rows = 0;
+    int previousTop = -1;
+    for (const PlacedCell& placed : wide.cells) {
+        if (placed.rect.top() != previousTop) {
+            rows++;
+            previousTop = placed.rect.top();
+        }
+    }
+    if (!wide.cells.isEmpty()) {
+        ok &= require(rows == 1,
+                      QStringLiteral("%1: default has %2 rows across %3 columns at %4 px")
+                          .arg(name)
+                          .arg(rows)
+                          .arg(wide.columns)
+                          .arg(wide.size.width()),
+                      err);
+    }
+    ok &= checkLayout(content, wide, m, name, err);
+
+    const PanelLayout narrow = layoutPanel(content, QSize(MinPanelWidth, 0), m);
+    ok &= require(
+        narrow.fits && narrow.hiddenCount == 0 && narrow.cells.size() == compactMetrics().size() &&
+            narrow.style == CellStyle::Stacked,
+        QStringLiteral("narrow Compact did not stack labels while preserving metrics"), err);
+    ok &= checkLayout(content, narrow, m, QStringLiteral("narrow Compact"), err);
     return ok;
 }
 
@@ -294,8 +380,8 @@ bool testEmptyAndCustom(QTextStream& err)
 
     ok &= require(stableText(QStringLiteral("12.5 ms")) == QLatin1String("00.0 ms"),
                   QStringLiteral("stable text"), err);
-    ok &= require(presetIsResizable(Preset::Detailed) && presetIsResizable(Preset::Custom) &&
-                      !presetIsResizable(Preset::Minimal) && !presetIsResizable(Preset::Compact),
+    ok &= require(presetIsResizable(Preset::Compact) && presetIsResizable(Preset::Detailed) &&
+                      presetIsResizable(Preset::Custom) && !presetIsResizable(Preset::Minimal),
                   QStringLiteral("resizable presets"), err);
     return ok;
 }
@@ -318,6 +404,7 @@ bool runPanelLayoutTests(QTextStream& err)
 {
     bool ok = true;
     ok &= testDefaultSize(FakeMeasurer(), QStringLiteral("fixed-width"), err);
+    ok &= testCompactStrip(FakeMeasurer(), QStringLiteral("fixed-width"), err);
     ok &= testFallbackOrder(err);
     ok &= testEmptyAndCustom(err);
 
@@ -325,6 +412,7 @@ bool runPanelLayoutTests(QTextStream& err)
     if (loadOverlayFonts(err)) {
         const FontTextMeasurer real(overlayFonts());
         ok &= testDefaultSize(real, QStringLiteral("DM Mono and Manrope"), err);
+        ok &= testCompactStrip(real, QStringLiteral("DM Mono and Manrope"), err);
     } else {
         ok = false;
     }

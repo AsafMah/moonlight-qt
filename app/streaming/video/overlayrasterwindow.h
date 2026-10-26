@@ -46,6 +46,20 @@ public:
         }
     }
 
+    void reconfigureSurface(QWindow* parent, OverlayWindowMode mode, Qt::WindowFlags flags)
+    {
+        Q_ASSERT(!isVisible());
+        const qreal currentOpacity = opacity();
+        destroy();
+        setParent(parent);
+        setFlags(flags);
+        m_Mode = mode;
+        m_PaintOpacity = currentOpacity;
+        if (mode != OverlayWindowMode::WaylandSubsurface) {
+            QRasterWindow::setOpacity(currentOpacity);
+        }
+    }
+
 protected:
     virtual void paintOverlay(QPainter& painter) = 0;
 
@@ -77,6 +91,6 @@ protected:
     }
 
 private:
-    const OverlayWindowMode m_Mode;
+    OverlayWindowMode m_Mode;
     qreal m_PaintOpacity = 1.0;
 };

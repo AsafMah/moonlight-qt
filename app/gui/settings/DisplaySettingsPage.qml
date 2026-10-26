@@ -182,15 +182,6 @@ Column {
             }
         }
 
-        // 浮层单独成窗，可拖到别的显示器；下次串流开始时生效
-        ToggleRow {
-            applicable: statsOverlayCard.overlayOn
-            title: qsTr("Detach the performance overlay")
-            description: qsTr("Show the overlay in a window of its own that you can drag anywhere, including to another screen. It opens on another screen if there is one and remembers where you leave it. Exclusive fullscreen on the same monitor covers it. Takes effect when the next stream starts.")
-            checked: StatsOverlaySettings.detached
-            onToggled: function(value) { StatsOverlaySettings.detached = value }
-        }
-
         SettingsRow {
             id: statsOverlayScaleRow
             applicable: statsOverlayCard.overlayOn
@@ -234,6 +225,7 @@ Column {
             id: statsOverlayOpacityRow
             applicable: statsOverlayCard.overlayOn
             title: qsTr("Background opacity")
+            description: qsTr("Adjust quickly in a stream with Ctrl+wheel while editing the overlay.")
 
             Row {
                 width: Math.min(360, Math.max(220, statsOverlayOpacityRow.width - Theme.spaceMd * 2))

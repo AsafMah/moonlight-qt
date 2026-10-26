@@ -13,8 +13,6 @@
 #include <tuple>
 
 namespace {
-constexpr qint64 PointerGracePeriodMs = 300;
-constexpr int PointerCheckIntervalMs = 150;
 // Raster counterpart of gui/theme/Theme.qml (same palette and hard edges).
 const QColor MenuSurface("#171A20");
 const QColor MenuHover("#1F232B");
@@ -164,9 +162,10 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode
       m_SwapFaceButtons(false), m_FileMappingState(FileMappingState::Unknown),
       m_FileMappingDetail(tr("Checking")), m_RemoteUsbAvailable(false),
       m_RemoteUsbState(RemoteUsbState::Unavailable), m_RemoteUsbDetail(tr("Unavailable")),
-      m_ParentX(0), m_ParentY(0), m_ParentW(0), m_ParentH(0), m_WindowMode(windowMode),
-      m_CloseWhenPointerOutside(false), m_ContentOffset(0), m_Closing(false), m_TargetPosition(),
-      m_AnchorMode(AnchorMode::RightEdge), m_TriggerPosition(std::nullopt)
+      m_ParentX(0), m_ParentY(0), m_ParentW(0), m_ParentH(0), m_OriginalParent(parent),
+      m_OriginalWindowMode(windowMode), m_WindowMode(windowMode), m_ContentOffset(0),
+      m_Closing(false), m_TargetPosition(), m_AnchorMode(AnchorMode::RightEdge),
+      m_TriggerPosition(std::nullopt)
 {
     Q_ASSERT(m_WindowMode != OverlayWindowMode::WaylandSubsurface || parent != nullptr);
     setFlags(OverlayWindowPolicy::flags(m_WindowMode));
@@ -225,31 +224,6 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode
     connect(m_ContentSlideAnim, &QVariantAnimation::finished, this, [this]() {
         m_ContentOffset = 0;
         forceRepaint();
-    });
-
-    m_LeaveTimer.setSingleShot(true);
-    connect(&m_LeaveTimer, &QTimer::timeout, this, [this]() {
-        if (!m_Visible || !m_CloseWhenPointerOutside) {
-            return;
-        }
-
-        // A Wayland child surface has reliable enter/leave events but no
-        // compositor-wide cursor position. Re-entry cancels this timer in
-        // event(), so an outstanding timeout means the pointer stayed out.
-        if (OverlayWindowPolicy::usesParentCoordinates(m_WindowMode)) {
-            closeMenu();
-            return;
-        }
-
-        const QRect contentGeometry = geometry().adjusted(
-                m_ShadowMargin, m_ShadowMargin,
-                -m_ShadowMargin, -m_ShadowMargin);
-        if (!contentGeometry.contains(QCursor::pos())) {
-            closeMenu();
-        }
-        else {
-            schedulePointerOutsideCheck();
-        }
     });
 
     // Keeps the Session level's numbers live while it is shown
@@ -564,68 +538,6 @@ int OverlayMenuPanel::menuHeight() const
     return height;
 }
 
-OverlayMenuPanel::MenuAction OverlayMenuPanel::actionForPlacement(OverlayMenu::Placement placement)
-{
-    using OverlayMenu::Placement;
-    switch (placement) {
-    case Placement::Center:
-        return MenuAction::SetMenuPlacementCenter;
-    case Placement::Cursor:
-        return MenuAction::SetMenuPlacementCursor;
-    case Placement::Top:
-        return MenuAction::SetMenuPlacementTop;
-    case Placement::Bottom:
-        return MenuAction::SetMenuPlacementBottom;
-    case Placement::Left:
-        return MenuAction::SetMenuPlacementLeft;
-    case Placement::Right:
-        return MenuAction::SetMenuPlacementRight;
-    case Placement::TopLeft:
-        return MenuAction::SetMenuPlacementTopLeft;
-    case Placement::TopRight:
-        return MenuAction::SetMenuPlacementTopRight;
-    case Placement::BottomLeft:
-        return MenuAction::SetMenuPlacementBottomLeft;
-    case Placement::BottomRight:
-        return MenuAction::SetMenuPlacementBottomRight;
-    case Placement::LeftPanel:
-        return MenuAction::SetMenuPlacementLeftPanel;
-    case Placement::RightPanel:
-        return MenuAction::SetMenuPlacementRightPanel;
-    default:
-        return MenuAction::MenuActionMax;
-    }
-}
-
-std::optional<OverlayMenu::Placement> OverlayMenuPanel::placementForAction(MenuAction action)
-{
-    // Top, Left and Right are the original positions; their rows set the
-    // overlay menu position preference instead (see Session)
-    using OverlayMenu::Placement;
-    switch (action) {
-    case MenuAction::SetMenuPlacementCenter:
-        return Placement::Center;
-    case MenuAction::SetMenuPlacementCursor:
-        return Placement::Cursor;
-    case MenuAction::SetMenuPlacementBottom:
-        return Placement::Bottom;
-    case MenuAction::SetMenuPlacementTopLeft:
-        return Placement::TopLeft;
-    case MenuAction::SetMenuPlacementTopRight:
-        return Placement::TopRight;
-    case MenuAction::SetMenuPlacementBottomLeft:
-        return Placement::BottomLeft;
-    case MenuAction::SetMenuPlacementBottomRight:
-        return Placement::BottomRight;
-    case MenuAction::SetMenuPlacementLeftPanel:
-        return Placement::LeftPanel;
-    case MenuAction::SetMenuPlacementRightPanel:
-        return Placement::RightPanel;
-    default:
-        return std::nullopt;
-    }
-}
-
 std::optional<OverlayMenu::Layout> OverlayMenuPanel::layoutForAction(MenuAction action)
 {
     switch (action) {
@@ -926,6 +838,8 @@ void OverlayMenuPanel::buildMenuLevels()
     MenuLevel placement;
     placement.title = tr("Menu Position");
     placement.openAction = MenuAction::OpenMenuPosition;
+    placement.items.push_back({ tr("Detach menu"), QString(), MenuItemType::Action,
+                                MenuAction::ToggleMenuDetached, 0, true, false, true });
     placement.items.push_back({tr("Top edge"), QString(), MenuItemType::Action,
                                MenuAction::SetMenuPlacementTop, 0, true, false, false});
     placement.items.push_back({tr("Right edge"), QString(), MenuItemType::Action,
@@ -936,23 +850,6 @@ void OverlayMenuPanel::buildMenuLevels()
                                MenuAction::SetMenuPlacementButton, 0, true, false, false});
     placement.items.push_back({ tr("Disabled"), QString(), MenuItemType::Action,
                                 MenuAction::SetMenuPlacementDisabled, 0, true, false, true });
-    // Further placements; the edge trigger and the button keep following the
-    // position above
-    const std::pair<QString, MenuAction> morePlacements[] = {
-        { tr("Centered"), MenuAction::SetMenuPlacementCenter },
-        { tr("At the pointer"), MenuAction::SetMenuPlacementCursor },
-        { tr("Bottom edge"), MenuAction::SetMenuPlacementBottom },
-        { tr("Top-left corner"), MenuAction::SetMenuPlacementTopLeft },
-        { tr("Top-right corner"), MenuAction::SetMenuPlacementTopRight },
-        { tr("Bottom-left corner"), MenuAction::SetMenuPlacementBottomLeft },
-        { tr("Bottom-right corner"), MenuAction::SetMenuPlacementBottomRight },
-        { tr("Left side panel"), MenuAction::SetMenuPlacementLeftPanel },
-        { tr("Right side panel"), MenuAction::SetMenuPlacementRightPanel },
-    };
-    for (const auto& more : morePlacements) {
-        placement.items.push_back(
-            { more.first, QString(), MenuItemType::Action, more.second, 0, true, false, false });
-    }
     m_MenuLevels.push_back(std::move(placement));
 
     // === Overlay menu layout and scale ===
@@ -1053,7 +950,22 @@ void OverlayMenuPanel::buildMenuLevels()
     stats.items.push_back({ tr("Edit position"), QString(), MenuItemType::Action,
                             MenuAction::EditStatsOverlayPosition, 0, m_StatsOverlayEditable, false,
                             false });
+    stats.items.push_back({ tr("Detach overlay"), QString(), MenuItemType::Action,
+                            MenuAction::ToggleStatsOverlayDetached, 0, m_StatsOverlayEditable,
+                            false, false });
+    stats.items.push_back({ tr("Opacity"), QString(), MenuItemType::SubMenu,
+                            MenuAction::OpenStatsOpacity, 0, true, false, false });
     m_MenuLevels.push_back(std::move(stats));
+
+    MenuLevel statsOpacity;
+    statsOpacity.title = tr("Overlay Opacity");
+    statsOpacity.openAction = MenuAction::OpenStatsOpacity;
+    for (int percent : { 30, 50, 70, 85, 100 }) {
+        statsOpacity.items.push_back({ tr("%1%").arg(percent), QString(), MenuItemType::Action,
+                                       MenuAction::SetStatsOpacity, 0, true, false, false,
+                                       QString::number(percent) });
+    }
+    m_MenuLevels.push_back(std::move(statsOpacity));
 
     // === Send Keys: special keys, then the user's key macros ===
     MenuLevel sendKeys;
@@ -1109,6 +1021,7 @@ void OverlayMenuPanel::buildMenuLevels()
         linkSubMenuRows(level);
     }
     m_StatsOverlayLevel = levelForOpenAction(MenuAction::OpenStatsOverlay);
+    m_StatsOpacityLevel = levelForOpenAction(MenuAction::OpenStatsOpacity);
     m_SendKeysLevel = levelForOpenAction(MenuAction::OpenSendKeys);
     m_HostCommandsLevel = levelForOpenAction(MenuAction::OpenHostCommands);
     m_StreamQualityLevel = levelForOpenAction(MenuAction::OpenStreamQuality);
@@ -1127,6 +1040,7 @@ void OverlayMenuPanel::buildMenuLevels()
     if (m_ActivePlacementAction) {
         updateMenuPositionState(*m_ActivePlacementAction);
     }
+    applyMenuAttachmentState();
 }
 
 // ---------------------------------------------------------------------------
@@ -1408,12 +1322,72 @@ std::optional<StatsOverlay::Preset> OverlayMenuPanel::statsPresetForAction(MenuA
     }
 }
 
-void OverlayMenuPanel::updateStatsOverlayState(StatsOverlay::Preset preset, bool canEditPosition)
+void OverlayMenuPanel::updateStatsOverlayState(StatsOverlay::Preset preset, bool canEditPosition,
+                                               bool detached, int opacityPercent)
 {
     m_StatsOverlayPreset = preset;
     m_StatsOverlayEditable = canEditPosition;
+    m_StatsOverlayDetached = detached;
+    m_StatsOverlayOpacityPercent =
+        qBound(StatsOverlay::MinOpacityPercent, opacityPercent, StatsOverlay::MaxOpacityPercent);
     applyStatsOverlayState();
+    if (m_Visible) {
+        repositionWindow();
+    }
     forceRepaint();
+}
+
+void OverlayMenuPanel::updateMenuAttachmentState(bool detached)
+{
+    m_MenuDetached = detached;
+    applyMenuAttachmentState();
+    if (m_Visible) {
+        repositionWindow();
+    }
+    forceRepaint();
+}
+
+void OverlayMenuPanel::setDetached(bool detached)
+{
+    if (detached == m_Detached || m_Visible || m_Closing) {
+        return;
+    }
+
+    const int shadow = qRound(m_ShadowMargin * m_Scale);
+    if (detached) {
+        QPoint windowTopLeft = m_TargetPosition;
+        if (OverlayWindowPolicy::usesParentCoordinates(m_WindowMode) && parent() != nullptr) {
+            windowTopLeft = parent()->mapToGlobal(windowTopLeft);
+            QScreen* targetScreen = QGuiApplication::screenAt(windowTopLeft);
+            if (targetScreen == nullptr) {
+                targetScreen = parent()->screen();
+            }
+            if (targetScreen != nullptr &&
+                !targetScreen->availableGeometry().contains(windowTopLeft)) {
+                windowTopLeft =
+                    targetScreen->availableGeometry().center() - QPoint(width() / 2, height() / 2);
+            }
+        }
+        m_DetachedPosition = windowTopLeft + QPoint(shadow, shadow);
+    }
+
+    const OverlayWindowMode targetMode =
+        detached ? OverlayWindowMode::Detached : m_OriginalWindowMode;
+    QWindow* const targetParent = detached ? nullptr : m_OriginalParent;
+    if (targetMode != m_WindowMode || targetParent != parent()) {
+        reconfigureSurface(targetParent, targetMode, OverlayWindowPolicy::flags(targetMode));
+        m_WindowMode = targetMode;
+    }
+
+    m_Detached = detached;
+    m_MenuDetached = detached;
+    if (detached && m_DetachedPosition) {
+        setPosition(*m_DetachedPosition - QPoint(shadow, shadow));
+        m_TargetPosition = position();
+    } else if (!detached) {
+        m_DetachedPosition.reset();
+        m_DraggedPosition.reset();
+    }
 }
 
 void OverlayMenuPanel::setSessionStatsProvider(SessionStatsProvider provider)
@@ -1464,6 +1438,18 @@ void OverlayMenuPanel::applyStatsOverlayState()
             item.enabled = m_StatsOverlayEditable;
             continue;
         }
+        if (item.action == MenuAction::ToggleStatsOverlayDetached) {
+            item.label = m_StatsOverlayDetached ? tr("Attach overlay") : tr("Detach overlay");
+            item.enabled =
+                m_StatsOverlayEditable && m_StatsOverlayPreset != StatsOverlay::Preset::Off;
+            continue;
+        }
+        if (item.action == MenuAction::OpenStatsOpacity) {
+            item.detail = tr("%1%").arg(m_StatsOverlayOpacityPercent);
+            item.enabled =
+                m_StatsOverlayEditable && m_StatsOverlayPreset != StatsOverlay::Preset::Off;
+            continue;
+        }
         const bool active = statsPresetForAction(item.action) == m_StatsOverlayPreset;
         item.detail = active ? QString::fromUtf8("\342\234\223") : QString();
         if (active) {
@@ -1473,6 +1459,33 @@ void OverlayMenuPanel::applyStatsOverlayState()
 
     if (MenuItem* entry = findRootItem(MenuAction::OpenStatsOverlay)) {
         entry->detail = activeLabel;
+    }
+
+    if (m_StatsOpacityLevel >= 0 &&
+        m_MenuLevels.size() > static_cast<size_t>(m_StatsOpacityLevel)) {
+        for (auto& item : m_MenuLevels[m_StatsOpacityLevel].items) {
+            bool ok = false;
+            const int percent = item.payload.toInt(&ok);
+            item.detail = ok && percent == m_StatsOverlayOpacityPercent
+                              ? QString::fromUtf8("\342\234\223")
+                              : QString();
+        }
+    }
+}
+
+void OverlayMenuPanel::applyMenuAttachmentState()
+{
+    const int placementLevel = levelForOpenAction(MenuAction::OpenMenuPosition);
+    if (placementLevel >= 0 && m_MenuLevels.size() > static_cast<size_t>(placementLevel)) {
+        for (auto& item : m_MenuLevels[placementLevel].items) {
+            if (item.action == MenuAction::ToggleMenuDetached) {
+                item.label = m_MenuDetached ? tr("Attach menu") : tr("Detach menu");
+            }
+        }
+    }
+
+    if (MenuItem* entry = findRootItem(MenuAction::OpenMenuPosition)) {
+        entry->detail = m_MenuDetached ? tr("Detached") : QString();
     }
 }
 
@@ -1864,7 +1877,7 @@ void OverlayMenuPanel::dispatchActionItem(const MenuItem& item)
         return;
     }
     if (item.action == MenuAction::SendHostKeys || item.action == MenuAction::RunHostCommand ||
-        item.action == MenuAction::SetMenuScale) {
+        item.action == MenuAction::SetMenuScale || item.action == MenuAction::SetStatsOpacity) {
         closeMenu();
         if (m_PayloadActionCallback) {
             m_PayloadActionCallback(item.action, payload);
@@ -1882,8 +1895,7 @@ void OverlayMenuPanel::dispatchActionItem(const MenuItem& item)
 // ---------------------------------------------------------------------------
 
 void OverlayMenuPanel::showAtRightEdge(int parentX, int parentY, int parentW, int parentH,
-                                       std::optional<QPoint> pointerGlobalPosition,
-                                       bool closeWhenPointerOutside)
+                                       std::optional<QPoint> pointerGlobalPosition)
 {
     m_AnchorMode = AnchorMode::RightEdge;
     m_ParentX = parentX;
@@ -1891,13 +1903,11 @@ void OverlayMenuPanel::showAtRightEdge(int parentX, int parentY, int parentW, in
     m_ParentW = parentW;
     m_ParentH = parentH;
     m_TriggerPosition = pointerGlobalPosition;
-    m_CloseWhenPointerOutside = closeWhenPointerOutside && pointerGlobalPosition.has_value();
     showInternal();
 }
 
 void OverlayMenuPanel::showAtLeftEdge(int parentX, int parentY, int parentW, int parentH,
-                                      std::optional<QPoint> pointerGlobalPosition,
-                                      bool closeWhenPointerOutside)
+                                      std::optional<QPoint> pointerGlobalPosition)
 {
     m_AnchorMode = AnchorMode::LeftEdge;
     m_ParentX = parentX;
@@ -1905,13 +1915,11 @@ void OverlayMenuPanel::showAtLeftEdge(int parentX, int parentY, int parentW, int
     m_ParentW = parentW;
     m_ParentH = parentH;
     m_TriggerPosition = pointerGlobalPosition;
-    m_CloseWhenPointerOutside = closeWhenPointerOutside && pointerGlobalPosition.has_value();
     showInternal();
 }
 
 void OverlayMenuPanel::showAtTopEdge(int parentX, int parentY, int parentW, int parentH,
-                                     std::optional<QPoint> pointerGlobalPosition,
-                                     bool closeWhenPointerOutside)
+                                     std::optional<QPoint> pointerGlobalPosition)
 {
     m_AnchorMode = AnchorMode::TopEdge;
     m_ParentX = parentX;
@@ -1919,12 +1927,11 @@ void OverlayMenuPanel::showAtTopEdge(int parentX, int parentY, int parentW, int 
     m_ParentW = parentW;
     m_ParentH = parentH;
     m_TriggerPosition = pointerGlobalPosition;
-    m_CloseWhenPointerOutside = closeWhenPointerOutside && pointerGlobalPosition.has_value();
     showInternal();
 }
 
 void OverlayMenuPanel::showAtCursor(int parentX, int parentY, int parentW, int parentH,
-                                    const QPoint& cursorPosition, bool pointerTriggered)
+                                    const QPoint& cursorPosition)
 {
     m_AnchorMode = AnchorMode::AtCursor;
     m_ParentX = parentX;
@@ -1932,16 +1939,20 @@ void OverlayMenuPanel::showAtCursor(int parentX, int parentY, int parentW, int p
     m_ParentW = parentW;
     m_ParentH = parentH;
     m_TriggerPosition = cursorPosition;
-    m_CloseWhenPointerOutside = pointerTriggered;
     showInternal();
 }
 
 void OverlayMenuPanel::showWithPlacement(OverlayMenu::Placement placement, int parentX, int parentY,
                                          int parentW, int parentH,
                                          std::optional<QPoint> pointerPosition,
-                                         std::optional<QPointF> draggedPosition,
-                                         bool closeWhenPointerOutside)
+                                         std::optional<QPointF> draggedPosition)
 {
+    const QRect bounds(parentX, parentY, parentW, parentH);
+    if (m_Detached && m_DetachedPosition) {
+        placement = OverlayMenu::Placement::Dragged;
+        draggedPosition = OverlayMenu::normalizedPosition(*m_DetachedPosition, bounds);
+        pointerPosition.reset();
+    }
     m_AnchorMode = AnchorMode::Placed;
     m_Placement = placement;
     m_DraggedPosition = draggedPosition;
@@ -1950,13 +1961,11 @@ void OverlayMenuPanel::showWithPlacement(OverlayMenu::Placement placement, int p
     m_ParentW = parentW;
     m_ParentH = parentH;
     m_TriggerPosition = pointerPosition;
-    m_CloseWhenPointerOutside = closeWhenPointerOutside && pointerPosition.has_value();
     showInternal();
 }
 
 void OverlayMenuPanel::showInternal()
 {
-    m_LeaveTimer.stop();
     m_UserInteracted = false;
     m_TitlePressed = false;
     m_TitleDragging = false;
@@ -1977,7 +1986,6 @@ void OverlayMenuPanel::showInternal()
     }
 
     m_Visible = true;
-    m_ShowTimer.start();
 
     // Calculate target geometry
     repositionWindow();
@@ -2017,27 +2025,7 @@ void OverlayMenuPanel::showInternal()
     m_SlideAnim->start();
     m_OpacityAnim->start();
 
-    if (m_CloseWhenPointerOutside && !OverlayWindowPolicy::usesParentCoordinates(m_WindowMode)) {
-        schedulePointerOutsideCheck();
-    }
-
     forceRepaint();
-}
-
-void OverlayMenuPanel::schedulePointerOutsideCheck()
-{
-    if (!m_Visible || !m_CloseWhenPointerOutside) {
-        return;
-    }
-
-    const qint64 remainingGrace = PointerGracePeriodMs - m_ShowTimer.elapsed();
-    if (remainingGrace > 0) {
-        m_LeaveTimer.start(static_cast<int>(remainingGrace));
-    } else if (OverlayWindowPolicy::usesParentCoordinates(m_WindowMode)) {
-        m_LeaveTimer.start(0);
-    } else {
-        m_LeaveTimer.start(PointerCheckIntervalMs);
-    }
 }
 
 void OverlayMenuPanel::repositionWindow()
@@ -2156,9 +2144,8 @@ void OverlayMenuPanel::navigateToLevel(int level)
 {
     if (level < 0 || level >= (int)m_MenuLevels.size()) return;
 
-    // Explicit navigation commits to interacting with the menu. A shorter
-    // submenu can resize out from under the pointer, so keep it open until
-    // an action or explicit dismissal instead of racing a leave timeout.
+    // Navigation commits a peeked menu as an interaction even if the pointer
+    // later moves outside it.
     beginInteraction();
     // Into a sub-level slides; back to a tab root is instant
     bool goingForward = !isTabRootLevel(level);
@@ -2189,31 +2176,30 @@ void OverlayMenuPanel::navigateToLevel(int level)
 void OverlayMenuPanel::beginInteraction()
 {
     m_UserInteracted = true;
-    m_CloseWhenPointerOutside = false;
-    m_LeaveTimer.stop();
 }
 
 void OverlayMenuPanel::dismissOnOutsideClick(const QPoint& parentPosition)
 {
+    if (m_OpeningClickPosition) {
+        const bool openingClick = parentPosition == *m_OpeningClickPosition;
+        m_OpeningClickPosition.reset();
+        if (openingClick) {
+            return;
+        }
+    }
+
     if (m_Visible && !geometry().contains(parentPosition)) {
         closeMenu();
     }
 }
 
-void OverlayMenuPanel::dismissOnOutsidePointerMove(const QPoint& parentPosition)
+void OverlayMenuPanel::ignoreOpeningClickAt(const QPoint& parentPosition)
 {
-    if (!m_Visible || !m_CloseWhenPointerOutside || m_ShowTimer.elapsed() < PointerGracePeriodMs) {
-        return;
-    }
-
-    if (!geometry().contains(parentPosition)) {
-        closeMenu();
-    }
+    m_OpeningClickPosition = parentPosition;
 }
 
 void OverlayMenuPanel::closeMenu()
 {
-    m_LeaveTimer.stop();
     if (!m_Visible) return;
     if (m_Closing) return;  // already animating close
 
@@ -2225,6 +2211,7 @@ void OverlayMenuPanel::closeMenu()
 
     m_Visible = false;
     m_Closing = true;
+    m_OpeningClickPosition.reset();
     m_HoveredIndex = -1;
     m_WheelAccum = 0;
 
@@ -2874,6 +2861,10 @@ void OverlayMenuPanel::finishTitleDrag()
     m_AnchorMode = AnchorMode::Placed;
     m_Placement = OverlayMenu::Placement::Dragged;
     m_DraggedPosition = normalized;
+    m_TargetPosition = position();
+    if (m_Detached) {
+        m_DetachedPosition = position() + QPoint(shadow, shadow);
+    }
     if (m_DragFinishedCallback) {
         m_DragFinishedCallback(normalized);
     }
@@ -3070,22 +3061,4 @@ void OverlayMenuPanel::goBack()
     } else {
         closeMenu();
     }
-}
-
-bool OverlayMenuPanel::event(QEvent* ev)
-{
-    if (ev->type() == QEvent::Enter && OverlayWindowPolicy::usesParentCoordinates(m_WindowMode)) {
-        m_LeaveTimer.stop();
-    }
-    if (ev->type() == QEvent::Leave) {
-        if (m_Visible && m_CloseWhenPointerOutside) {
-            // During the grace period, defer the outside check instead of
-            // dropping the Leave event. Otherwise, leaving the panel quickly
-            // after it opens would keep it visible until the cursor entered
-            // and left the panel again.
-            schedulePointerOutsideCheck();
-        }
-        return true;
-    }
-    return QRasterWindow::event(ev);
 }

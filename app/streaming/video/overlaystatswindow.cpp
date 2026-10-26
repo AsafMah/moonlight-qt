@@ -144,6 +144,21 @@ void OverlayStatsWindow::setStandalone(bool standalone)
     }
 }
 
+void OverlayStatsWindow::configureWindow(QWindow* parent, OverlayWindowMode windowMode,
+                                         bool standalone)
+{
+    m_WindowMode = windowMode;
+    m_Standalone = standalone;
+    const Qt::WindowFlags flags = standalone
+                                      ? Qt::Window | Qt::FramelessWindowHint |
+                                            Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus
+                                      : OverlayWindowPolicy::flags(windowMode, !m_Editing);
+    reconfigureSurface(parent, windowMode, flags);
+    if (standalone) {
+        setTitle(tr("Moonlight performance overlay"));
+    }
+}
+
 void OverlayStatsWindow::setEditing(bool editing)
 {
     if (m_Editing == editing) {
@@ -400,6 +415,9 @@ QVector<Metric> OverlayStatsWindow::panelMetrics() const
     if (m_Preset == Preset::Custom) {
         return m_Metrics;
     }
+    if (m_Preset == Preset::Compact) {
+        return compactMetrics();
+    }
 
     QVector<Metric> metrics = { Metric::Rtt,  Metric::Jitter,     Metric::Bitrate,
                                 Metric::Loss, Metric::PacerDrops, Metric::DisplayHz,
@@ -504,6 +522,7 @@ QSize OverlayStatsWindow::layoutCompact(QPainter* painter) const
 PanelContent OverlayStatsWindow::panelContent(QVector<Cell>& cells) const
 {
     PanelContent content;
+    content.compactStrip = m_Preset == Preset::Compact;
 
     if (m_Preset == Preset::Detailed) {
         content.header = true;
@@ -526,6 +545,22 @@ PanelContent OverlayStatsWindow::panelContent(QVector<Cell>& cells) const
     }
 
     cells = cellsFor(panelMetrics());
+    if (content.compactStrip) {
+        for (Cell& cell : cells) {
+            if (cell.metric == Metric::Fps) {
+                cell.label =
+                    tr("Rx/De/Rd", "Received, decoded and rendered frame rates, in that order");
+                cell.shortLabel = cell.label;
+                if (m_Snapshot.valid) {
+                    cell.value = QStringLiteral("%1/%2/%3")
+                                     .arg(number(m_Snapshot.receivedFps, 0),
+                                          number(m_Snapshot.decodedFps, 0),
+                                          number(m_Snapshot.renderedFps, 0));
+                }
+                break;
+            }
+        }
+    }
     for (const Cell& cell : cells) {
         content.cells.append({ cell.metric, cell.label, cell.shortLabel, cell.value });
     }
@@ -781,9 +816,10 @@ void OverlayStatsWindow::paintLatencyBar(QPainter* painter, const PanelLayout& l
 
 QString OverlayStatsWindow::editHintText() const
 {
-    return isResizable()
-               ? tr("Drag to move · Drag the edges to resize · Wheel to zoom · Esc when done")
-               : tr("Drag to move · Wheel to zoom · Esc when done");
+    return isResizable() ? tr("Drag to move · Drag the edges to resize · Wheel to zoom · "
+                              "Ctrl+wheel to adjust transparency · Esc when done")
+                         : tr("Drag to move · Wheel to zoom · Ctrl+wheel to adjust transparency · "
+                              "Esc when done");
 }
 
 int OverlayStatsWindow::editHintHeight(int width) const
@@ -823,6 +859,7 @@ QSize OverlayStatsWindow::layoutBody(QPainter* painter) const
     case Preset::Minimal:
         content = layoutMinimal(painter);
         break;
+    case Preset::Compact:
     case Preset::Detailed:
     case Preset::Custom: {
         content = panelBodySize();
@@ -838,7 +875,6 @@ QSize OverlayStatsWindow::layoutBody(QPainter* painter) const
         }
         break;
     }
-    case Preset::Compact:
     case Preset::Off:
     default:
         content = layoutCompact(painter);

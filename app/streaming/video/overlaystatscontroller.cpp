@@ -60,21 +60,12 @@ OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayM
                                                StreamStatsModel& model, QWindow* parent,
                                                OverlayWindowMode windowMode, bool initiallyVisible)
     : m_OverlayManager(overlayManager), m_Model(model), m_Parent(parent), m_WindowMode(windowMode),
-      m_Detached(m_Settings.detached()), m_Visible(initiallyVisible),
-      m_Preset(m_Settings.presetValue())
+      m_Visible(initiallyVisible), m_Preset(m_Settings.presetValue())
 {
     m_Clock.start();
 
     if (compositorWindowSupported()) {
-        if (m_Detached) {
-            m_Window = new OverlayStatsWindow(nullptr, OverlayWindowMode::Detached);
-            m_Window->setStandalone(true);
-            m_Window->setMovedCallback([this](const QPoint& topLeft) { onDetachedMoved(topLeft); });
-            m_DetachedPositionKnown =
-                !QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
-        } else {
-            m_Window = new OverlayStatsWindow(parent, windowMode);
-        }
+        m_Window = new OverlayStatsWindow(parent, windowMode);
         m_Window->setDragFinishedCallback([this](const QPoint& center) { onDragFinished(center); });
         m_Window->setWheelCallback(
             [this](int steps, bool adjustOpacity) { onWheel(steps, adjustOpacity); });
@@ -82,18 +73,22 @@ OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayM
             onResizeFinished(center, bodySize);
         });
         m_Window->setEndEditingCallback([this] { endEditing(); });
-        // On Wayland the tooltip is a child of the window it hovers over, in
-        // that window's coordinates
-        QWindow* tooltipParent = parent;
-        if (m_Detached) {
-            tooltipParent =
-                OverlayWindowPolicy::usesParentCoordinates(windowMode) ? m_Window : nullptr;
-        }
-        m_Tooltip = new OverlayStatsTooltip(tooltipParent, windowMode);
+        createTooltip();
         applyStyle();
     }
 
     applyVisibility();
+}
+
+void OverlayStatsController::createTooltip()
+{
+    QWindow* tooltipParent = m_Parent;
+    if (m_Detached) {
+        tooltipParent =
+            OverlayWindowPolicy::usesParentCoordinates(m_WindowMode) ? m_Window : nullptr;
+    }
+    m_Tooltip = new OverlayStatsTooltip(tooltipParent, m_WindowMode);
+    m_Tooltip->setScalePercent(m_Settings.scalePercent());
 }
 
 OverlayStatsController::~OverlayStatsController()
@@ -172,6 +167,48 @@ void OverlayStatsController::toggle()
 void OverlayStatsController::cyclePreset()
 {
     setPreset(nextPreset(preset()));
+}
+
+void OverlayStatsController::setDetached(bool detached)
+{
+    if (m_Window == nullptr || detached == m_Detached) {
+        return;
+    }
+
+    if (m_DetachedSaveDue) {
+        saveDetachedPosition();
+    }
+    const bool wasVisible = m_Window->isVisible();
+    m_Window->hide();
+    hideTooltip();
+    delete m_Tooltip;
+    m_Tooltip = nullptr;
+
+    m_Detached = detached;
+    m_DetachedPlaced = false;
+    if (detached) {
+        m_DetachedPositionKnown =
+            !QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
+        m_Window->setMovedCallback([this](const QPoint& topLeft) { onDetachedMoved(topLeft); });
+    } else {
+        m_Window->setMovedCallback({});
+    }
+    m_Window->configureWindow(detached ? nullptr : m_Parent,
+                              detached ? OverlayWindowMode::Detached : m_WindowMode, detached);
+    createTooltip();
+    applyStyle();
+    reposition();
+    if (wasVisible && windowShouldShow() && m_StreamVisible) {
+        m_Window->show();
+    }
+    refreshNow();
+}
+
+void OverlayStatsController::setOpacityPercent(int percent)
+{
+    m_Settings.setOpacityPercent(percent);
+    applyStyle();
+    refreshNow();
 }
 
 void OverlayStatsController::beginEditing()

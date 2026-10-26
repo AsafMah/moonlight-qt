@@ -24,7 +24,8 @@ protected:
     }
     void mouseReleaseEvent(QMouseEvent *) override {
         if (menu.isMenuVisible()) menu.dismissOnOutsideClick(QCursor::pos());
-        else menu.showAtCursor(x(), y(), width(), height(), position() + QPoint(250, 150), false);
+        else
+            menu.showAtCursor(x(), y(), width(), height(), position() + QPoint(250, 150));
     }
     void keyReleaseEvent(QKeyEvent *event) override {
         if (event->key() == Qt::Key_Escape) menu.gamepadBack();
@@ -155,6 +156,105 @@ static void testEdgeTrigger()
         qFatal("a zero delay did not fire at once");
 }
 
+static void testOpeningClickSuppression(OverlayMenuPanel &panel)
+{
+    using namespace OverlayMenu;
+    panel.showWithPlacement(Placement::TopLeft, 0, 0, 1600, 1200, std::nullopt, std::nullopt);
+    QTest::qWait(240);
+
+    const QPoint openingRelease = panel.geometry().bottomRight() + QPoint(20, 20);
+    panel.ignoreOpeningClickAt(openingRelease);
+    panel.dismissOnOutsideClick(openingRelease);
+    if (!panel.isMenuVisible()) {
+        qFatal("the floating-button opening release dismissed the menu");
+    }
+
+    // The suppression is one-shot; the next outside click closes normally.
+    panel.dismissOnOutsideClick(openingRelease);
+    waitClosed(panel);
+    if (panel.isMenuVisible()) {
+        qFatal("outside click was still suppressed after the opening release");
+    }
+
+    panel.showWithPlacement(Placement::TopLeft, 0, 0, 1600, 1200, std::nullopt, std::nullopt);
+    QTest::qWait(240);
+    panel.ignoreOpeningClickAt(openingRelease);
+    panel.dismissOnOutsideClick(openingRelease + QPoint(1, 0));
+    waitClosed(panel);
+    if (panel.isMenuVisible()) {
+        qFatal("a different outside click was suppressed");
+    }
+}
+
+static void testOverlayAttachmentOptions(OverlayMenuPanel &panel)
+{
+    using namespace OverlayMenu;
+    panel.updateMenuAttachmentState(false);
+    panel.updateStatsOverlayState(StatsOverlay::Preset::Compact, true, false, 85);
+    panel.showWithPlacement(Placement::TopLeft, 0, 0, 1600, 1200, std::nullopt, std::nullopt);
+    QTest::qWait(240);
+    if (!panel.showLevel(MenuAction::OpenMenuPosition) ||
+        panel.rowOfAction(MenuAction::ToggleMenuDetached) < 0) {
+        qFatal("the menu position level is missing the live attachment action");
+    }
+    MenuAction action = MenuAction::MenuActionMax;
+    panel.setActionCallback([&](MenuAction selected) { action = selected; });
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      rowCenter(panel, rowOf(panel, MenuAction::ToggleMenuDetached)));
+    waitClosed(panel);
+    if (action != MenuAction::ToggleMenuDetached) {
+        qFatal("the menu attachment choice did not dispatch");
+    }
+    panel.setDetached(true);
+    if (!panel.isDetached()) {
+        qFatal("the menu did not detach after its close completed");
+    }
+    panel.setDetached(false);
+    if (panel.isDetached()) {
+        qFatal("the menu did not reattach");
+    }
+
+    panel.showWithPlacement(Placement::TopLeft, 0, 0, 1600, 1200, std::nullopt, std::nullopt);
+    QTest::qWait(240);
+    if (!panel.showLevel(MenuAction::OpenStatsOverlay) ||
+        panel.rowOfAction(MenuAction::ToggleStatsOverlayDetached) < 0 ||
+        panel.rowOfAction(MenuAction::OpenStatsOpacity) < 0) {
+        qFatal("the performance overlay level is missing attachment or transparency controls");
+    }
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      rowCenter(panel, rowOf(panel, MenuAction::ToggleStatsOverlayDetached)));
+    waitClosed(panel);
+    if (action != MenuAction::ToggleStatsOverlayDetached) {
+        qFatal("the performance overlay attachment choice did not dispatch");
+    }
+
+    panel.showWithPlacement(Placement::TopLeft, 0, 0, 1600, 1200, std::nullopt, std::nullopt);
+    QTest::qWait(240);
+    if (!panel.showLevel(MenuAction::OpenStatsOverlay)) {
+        qFatal("the performance overlay level could not be reopened");
+    }
+    if (!panel.showLevel(MenuAction::OpenStatsOpacity) ||
+        panel.rowOfAction(MenuAction::SetStatsOpacity, QStringLiteral("50")) < 0) {
+        qFatal("the transparency level is missing its 50% option");
+    }
+
+    MenuAction payloadAction = MenuAction::MenuActionMax;
+    QString payload;
+    panel.setPayloadActionCallback([&](MenuAction action, const QString &value) {
+        payloadAction = action;
+        payload = value;
+    });
+    QTest::mouseClick(
+        &panel, Qt::LeftButton, Qt::NoModifier,
+        rowCenter(panel, rowOf(panel, MenuAction::SetStatsOpacity, QStringLiteral("50"))));
+    waitClosed(panel);
+    if (payloadAction != MenuAction::SetStatsOpacity || payload != QStringLiteral("50")) {
+        qFatal("the transparency choice did not dispatch its selected percentage");
+    }
+    panel.setActionCallback({});
+    panel.setPayloadActionCallback({});
+}
+
 static QRect contentRect(const OverlayMenuPanel &panel)
 {
     return panel.contentGeometry();
@@ -184,7 +284,7 @@ static void testMenuOptions(OverlayMenuPanel &panel)
                 panel.setGamepadHints(true, GamepadUiStyleXbox, false,
                                       QStringLiteral("Back+Start"));
                 panel.showWithPlacement(placement, stream.x(), stream.y(), stream.width(),
-                                        stream.height(), QPoint(1800, 1000), std::nullopt, false);
+                                        stream.height(), QPoint(1800, 1000), std::nullopt);
                 QTest::qWait(200); // past the slide-in
                 const QStringList clipped = panel.clippedTexts();
                 if (!clipped.isEmpty())
@@ -215,13 +315,13 @@ static void testMenuOptions(OverlayMenuPanel &panel)
 
     // Scale grows the window
     panel.setStyle(Layout::Compact, 100, 100);
-    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt, false);
+    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt);
     QTest::qWait(200); // past the slide-in
     const int normalWidth = panel.width();
     panel.closeMenu();
     waitClosed(panel);
     panel.setStyle(Layout::Compact, 150, 100);
-    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt, false);
+    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt);
     QTest::qWait(200); // past the slide-in
     if (panel.width() < normalWidth * 14 / 10)
         qFatal("150%% scale did not grow the panel");
@@ -236,8 +336,7 @@ static void testMenuOptions(OverlayMenuPanel &panel)
 
     // Side panel: the tabs are a vertical rail, driven by gamepad, keys and mouse
     panel.setStyle(Layout::SidePanel, 100, 100);
-    panel.showWithPlacement(Placement::RightPanel, 0, 0, 1920, 1080, std::nullopt, std::nullopt,
-                            false);
+    panel.showWithPlacement(Placement::RightPanel, 0, 0, 1920, 1080, std::nullopt, std::nullopt);
     QTest::qWait(200); // past the slide-in
     panel.showTab(MenuTab::Quick);
     const QRect quickTab = panel.tabGeometry(MenuTab::Quick);
@@ -278,7 +377,7 @@ static void testMenuOptions(OverlayMenuPanel &panel)
     // Escape: back one level by default, or close from anywhere
     panel.setStyle(Layout::Compact, 100, 100);
     panel.setEscapeAction(EscapeAction::Back);
-    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt, false);
+    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt);
     QTest::qWait(200); // past the slide-in
     panel.showLevel(MenuAction::OpenBitrate);
     panel.handleNavigationKey(Qt::Key_Escape);
@@ -287,7 +386,7 @@ static void testMenuOptions(OverlayMenuPanel &panel)
     panel.closeMenu();
     waitClosed(panel);
     panel.setEscapeAction(EscapeAction::Close);
-    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt, false);
+    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt);
     QTest::qWait(200); // past the slide-in
     panel.showLevel(MenuAction::OpenBitrate);
     panel.handleNavigationKey(Qt::Key_Escape);
@@ -300,7 +399,7 @@ static void testMenuOptions(OverlayMenuPanel &panel)
     // reports where it was left
     std::optional<QPointF> dropped;
     panel.setDragFinishedCallback([&](const QPointF &position) { dropped = position; });
-    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt, false);
+    panel.showWithPlacement(Placement::Center, 0, 0, 1920, 1080, std::nullopt, std::nullopt);
     QTest::qWait(200); // past the slide-in
     const QPoint before = panel.position();
     const QPoint grip(60, 8 + 12);
@@ -316,7 +415,7 @@ static void testMenuOptions(OverlayMenuPanel &panel)
         qFatal("a drag past the corner did not stop at the corner");
     panel.closeMenu();
     waitClosed(panel);
-    panel.showWithPlacement(Placement::Dragged, 0, 0, 1920, 1080, std::nullopt, dropped, false);
+    panel.showWithPlacement(Placement::Dragged, 0, 0, 1920, 1080, std::nullopt, dropped);
     QTest::qWait(200); // past the slide-in
     if (contentRect(panel).topLeft() != droppedRect.topLeft())
         qFatal("the dragged position was not restored");
@@ -371,12 +470,12 @@ int main(int argc, char **argv)
                                            devices, {}, QStringLiteral("1 available"));
             });
         });
-        panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 250), false);
+        panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 250));
         return app.exec();
     }
-    // Offscreen cursor remains outside this panel. Explicitly entering a
-    // shorter submenu must not trigger the pointer-leave dismissal timer.
-    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), true);
+    // Offscreen cursor remains outside this panel. Opening a shorter submenu
+    // must not dismiss the menu while the pointer remains outside it.
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
     QTest::qWait(200); // past the slide-in
     if (panel.currentTab() != MenuTab::Quick || !panel.isAtTabRoot())
         qFatal("menu did not open on the Quick tab");
@@ -423,11 +522,17 @@ int main(int argc, char **argv)
     // The close animation needs a beat; tolerate slow CI timers.
     waitClosed(panel);
     if (panel.isVisible()) qFatal("outside click failed to dismiss menu");
-    // Reopening restores transient pointer-triggered behavior.
-    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), true);
+    // Moving away from an ordinary menu must not dismiss it; only an explicit
+    // outside click should close it.
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
     QTest::qWait(700);
-    if (panel.isVisible()) qFatal("fresh pointer-triggered menu lost auto-dismiss");
-    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    if (!panel.isVisible())
+        qFatal("menu closed when the pointer left its trigger");
+    panel.dismissOnOutsideClick(QPoint(-100, -100));
+    waitClosed(panel);
+    if (panel.isVisible())
+        qFatal("explicit outside click failed to dismiss menu");
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
     QTest::qWait(240);
     panel.gamepadBack();
     QTest::qWait(220);
@@ -441,7 +546,7 @@ int main(int argc, char **argv)
         ++bitrateCommits;
     });
     panel.updateBitrateState(10000);
-    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
     QTest::qWait(240);
     // Enter Bitrate from its entry in the Display tab, then tap 5 Mbps.
     if (!panel.showTab(MenuTab::Display))
@@ -508,7 +613,7 @@ int main(int argc, char **argv)
         { { QStringLiteral("Save all"), QStringLiteral("Ctrl+Shift+S"),
             QStringLiteral("keys:ctrl+shift+S") } });
     panel.updateHostCommands(false, {});
-    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
     QTest::qWait(240);
     // The last tab of the session is remembered across close and reopen.
     if (panel.currentTab() != MenuTab::Display || !panel.isAtTabRoot())
@@ -534,7 +639,7 @@ int main(int argc, char **argv)
 
     // A supporting host without commands gets the entry and a setup hint.
     panel.updateHostCommands(true, {});
-    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
     QTest::qWait(240);
     if (!panel.showTab(MenuTab::Host))
         qFatal("Host tab missing");
@@ -577,7 +682,7 @@ int main(int argc, char **argv)
         lastAction = action;
         ++actionCount;
     });
-    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
     QTest::qWait(240);
     // Every tab has entries; Session holds the live totals entry.
     const std::vector<MenuTab> expectedTabs{ MenuTab::Quick, MenuTab::Display, MenuTab::Input,
@@ -664,7 +769,7 @@ int main(int argc, char **argv)
         qFatal("action did not close the menu");
     if (panel.handleNavigationKey(Qt::Key_Down))
         qFatal("hidden menu consumed a key");
-    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
     QTest::qWait(240);
     if (panel.currentTab() != MenuTab::Quick || !panel.isAtTabRoot())
         qFatal("reopened menu forgot the Quick tab");
@@ -682,7 +787,7 @@ int main(int argc, char **argv)
     qualityState.resolution = QSize(1920, 1080);
     qualityState.fps = 60;
     panel.updateStreamQualityState(qualityState);
-    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
     QTest::qWait(240);
     if (!panel.showTab(MenuTab::Display))
         qFatal("Display tab missing");
@@ -727,7 +832,7 @@ int main(int argc, char **argv)
             { QStringLiteral("Average FPS"), QStringLiteral("60") }
         };
     });
-    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400), false);
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
     QTest::qWait(240);
     if (!panel.showTab(MenuTab::Session))
         qFatal("Session tab missing");
@@ -768,6 +873,8 @@ int main(int argc, char **argv)
 
     testPlacementGeometry();
     testEdgeTrigger();
+    testOpeningClickSuppression(panel);
+    testOverlayAttachmentOptions(panel);
     testMenuOptions(panel);
     return 0;
 }

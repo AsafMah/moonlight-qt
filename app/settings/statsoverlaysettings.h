@@ -34,7 +34,6 @@ class StatsOverlaySettings : public QObject
     Q_PROPERTY(int minOpacityPercent READ minOpacityPercent CONSTANT)
     Q_PROPERTY(int maxOpacityPercent READ maxOpacityPercent CONSTANT)
     Q_PROPERTY(QString sizeSummary READ sizeSummary NOTIFY sizesChanged)
-    Q_PROPERTY(bool detached READ detached WRITE setDetached NOTIFY detachedChanged)
 
 public:
     // Mirrors StatsOverlay::Preset for QML
@@ -69,11 +68,6 @@ public:
 
     int opacityPercent() const;
     void setOpacityPercent(int percent);
-
-    // The overlay is a top-level window of its own rather than placed on
-    // the stream. Read when a stream starts.
-    bool detached() const;
-    void setDetached(bool detached);
 
     QStringList metrics() const;
     QVector<StatsOverlay::Metric> metricList() const;
@@ -128,5 +122,4 @@ signals:
     void opacityPercentChanged();
     void metricsChanged();
     void sizesChanged();
-    void detachedChanged();
 };

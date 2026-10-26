@@ -37,8 +37,7 @@ class OverlayMenuButton : public OverlayRasterWindow
 
 public:
     // Position is global for detached windows and parent-local for child windows.
-    using ClickCallback =
-        std::function<void(const QPoint& pointerPosition, bool closeWhenPointerOutside)>;
+    using ClickCallback = std::function<void(const QPoint& pointerPosition)>;
     using EventWakeCallback = std::function<void()>;
 
     explicit OverlayMenuButton(QWindow* parent = nullptr,

@@ -81,6 +81,7 @@ public:
     // click-through, so it can be dragged (to another screen too), resized by
     // its edges and zoomed with the wheel at any time. Call before showing.
     void setStandalone(bool standalone);
+    void configureWindow(QWindow* parent, OverlayWindowMode windowMode, bool standalone);
     bool isStandalone() const { return m_Standalone; }
 
     // The pointer, in window coordinates, while it is over a standalone window

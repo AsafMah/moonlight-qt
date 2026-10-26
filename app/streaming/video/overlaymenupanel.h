@@ -91,12 +91,16 @@ public:
         // Performance overlay (OverlayStatsController). OpenStatsOverlay marks
         // the submenu entry; it is never dispatched.
         OpenStatsOverlay,
+        OpenStatsOpacity,
         SetStatsPresetOff,
         SetStatsPresetMinimal,
         SetStatsPresetCompact,
         SetStatsPresetDetailed,
         SetStatsPresetCustom,
         EditStatsOverlayPosition,
+        ToggleStatsOverlayDetached,
+        SetStatsOpacity,
+        ToggleMenuDetached,
         // Host actions. The Open* values tag the SubMenu rows of their levels;
         // the others carry their target in MenuItem::payload and are delivered
         // through the payload action callback.
@@ -120,17 +124,6 @@ public:
         // Live session totals (SessionStatsProvider). Marks the submenu entry
         // and its read-only rows; never dispatched.
         OpenSessionStats,
-        // More menu placements (OverlayMenu::Placement), next to the
-        // SetMenuPlacement* rows of the original positions
-        SetMenuPlacementCenter,
-        SetMenuPlacementCursor,
-        SetMenuPlacementBottom,
-        SetMenuPlacementTopLeft,
-        SetMenuPlacementTopRight,
-        SetMenuPlacementBottomLeft,
-        SetMenuPlacementBottomRight,
-        SetMenuPlacementLeftPanel,
-        SetMenuPlacementRightPanel,
         // Menu Layout level: layout rows, and scale rows carrying the percent
         // in MenuItem::payload. OpenMenuLayout tags its entry; never dispatched.
         OpenMenuLayout,
@@ -277,28 +270,25 @@ public:
 
     // Position the panel at the right edge of the given Qt logical parent rect.
     void showAtRightEdge(int parentX, int parentY, int parentW, int parentH,
-                         std::optional<QPoint> pointerGlobalPosition = std::nullopt,
-                         bool closeWhenPointerOutside = true);
+                         std::optional<QPoint> pointerGlobalPosition = std::nullopt);
 
     // Position the panel at the left edge of the given Qt logical parent rect.
     void showAtLeftEdge(int parentX, int parentY, int parentW, int parentH,
-                        std::optional<QPoint> pointerGlobalPosition = std::nullopt,
-                        bool closeWhenPointerOutside = true);
+                        std::optional<QPoint> pointerGlobalPosition = std::nullopt);
 
     // Position the panel at the top edge of the given Qt logical parent rect.
     void showAtTopEdge(int parentX, int parentY, int parentW, int parentH,
-                       std::optional<QPoint> pointerGlobalPosition = std::nullopt,
-                       bool closeWhenPointerOutside = true);
+                       std::optional<QPoint> pointerGlobalPosition = std::nullopt);
 
     // Position the panel at a specific point in the parent rect's coordinate space.
     void showAtCursor(int parentX, int parentY, int parentW, int parentH,
-                      const QPoint& cursorPosition, bool pointerTriggered = true);
+                      const QPoint& cursorPosition);
 
     // Opens at one of the placement options; Auto is the showAt*() functions'
     // job. pointerPosition is used by Cursor, draggedPosition by Dragged.
     void showWithPlacement(OverlayMenu::Placement placement, int parentX, int parentY, int parentW,
                            int parentH, std::optional<QPoint> pointerPosition,
-                           std::optional<QPointF> draggedPosition, bool closeWhenPointerOutside);
+                           std::optional<QPointF> draggedPosition);
 
     // Layout, scale (75-150%) and opacity (40-100%) of the panel
     void setStyle(OverlayMenu::Layout layout, int scalePercent, int opacityPercent);
@@ -329,11 +319,14 @@ public:
     QStringList clippedTexts() const;
 
     void closeMenu();
+    void ignoreOpeningClickAt(const QPoint& parentPosition);
     void dismissOnOutsideClick(const QPoint& parentPosition);
-    void dismissOnOutsidePointerMove(const QPoint& parentPosition);
     bool isMenuVisible() const { return m_Visible; }
     bool isClosing() const { return m_Closing; }
     bool needsEventProcessing() const { return m_Visible || m_Closing; }
+    bool isDetached() const { return m_Detached; }
+    std::optional<QPoint> detachedPosition() const { return m_DetachedPosition; }
+    void setDetached(bool detached);
 
     // Update dynamic state before showing the menu
     void updateMicrophoneState(bool enabled);
@@ -342,13 +335,12 @@ public:
     // Marks the active layout and scale in the Menu Layout level
     void updateMenuStyleState();
 
-    // SetMenuPlacement* action of a placement option, and back; Auto has none
-    static MenuAction actionForPlacement(OverlayMenu::Placement placement);
-    static std::optional<OverlayMenu::Placement> placementForAction(MenuAction action);
     static std::optional<OverlayMenu::Layout> layoutForAction(MenuAction action);
     // Marks the active performance overlay preset. canEditPosition is false
     // where the overlay falls back to the in-renderer text.
-    void updateStatsOverlayState(StatsOverlay::Preset preset, bool canEditPosition);
+    void updateStatsOverlayState(StatsOverlay::Preset preset, bool canEditPosition, bool detached,
+                                 int opacityPercent);
+    void updateMenuAttachmentState(bool detached);
 
     // Overlay preset behind a SetStatsPreset* action
     static std::optional<StatsOverlay::Preset> statsPresetForAction(MenuAction action);
@@ -432,7 +424,6 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
-    bool event(QEvent* event) override;
 
 private:
     struct MenuItem {
@@ -512,6 +503,7 @@ private:
     void goBack(); // up one level, or close from a tab
     void finishTitleDrag();
     void applyStatsOverlayState();
+    void applyMenuAttachmentState();
     QString shortcutDetail(MenuAction action) const; // live key binding text
     MenuLevel buildStreamQualityLevel() const;
     bool handleStreamQualityItem(const MenuItem& item); // true when consumed
@@ -528,8 +520,7 @@ private:
     int railTabHeight() const { return m_ItemHeight; }
     QRect tabRect(int visibleIndex, int contentWidth) const;
     void repositionWindow();
-    void showInternal();     // shared show logic after geometry is set
-    void schedulePointerOutsideCheck();
+    void showInternal(); // shared show logic after geometry is set
     void beginInteraction();
     void forceRepaint();     // synchronous repaint (requestUpdate is async on Windows)
     int  itemAtPos(const QPoint& pos) const;
@@ -549,8 +540,11 @@ private:
     // Index of the performance overlay level, refreshed on every build
     // from levelForOpenAction().
     int m_StatsOverlayLevel = -1;
+    int m_StatsOpacityLevel = -1;
     StatsOverlay::Preset m_StatsOverlayPreset = StatsOverlay::Preset::Off;
     bool m_StatsOverlayEditable = true;
+    bool m_StatsOverlayDetached = false;
+    int m_StatsOverlayOpacityPercent = StatsOverlay::DefaultOpacityPercent;
 
     // Session level (live totals), found by MenuAction::OpenSessionStats on
     // every build. Its rows are refreshed while it is shown.
@@ -621,7 +615,12 @@ private:
     // Parent rect in the panel's coordinate space. This is global for detached
     // desktop windows and parent-local for native Wayland child surfaces.
     int m_ParentX, m_ParentY, m_ParentW, m_ParentH;
+    QWindow* m_OriginalParent;
+    OverlayWindowMode m_OriginalWindowMode;
     OverlayWindowMode m_WindowMode;
+    bool m_Detached = false;
+    bool m_MenuDetached = false;
+    std::optional<QPoint> m_DetachedPosition;
 
     // Layout constants (logical units before m_Scale; Qt 6 handles DPI).
     // applyMetrics() sets them for the layout; m_MenuWidth is widened to fit
@@ -645,6 +644,7 @@ private:
     std::optional<QPointF> m_DraggedPosition;
     QRect m_Bounds; // where the panel may be, parent coordinates
     bool m_UserInteracted = false;
+    std::optional<QPoint> m_OpeningClickPosition;
 
     // Title bar drag: armed on press, a drag once the pointer moves
     bool m_TitlePressed = false;
@@ -660,11 +660,6 @@ private:
     QFont m_TitleFont;
     QFont m_TabFont;
     QHash<QString, QIcon> m_MenuIcons;
-
-    // Anti-flicker: grace period after show
-    QElapsedTimer m_ShowTimer;
-    QTimer m_LeaveTimer;
-    bool m_CloseWhenPointerOutside;
 
     // Animations
     QPropertyAnimation* m_OpacityAnim;

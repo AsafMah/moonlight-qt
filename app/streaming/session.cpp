@@ -2884,8 +2884,7 @@ void Session::syncWaylandSdlWindowState()
 }
 #endif
 
-void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
-                                bool closeWhenPointerOutside)
+void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition)
 {
     if (!m_MenuPanel || m_MenuPanel->isMenuVisible() || m_MenuPanel->isClosing()) return;
     if (!isStreamingWindowVisible()) return;
@@ -2895,12 +2894,14 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
         return;
     }
 
-    // Check if overlay menu is disabled before releasing mouse capture
-    if (m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_DISABLED) {
+    // A detached menu remains reachable from its shortcut even without an
+    // attached edge or button trigger.
+    if (m_Preferences->overlayMenuPosition == StreamingPreferences::OMP_DISABLED &&
+        !m_MenuDetached) {
         return; // Do not show
     }
 
-    const QRect parentRect = qtOverlayParentGeometry();
+    const QRect parentRect = overlayMenuBounds();
     if (!parentRect.isValid()) {
         return;
     }
@@ -2916,7 +2917,7 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     // Flush stale mouse motion events from relative mode
     SDL_FlushEvent(SDL_MOUSEMOTION);
 
-    const OverlayMenu::Placement menuPlacement = applyOverlayMenuOptionsToPanel();
+    applyOverlayMenuOptionsToPanel();
 
     // Rebuild for the current gamepad set before applying dynamic menu state.
     GamepadUiStyle gamepadUiStyle = m_InputHandler->getGamepadUiStyle();
@@ -2939,49 +2940,53 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     m_MenuPanel->updateBitrateState(m_Preferences->bitrateKbps);
     updateStreamQualityMenuState();
     m_MenuPanel->updateGamepadMouseState(m_InputHandler->isMouseEmulationActive());
-    // Tick the placement option, else the position preference
+    // The trigger position controls where the menu opens; a manually dragged
+    // position is the only independent location override.
     m_MenuPanel->updateMenuPositionState(
-        menuPlacement == OverlayMenu::Placement::Auto
-            ? menuPlacementActionForPreference(m_Preferences->overlayMenuPosition)
-            : OverlayMenuPanel::actionForPlacement(menuPlacement));
+        menuPlacementActionForPreference(m_Preferences->overlayMenuPosition));
     m_MenuPanel->updateMenuStyleState();
+    m_MenuPanel->updateMenuAttachmentState(m_MenuDetached);
     if (m_StatsOverlay) {
-        m_MenuPanel->updateStatsOverlayState(m_StatsOverlay->preset(),
-                                             m_StatsOverlay->usesCompositorWindow());
+        m_MenuPanel->updateStatsOverlayState(
+            m_StatsOverlay->preset(), m_StatsOverlay->usesCompositorWindow(),
+            m_StatsOverlay->isDetached(), m_StatsOverlay->opacityPercent());
     }
     updateFileMappingMenuState();
     updateRemoteUsbMenuState();
     updateHostActionsMenuState();
 
-    // A placement option, else as the position preference says
-    if (showQtOverlayMenuWithPlacement(parentRect, pointerGlobalPosition,
-                                       closeWhenPointerOutside)) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Qt overlay menu shown at a placement option");
+    if (m_MenuDetached) {
+        m_MenuPanel->showWithPlacement(OverlayMenu::Placement::Dragged, parentRect.x(),
+                                       parentRect.y(), parentRect.width(), parentRect.height(),
+                                       std::nullopt, std::nullopt);
+        if (m_MenuButton) {
+            m_MenuButton->hideButton();
+        }
+        return;
+    }
+
+    // A manually dragged attached menu keeps its position; otherwise it follows its trigger.
+    if (showQtOverlayMenuAtDraggedPosition(parentRect)) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Qt overlay menu shown at its dragged position");
         return;
     }
 
     switch (m_Preferences->overlayMenuPosition) {
     case StreamingPreferences::OMP_LEFT_EDGE:
-        m_MenuPanel->showAtLeftEdge(parentRect.x(), parentRect.y(),
-                                    parentRect.width(), parentRect.height(),
-                                    pointerGlobalPosition,
-                                    closeWhenPointerOutside);
+        m_MenuPanel->showAtLeftEdge(parentRect.x(), parentRect.y(), parentRect.width(),
+                                    parentRect.height(), pointerGlobalPosition);
         break;
     case StreamingPreferences::OMP_TOP_EDGE:
-        m_MenuPanel->showAtTopEdge(parentRect.x(), parentRect.y(),
-                                   parentRect.width(), parentRect.height(),
-                                   pointerGlobalPosition,
-                                   closeWhenPointerOutside);
+        m_MenuPanel->showAtTopEdge(parentRect.x(), parentRect.y(), parentRect.width(),
+                                   parentRect.height(), pointerGlobalPosition);
         break;
     case StreamingPreferences::OMP_BUTTON:
     {
         // Open next to the current button position, including after the user drags it.
         const QPoint menuPosition = pointerGlobalPosition.value_or(
                 m_MenuButton ? m_MenuButton->geometry().center() : QCursor::pos());
-        m_MenuPanel->showAtCursor(parentRect.x(), parentRect.y(),
-                                  parentRect.width(), parentRect.height(),
-                                  menuPosition,
-                                  closeWhenPointerOutside && pointerGlobalPosition.has_value());
+        m_MenuPanel->showAtCursor(parentRect.x(), parentRect.y(), parentRect.width(),
+                                  parentRect.height(), menuPosition);
         // Hide button while menu is visible
         if (m_MenuButton) {
             m_MenuButton->hideButton();
@@ -2990,10 +2995,8 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition,
     }
     case StreamingPreferences::OMP_RIGHT_EDGE:
     default:
-        m_MenuPanel->showAtRightEdge(parentRect.x(), parentRect.y(),
-                                     parentRect.width(), parentRect.height(),
-                                     pointerGlobalPosition,
-                                     closeWhenPointerOutside);
+        m_MenuPanel->showAtRightEdge(parentRect.x(), parentRect.y(), parentRect.width(),
+                                     parentRect.height(), pointerGlobalPosition);
         break;
     }
 
@@ -3093,7 +3096,7 @@ void Session::dispatchQtMenuAction(OverlayMenuPanel::MenuAction action)
         // The original positions also bring back their own placement
         m_Preferences->setOverlayMenuPosition(*placement);
         m_Preferences->save();
-        OverlayMenuSettings().setPlacement(int(OverlayMenu::Placement::Auto));
+        OverlayMenuSettings().resetDraggedPosition();
         reloadOverlayMenuOptions();
         return;
     }
@@ -5375,6 +5378,22 @@ void Session::exec()
         // Record close timestamp for edge-trigger debounce
         m_MenuCloseTicks = SDL_GetTicks();
 
+        if (m_PendingMenuDetached) {
+            m_MenuDetached = *m_PendingMenuDetached;
+            m_PendingMenuDetached.reset();
+            m_MenuPanel->setDetached(m_MenuDetached);
+            m_MenuPanel->updateMenuAttachmentState(m_MenuDetached);
+            if (!m_MenuDetached) {
+                OverlayMenuSettings().resetDraggedPosition();
+            }
+        }
+        if (m_PendingStatsOverlayDetached) {
+            if (m_StatsOverlay) {
+                m_StatsOverlay->setDetached(*m_PendingStatsOverlayDetached);
+            }
+            m_PendingStatsOverlayDetached.reset();
+        }
+
         // Restore mouse capture after menu closes
         // Note: for actions that change window state (fullscreen, minimize),
         // we defer capture restoration to after the action completes.
@@ -5409,9 +5428,11 @@ void Session::exec()
         pushEventOrWarn(wakeEvent);
     });
 #endif
-    m_MenuButton->setClickCallback([this](const QPoint& globalPosition,
-                                          bool closeWhenPointerOutside) {
-        showQtOverlayMenu(globalPosition, closeWhenPointerOutside);
+    m_MenuButton->setClickCallback([this](const QPoint& globalPosition) {
+        showQtOverlayMenu(globalPosition);
+        if (m_MenuPanel && m_MenuPanel->isMenuVisible()) {
+            m_MenuPanel->ignoreOpeningClickAt(m_MenuDetached ? QCursor::pos() : globalPosition);
+        }
     });
 
     reloadOverlayMenuOptions();
@@ -6004,9 +6025,9 @@ void Session::exec()
             if (m_MenuPanel && (m_MenuPanel->isMenuVisible() || m_MenuPanel->isClosing())) {
                 if (event.type == SDL_MOUSEBUTTONUP) {
                     const QPoint pointerPosition =
-                        m_WaylandStreamWindow != nullptr
-                            ? qtOverlayPositionForSdlPoint(event.button.x, event.button.y)
-                            : QCursor::pos();
+                        m_MenuDetached || m_WaylandStreamWindow == nullptr
+                            ? QCursor::pos()
+                            : qtOverlayPositionForSdlPoint(event.button.x, event.button.y);
                     m_MenuPanel->dismissOnOutsideClick(pointerPosition);
                 }
                 break;
@@ -6060,9 +6081,6 @@ void Session::exec()
             }
 
             if (m_MenuPanel && m_MenuPanel->isMenuVisible()) {
-                if (qtWaylandOverlay) {
-                    m_MenuPanel->dismissOnOutsidePointerMove(overlayPointerPosition);
-                }
                 break;
             }
 

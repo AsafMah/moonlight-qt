@@ -38,11 +38,10 @@ class OverlayManager;
  * overlay stays click-through outside edit mode, so the pointer is polled
  * through the PointerProvider rather than taken from mouse events.
  *
- * With StatsOverlaySettings::detached(), the overlay is instead a top-level
- * window of its own (OverlayStatsWindow::setStandalone()) that the user can
- * drag anywhere, including another screen. It is not anchored to the stream;
- * its position is remembered per stream display, and its size per display
- * and preset, shared with the anchored overlay.
+ * While detached, the overlay is a top-level window that the user can drag
+ * anywhere, including another screen. It is not anchored to the stream; its
+ * position is remembered per stream display, and its size per display and
+ * preset is shared with the attached overlay.
  */
 class OverlayStatsController
 {
@@ -68,6 +67,7 @@ public:
     static bool compositorWindowSupported();
     bool usesCompositorWindow() const { return m_Window != nullptr; }
     bool isDetached() const { return m_Detached && m_Window != nullptr; }
+    int opacityPercent() const { return m_Settings.opacityPercent(); }
 
     void setParentGeometryProvider(ParentGeometryProvider provider);
     void setExtrasProvider(ExtrasProvider provider) { m_ExtrasProvider = std::move(provider); }
@@ -85,6 +85,8 @@ public:
     void toggle();
     // cycle-overlay-preset: Off -> Minimal -> Compact -> Detailed -> Custom
     void cyclePreset();
+    void setDetached(bool detached);
+    void setOpacityPercent(int percent);
 
     // edit-overlay-position: drag to move, drag the edges to resize (panel
     // presets), wheel to zoom, Esc to finish
@@ -111,6 +113,7 @@ private:
     double currentDisplayHz() const;
     void reposition();
     void repositionDetached(const QRect& parentRect);
+    void createTooltip();
     void onDetachedMoved(const QPoint& topLeft);
     void saveDetachedPosition();
     void applyStyle();
@@ -134,8 +137,7 @@ private:
     EditModeCallback m_EditModeCallback;
     PointerProvider m_PointerProvider;
 
-    // Read once, when the stream starts
-    const bool m_Detached;
+    bool m_Detached = false;
     // Wayland windows cannot place themselves or learn where they are
     bool m_DetachedPositionKnown = true;
     bool m_DetachedPlaced = false;

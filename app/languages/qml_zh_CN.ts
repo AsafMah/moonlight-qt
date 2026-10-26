@@ -272,6 +272,109 @@
     </message>
 </context>
 <context>
+    <name>AppPickerControls</name>
+    <message>
+        <source>Search apps</source>
+        <translation>搜索应用</translation>
+    </message>
+    <message>
+        <source>Clear search</source>
+        <translation>清除搜索</translation>
+    </message>
+    <message>
+        <source>Type: All</source>
+        <translation>类型：全部</translation>
+    </message>
+    <message>
+        <source>Type: Games</source>
+        <translation>类型：游戏</translation>
+    </message>
+    <message>
+        <source>Type: Apps</source>
+        <translation>类型：应用</translation>
+    </message>
+    <message>
+        <source>Filter by type</source>
+        <translation>按类型筛选</translation>
+    </message>
+    <message>
+        <source>State: All</source>
+        <translation>状态：全部</translation>
+    </message>
+    <message>
+        <source>State: Running</source>
+        <translation>状态：运行中</translation>
+    </message>
+    <message>
+        <source>State: Idle</source>
+        <translation>状态：未运行</translation>
+    </message>
+    <message>
+        <source>Filter by running status</source>
+        <translation>按运行状态筛选</translation>
+    </message>
+    <message>
+        <source>Show: All</source>
+        <translation>显示：全部</translation>
+    </message>
+    <message>
+        <source>Show: Visible</source>
+        <translation>显示：可见</translation>
+    </message>
+    <message>
+        <source>Show: Hidden</source>
+        <translation>显示：已隐藏</translation>
+    </message>
+    <message>
+        <source>Filter by visibility</source>
+        <translation>按可见性筛选</translation>
+    </message>
+    <message>
+        <source>Sort: Host</source>
+        <translation>排序：主机顺序</translation>
+    </message>
+    <message>
+        <source>Sort: A-Z</source>
+        <translation>排序：名称 A-Z</translation>
+    </message>
+    <message>
+        <source>Sort: Z-A</source>
+        <translation>排序：名称 Z-A</translation>
+    </message>
+    <message>
+        <source>Sort: Running</source>
+        <translation>排序：运行优先</translation>
+    </message>
+    <message>
+        <source>Sort apps</source>
+        <translation>排序应用</translation>
+    </message>
+    <message>
+        <source>Sort apps: host order, name, or running first</source>
+        <translation>按主机顺序、名称或运行状态排序</translation>
+    </message>
+    <message>
+        <source>Group: None</source>
+        <translation>分组：无</translation>
+    </message>
+    <message>
+        <source>Group: Type</source>
+        <translation>分组：类型</translation>
+    </message>
+    <message>
+        <source>Group: Status</source>
+        <translation>分组：状态</translation>
+    </message>
+    <message>
+        <source>Group apps</source>
+        <translation>分组应用</translation>
+    </message>
+    <message>
+        <source>Group apps by type or running status</source>
+        <translation>按类型或运行状态对应用分组</translation>
+    </message>
+</context>
+<context>
     <name>AppView</name>
     <message>
         <source>Display Settings</source>
@@ -398,6 +501,34 @@
     <message>
         <source>Are you sure you want to quit %1? Any unsaved progress will be lost.</source>
         <translation>你确定要退出 %1 吗？所有未保存的游戏进度都将丢失。</translation>
+    </message>
+    <message>
+        <source>Games</source>
+        <translation>游戏</translation>
+    </message>
+    <message>
+        <source>Other apps</source>
+        <translation>其他应用</translation>
+    </message>
+    <message>
+        <source>Running</source>
+        <translation>运行中</translation>
+    </message>
+    <message>
+        <source>Not running</source>
+        <translation>未运行</translation>
+    </message>
+    <message>
+        <source>No matching apps</source>
+        <translation>没有匹配的应用</translation>
+    </message>
+    <message>
+        <source>Try changing your search or filters.</source>
+        <translation>请尝试更改搜索内容或筛选条件。</translation>
+    </message>
+    <message>
+        <source>Clear filters</source>
+        <translation>清除筛选条件</translation>
     </message>
 </context>
 <context>

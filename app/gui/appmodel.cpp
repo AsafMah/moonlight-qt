@@ -67,19 +67,54 @@ QString AppModel::getRunningAppName()
     return nullptr;
 }
 
-Session* AppModel::createSessionForApp(int appIndex, const QString& displayId)
+Session* AppModel::createSessionForApp(int appId, const QString& displayId)
 {
-    Q_ASSERT(appIndex < m_VisibleApps.count());
-    NvApp app = m_VisibleApps.at(appIndex);
+    const NvApp* app = findAppById(appId);
+    if (app == nullptr || m_Computer == nullptr) {
+        qWarning() << "Cannot create a session for unknown app ID:" << appId;
+        return nullptr;
+    }
 
+    NvApp appCopy = *app;
     if (displayId == QStringLiteral("vdd")) {
-        return new Session(m_Computer, app, nullptr, QString(), true);
+        return new Session(m_Computer, appCopy, nullptr, QString(), true);
     }
     if (!displayId.isEmpty()) {
-        return new Session(m_Computer, app, nullptr, displayId, false);
+        return new Session(m_Computer, appCopy, nullptr, displayId, false);
     }
 
-    return new Session(m_Computer, app);
+    return new Session(m_Computer, appCopy);
+}
+
+QUrl AppModel::getAppBoxArt(int appId)
+{
+    const NvApp* app = findAppById(appId);
+    if (app == nullptr || m_Computer == nullptr) {
+        qWarning() << "Cannot load box art for unknown app ID:" << appId;
+        return QUrl();
+    }
+    NvApp appCopy = *app;
+    return m_BoxArtManager.loadBoxArt(m_Computer, appCopy);
+}
+
+int AppModel::getAppIndexById(int appId) const
+{
+    for (int i = 0; i < m_VisibleApps.count(); i++) {
+        if (m_VisibleApps[i].id == appId) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+const NvApp* AppModel::findAppById(int appId) const
+{
+    for (const NvApp& app : m_AllApps) {
+        if (app.id == appId) {
+            return &app;
+        }
+    }
+    return nullptr;
 }
 
 QVariantList AppModel::getDisplayList()
@@ -121,6 +156,123 @@ int AppModel::rowCount(const QModelIndex &parent) const
     return m_VisibleApps.count();
 }
 
+QString AppModel::searchText() const
+{
+    return m_PickerOptions.searchText;
+}
+
+void AppModel::setSearchText(const QString& searchText)
+{
+    if (m_PickerOptions.searchText == searchText) {
+        return;
+    }
+    m_PickerOptions.searchText = searchText;
+    refreshVisibleApps();
+    emit pickerOptionsChanged();
+}
+
+int AppModel::typeFilter() const
+{
+    return static_cast<int>(m_PickerOptions.typeFilter);
+}
+
+void AppModel::setTypeFilter(int typeFilter)
+{
+    if (typeFilter < TypeAll || typeFilter > TypeOtherApps) {
+        qWarning() << "Ignoring invalid app type filter:" << typeFilter;
+        return;
+    }
+    if (typeFilter == this->typeFilter()) {
+        return;
+    }
+    m_PickerOptions.typeFilter = static_cast<AppPicker::TypeFilter>(typeFilter);
+    refreshVisibleApps();
+    emit pickerOptionsChanged();
+}
+
+int AppModel::runningFilter() const
+{
+    return static_cast<int>(m_PickerOptions.runningFilter);
+}
+
+void AppModel::setRunningFilter(int runningFilter)
+{
+    if (runningFilter < RunningAll || runningFilter > NotRunningOnly) {
+        qWarning() << "Ignoring invalid app running filter:" << runningFilter;
+        return;
+    }
+    if (runningFilter == this->runningFilter()) {
+        return;
+    }
+    m_PickerOptions.runningFilter = static_cast<AppPicker::RunningFilter>(runningFilter);
+    refreshVisibleApps();
+    emit pickerOptionsChanged();
+}
+
+int AppModel::hiddenFilter() const
+{
+    return static_cast<int>(m_PickerOptions.hiddenFilter);
+}
+
+void AppModel::setHiddenFilter(int hiddenFilter)
+{
+    if (hiddenFilter < HiddenAll || hiddenFilter > HiddenOnly) {
+        qWarning() << "Ignoring invalid app hidden filter:" << hiddenFilter;
+        return;
+    }
+    if (hiddenFilter == this->hiddenFilter()) {
+        return;
+    }
+    m_PickerOptions.hiddenFilter = static_cast<AppPicker::HiddenFilter>(hiddenFilter);
+    refreshVisibleApps();
+    emit pickerOptionsChanged();
+}
+
+int AppModel::sortOrder() const
+{
+    return static_cast<int>(m_PickerOptions.sortOrder);
+}
+
+void AppModel::setSortOrder(int sortOrder)
+{
+    if (sortOrder < HostOrder || sortOrder > RunningFirst) {
+        qWarning() << "Ignoring invalid app sort order:" << sortOrder;
+        return;
+    }
+    if (sortOrder == this->sortOrder()) {
+        return;
+    }
+    m_PickerOptions.sortOrder = static_cast<AppPicker::SortOrder>(sortOrder);
+    refreshVisibleApps();
+    emit pickerOptionsChanged();
+}
+
+int AppModel::groupMode() const
+{
+    return static_cast<int>(m_PickerOptions.groupMode);
+}
+
+void AppModel::setGroupMode(int groupMode)
+{
+    if (groupMode < NoGrouping || groupMode > GroupByStatus) {
+        qWarning() << "Ignoring invalid app group mode:" << groupMode;
+        return;
+    }
+    if (groupMode == this->groupMode()) {
+        return;
+    }
+    m_PickerOptions.groupMode = static_cast<AppPicker::GroupMode>(groupMode);
+    refreshVisibleApps({ GroupLabelRole });
+    emit pickerOptionsChanged();
+}
+
+void AppModel::resetPickerOptions()
+{
+    m_PickerOptions = AppPicker::Options();
+    refreshVisibleApps({ GroupLabelRole });
+    emit pickerOptionsChanged();
+}
+
 QVariant AppModel::data(const QModelIndex &index, int role) const
 {
     if (!index.isValid())
@@ -134,7 +286,7 @@ QVariant AppModel::data(const QModelIndex &index, int role) const
     case NameRole:
         return app.name;
     case RunningRole:
-        return m_Computer->currentGameId == app.id;
+        return m_CurrentGameId == app.id;
     case BoxArtRole:
         // FIXME: const-correctness
         return const_cast<BoxArtManager&>(m_BoxArtManager).loadBoxArt(m_Computer, app);
@@ -146,6 +298,8 @@ QVariant AppModel::data(const QModelIndex &index, int role) const
         return app.directLaunch;
     case AppCollectorGameRole:
         return app.isAppCollectorGame;
+    case GroupLabelRole:
+        return AppPicker::groupLabel(app, m_CurrentGameId, m_PickerOptions.groupMode);
     default:
         return QVariant();
     }
@@ -162,6 +316,7 @@ QHash<int, QByteArray> AppModel::roleNames() const
     names[AppIdRole] = "appid";
     names[DirectLaunchRole] = "directLaunch";
     names[AppCollectorGameRole] = "appCollectorGame";
+    names[GroupLabelRole] = "groupLabel";
 
     return names;
 }
@@ -173,8 +328,8 @@ void AppModel::quitRunningApp()
 
 bool AppModel::isAppCurrentlyVisible(const NvApp& app)
 {
-    for (const NvApp& visibleApp : std::as_const(m_VisibleApps)) {
-        if (app.id == visibleApp.id) {
+    for (const NvApp& routeApp : std::as_const(m_RouteApps)) {
+        if (app.id == routeApp.id) {
             return true;
         }
     }
@@ -182,41 +337,55 @@ bool AppModel::isAppCurrentlyVisible(const NvApp& app)
     return false;
 }
 
-QVector<NvApp> AppModel::getVisibleApps(const QVector<NvApp>& appList)
+QVector<NvApp> AppModel::getRouteApps(const QVector<NvApp>& appList)
 {
-    QVector<NvApp> visibleApps;
+    QVector<NvApp> routeApps;
 
     for (const NvApp& app : appList) {
         // Don't immediately hide games that were previously visible. This
         // allows users to easily uncheck the "Hide App" checkbox if they
         // check it by mistake.
         if (m_ShowHiddenGames || !app.hidden || isAppCurrentlyVisible(app)) {
-            visibleApps.append(app);
+            routeApps.append(app);
         }
     }
 
-    return visibleApps;
+    return routeApps;
 }
 
 void AppModel::updateAppList(QVector<NvApp> newList)
 {
     m_AllApps = newList;
 
-    QVector<NvApp> newVisibleList = getVisibleApps(newList);
+    m_RouteApps = getRouteApps(newList);
+    refreshVisibleApps();
+}
 
-    // Preserve server-provided ordering by resetting the model
-    // when the list content or order changes.
+AppPicker::Options AppModel::pickerOptions() const
+{
+    return m_PickerOptions;
+}
+
+void AppModel::refreshVisibleApps(const QVector<int>& rolesWhenUnchanged)
+{
+    const QVector<NvApp> newVisibleList =
+        AppPicker::transform(m_RouteApps, m_CurrentGameId, pickerOptions());
     if (m_VisibleApps != newVisibleList) {
         beginResetModel();
         m_VisibleApps = newVisibleList;
         endResetModel();
+    } else if (!rolesWhenUnchanged.isEmpty() && !m_VisibleApps.isEmpty()) {
+        emit dataChanged(createIndex(0, 0), createIndex(m_VisibleApps.count() - 1, 0),
+                         rolesWhenUnchanged);
     }
 }
 
-void AppModel::setAppHidden(int appIndex, bool hidden)
+void AppModel::setAppHidden(int appId, bool hidden)
 {
-    Q_ASSERT(appIndex < m_VisibleApps.count());
-    int appId = m_VisibleApps.at(appIndex).id;
+    if (findAppById(appId) == nullptr || m_Computer == nullptr) {
+        qWarning() << "Cannot update hidden state for unknown app ID:" << appId;
+        return;
+    }
 
     {
         QWriteLocker lock(&m_Computer->lock);
@@ -232,10 +401,12 @@ void AppModel::setAppHidden(int appIndex, bool hidden)
     m_ComputerManager->clientSideAttributeUpdated(m_Computer);
 }
 
-void AppModel::setAppDirectLaunch(int appIndex, bool directLaunch)
+void AppModel::setAppDirectLaunch(int appId, bool directLaunch)
 {
-    Q_ASSERT(appIndex < m_VisibleApps.count());
-    int appId = m_VisibleApps.at(appIndex).id;
+    if (findAppById(appId) == nullptr || m_Computer == nullptr) {
+        qWarning() << "Cannot update direct launch for unknown app ID:" << appId;
+        return;
+    }
 
     {
         QWriteLocker lock(&m_Computer->lock);
@@ -415,32 +586,11 @@ void AppModel::handleComputerStateChanged(NvComputer* computer)
         updateAppList(computer->appList);
     }
 
-    // Finally, process changes to the active app
+    // Finally, process changes to the active app. This may change the running
+    // filter, sort, or group, so rebuild the displayed rows after updating it.
     if (computer->currentGameId != m_CurrentGameId) {
-        // First, invalidate the running state of newly running game
-        for (int i = 0; i < m_VisibleApps.count(); i++) {
-            if (m_VisibleApps[i].id == computer->currentGameId) {
-                emit dataChanged(createIndex(i, 0),
-                                 createIndex(i, 0),
-                                 QVector<int>() << RunningRole);
-                break;
-            }
-        }
-
-        // Next, invalidate the running state of the old game (if it exists)
-        if (m_CurrentGameId != 0) {
-            for (int i = 0; i < m_VisibleApps.count(); i++) {
-                if (m_VisibleApps[i].id == m_CurrentGameId) {
-                    emit dataChanged(createIndex(i, 0),
-                                     createIndex(i, 0),
-                                     QVector<int>() << RunningRole);
-                    break;
-                }
-            }
-        }
-
-        // Now update our internal state
-        m_CurrentGameId = m_Computer->currentGameId;
+        m_CurrentGameId = computer->currentGameId;
+        refreshVisibleApps({ RunningRole, GroupLabelRole });
     }
 }
 
@@ -466,36 +616,15 @@ void AppModel::forceSyncCurrentGame()
         return;
     }
 
-    // Invalidate the running state of the newly running game
-    for (int i = 0; i < m_VisibleApps.count(); i++) {
-        if (m_VisibleApps[i].id == currentGameId) {
-            emit dataChanged(createIndex(i, 0),
-                             createIndex(i, 0),
-                             QVector<int>() << RunningRole);
-            break;
-        }
-    }
-
-    // Invalidate the running state of the previously running game (if any)
-    if (m_CurrentGameId != 0) {
-        for (int i = 0; i < m_VisibleApps.count(); i++) {
-            if (m_VisibleApps[i].id == m_CurrentGameId) {
-                emit dataChanged(createIndex(i, 0),
-                                 createIndex(i, 0),
-                                 QVector<int>() << RunningRole);
-                break;
-            }
-        }
-    }
-
     m_CurrentGameId = currentGameId;
+    refreshVisibleApps({ RunningRole, GroupLabelRole });
 }
 
 void AppModel::handleBoxArtLoaded(NvComputer* computer, NvApp app, QUrl /* image */)
 {
     Q_ASSERT(computer == m_Computer);
 
-    int index = m_VisibleApps.indexOf(app);
+    const int index = getAppIndexById(app.id);
 
     // Make sure we're not delivering a callback to an app that's already been removed
     if (index >= 0) {
@@ -505,6 +634,8 @@ void AppModel::handleBoxArtLoaded(NvComputer* computer, NvApp app, QUrl /* image
                          QVector<int>() << BoxArtRole);
     }
     else {
-        qWarning() << "App not found for box art callback:" << app.name;
+        if (findAppById(app.id) == nullptr) {
+            qWarning() << "App removed before box art completed:" << app.name;
+        }
     }
 }

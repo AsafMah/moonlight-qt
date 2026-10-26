@@ -206,6 +206,15 @@ ApplicationWindow {
         }
     }
 
+    function focusCurrentPage() {
+        if (appPickerControls.visible) {
+            appPickerControls.focusSearch()
+        }
+        else if (stackView.currentItem) {
+            stackView.currentItem.forceActiveFocus(Qt.TabFocusReason)
+        }
+    }
+
     // 全局壁纸。PcView 负责抓取、缓存和刷新，抓到之后写回这里，
     // 这样连接进度页、退出页、设置页共用同一张背景，而不是各自一片纯色。
     property string backgroundImageUrl: ""
@@ -485,7 +494,7 @@ ApplicationWindow {
                 onClicked: goBack()
 
                 Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocusReason)
+                    focusCurrentPage()
                 }
             }
 
@@ -608,7 +617,7 @@ ApplicationWindow {
                 onClicked: Qt.openUrlExternally("https://qm.qq.com/cgi-bin/qm/qr?k=wI7aTvDQdd900n1L_wjjJw3qNP0yOgUa&jump_from=webapi&authKey=CDBn7sGy7HpCKYTcFmoEdNuG/zmkrBWUC/W5A/oZZycKzXwuO/XFCA97IpJRktj3");
 
                 Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocusReason)
+                    focusCurrentPage()
                 }
             }
 
@@ -634,7 +643,7 @@ ApplicationWindow {
                 }
 
                 Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocusReason)
+                    focusCurrentPage()
                 }
             }
 
@@ -696,7 +705,7 @@ ApplicationWindow {
                 }
 
                 Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocusReason)
+                    focusCurrentPage()
                 }
             }
 
@@ -721,7 +730,7 @@ ApplicationWindow {
                 onClicked: Qt.openUrlExternally("https://github.com/moonlight-stream/moonlight-docs/wiki/Setup-Guide");
 
                 Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocusReason)
+                    focusCurrentPage()
                 }
             }
 
@@ -744,7 +753,7 @@ ApplicationWindow {
                 }
 
                 Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocusReason)
+                    focusCurrentPage()
                 }
             }
 
@@ -766,7 +775,7 @@ ApplicationWindow {
                 }
 
                 Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocusReason)
+                    focusCurrentPage()
                 }
             }
 
@@ -780,7 +789,7 @@ ApplicationWindow {
                 onClicked: navigateTo("qrc:/gui/SettingsView.qml", SettingsView)
 
                 Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocusReason)
+                    focusCurrentPage()
                 }
 
                 Shortcut {
@@ -828,6 +837,15 @@ ApplicationWindow {
                 onClicked: windowsWindowChrome.close()
             }
         }
+    }
+
+    AppPickerControls {
+        id: appPickerControls
+        anchors.top: toolBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        z: 1
+        appView: stackView.currentItem instanceof AppView ? stackView.currentItem : null
     }
 
     ErrorMessageDialog {

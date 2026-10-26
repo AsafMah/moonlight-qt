@@ -274,6 +274,7 @@ SOURCES += \
     gui/computermodel.cpp \
     gui/shortcutmodel.cpp \
     gui/keymacromodel.cpp \
+    gui/apppicker.cpp \
     gui/appmodel.cpp \
     streaming/sessionstatsrecording.cpp \
     streaming/stats/sessionstatsrecorder.cpp \
@@ -371,6 +372,7 @@ HEADERS += \
     gui/computermodel.h \
     gui/shortcutmodel.h \
     gui/keymacromodel.h \
+    gui/apppicker.h \
     streaming/input/shortcuts.h \
     streaming/input/hostkeys.h \
     gui/appmodel.h \

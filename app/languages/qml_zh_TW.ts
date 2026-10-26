@@ -40,6 +40,109 @@
     </message>
 </context>
 <context>
+    <name>AppPickerControls</name>
+    <message>
+        <source>Search apps</source>
+        <translation>搜尋應用程式</translation>
+    </message>
+    <message>
+        <source>Clear search</source>
+        <translation>清除搜尋</translation>
+    </message>
+    <message>
+        <source>Type: All</source>
+        <translation>類型：全部</translation>
+    </message>
+    <message>
+        <source>Type: Games</source>
+        <translation>類型：遊戲</translation>
+    </message>
+    <message>
+        <source>Type: Apps</source>
+        <translation>類型：應用程式</translation>
+    </message>
+    <message>
+        <source>Filter by type</source>
+        <translation>依類型篩選</translation>
+    </message>
+    <message>
+        <source>State: All</source>
+        <translation>狀態：全部</translation>
+    </message>
+    <message>
+        <source>State: Running</source>
+        <translation>狀態：執行中</translation>
+    </message>
+    <message>
+        <source>State: Idle</source>
+        <translation>狀態：未執行</translation>
+    </message>
+    <message>
+        <source>Filter by running status</source>
+        <translation>依執行狀態篩選</translation>
+    </message>
+    <message>
+        <source>Show: All</source>
+        <translation>顯示：全部</translation>
+    </message>
+    <message>
+        <source>Show: Visible</source>
+        <translation>顯示：可見</translation>
+    </message>
+    <message>
+        <source>Show: Hidden</source>
+        <translation>顯示：已隱藏</translation>
+    </message>
+    <message>
+        <source>Filter by visibility</source>
+        <translation>依可見性篩選</translation>
+    </message>
+    <message>
+        <source>Sort: Host</source>
+        <translation>排序：主機順序</translation>
+    </message>
+    <message>
+        <source>Sort: A-Z</source>
+        <translation>排序：名稱 A-Z</translation>
+    </message>
+    <message>
+        <source>Sort: Z-A</source>
+        <translation>排序：名稱 Z-A</translation>
+    </message>
+    <message>
+        <source>Sort: Running</source>
+        <translation>排序：執行優先</translation>
+    </message>
+    <message>
+        <source>Sort apps</source>
+        <translation>排序應用程式</translation>
+    </message>
+    <message>
+        <source>Sort apps: host order, name, or running first</source>
+        <translation>依主機順序、名稱或執行狀態排序</translation>
+    </message>
+    <message>
+        <source>Group: None</source>
+        <translation>分組：無</translation>
+    </message>
+    <message>
+        <source>Group: Type</source>
+        <translation>分組：類型</translation>
+    </message>
+    <message>
+        <source>Group: Status</source>
+        <translation>分組：狀態</translation>
+    </message>
+    <message>
+        <source>Group apps</source>
+        <translation>分組應用程式</translation>
+    </message>
+    <message>
+        <source>Group apps by type or running status</source>
+        <translation>依類型或執行狀態將應用程式分組</translation>
+    </message>
+</context>
+<context>
     <name>AppView</name>
     <message>
         <location filename="../gui/AppView.qml" line="156"/>
@@ -140,6 +243,34 @@
         <location filename="../gui/AppView.qml" line="848"/>
         <source>Are you sure you want to quit %1? Any unsaved progress will be lost.</source>
         <translation>你確定要結束 %1 嗎? 所有未儲存的進度將會遺失。</translation>
+    </message>
+    <message>
+        <source>Games</source>
+        <translation>遊戲</translation>
+    </message>
+    <message>
+        <source>Other apps</source>
+        <translation>其他應用程式</translation>
+    </message>
+    <message>
+        <source>Running</source>
+        <translation>執行中</translation>
+    </message>
+    <message>
+        <source>Not running</source>
+        <translation>未執行</translation>
+    </message>
+    <message>
+        <source>No matching apps</source>
+        <translation>沒有符合條件的應用程式</translation>
+    </message>
+    <message>
+        <source>Try changing your search or filters.</source>
+        <translation>請嘗試變更搜尋內容或篩選條件。</translation>
+    </message>
+    <message>
+        <source>Clear filters</source>
+        <translation>清除篩選條件</translation>
     </message>
 </context>
 <context>

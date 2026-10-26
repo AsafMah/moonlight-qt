@@ -24,17 +24,26 @@ CenteredGridView {
     readonly property int appIdRole: AppModel.AppIdRole
     readonly property int directLaunchRole: AppModel.DirectLaunchRole
     readonly property int appCollectorGameRole: AppModel.AppCollectorGameRole
-
     property int computerIndex
     property AppModel appModel : createModel()
     property bool activated
     property bool showHiddenGames
     property bool showGames
+    property int appIdBeforeModelReset: 0
+    property bool preserveSelectionAfterModelReset: false
+    property int modelResetGeneration: 0
+    readonly property bool hasActivePickerFilters: appModel &&
+        (appModel.searchText.trim().length > 0 ||
+         appModel.typeFilter !== AppModel.TypeAll ||
+         appModel.runningFilter !== AppModel.RunningAll ||
+         appModel.hiddenFilter !== AppModel.HiddenAll)
+    readonly property Item pickerNavigationTarget:
+        count === 0 && hasActivePickerFilters ? clearFiltersButton : appGrid
 
     id: appGrid
     focus: true
     activeFocusOnTab: true
-    topMargin: 72   // 工具栏 56 + 一格间距
+    topMargin: 116  // 工具栏、游戏筛选栏和一格间距
     bottomMargin: 5
     cellWidth: 230; cellHeight: 297;
 
@@ -286,6 +295,16 @@ CenteredGridView {
         stackView.pop()
     }
 
+    function groupLabelText(label) {
+        switch (label) {
+        case AppModel.GamesLabel: return qsTr("Games")
+        case AppModel.OtherAppsLabel: return qsTr("Other apps")
+        case AppModel.RunningLabel: return qsTr("Running")
+        case AppModel.NotRunningLabel: return qsTr("Not running")
+        default: return ""
+        }
+    }
+
     Component.onCompleted: {
         // Don't show any highlighted item until interacting with them.
         // We do this here instead of onActivated to avoid losing the user's
@@ -372,6 +391,7 @@ CenteredGridView {
 
         property alias appContextMenu: appContextMenuLoader.item
         property alias appNameText: appNameTextLoader.item
+        property int appId: model.appid
 
         // hover / 手柄高亮 / 键盘焦点走同一套视觉，别分三种状态
         readonly property bool active: hovered || highlighted
@@ -537,6 +557,14 @@ CenteredGridView {
                         visible: model.directLaunch
                         height: visible ? implicitHeight : 0
                     }
+
+                    MicroLabel {
+                        width: parent.width
+                        text: appGrid.groupLabelText(model.groupLabel)
+                        color: Theme.textDim
+                        visible: model.groupLabel !== AppModel.NoGroupLabel
+                        height: visible ? implicitHeight : 0
+                    }
                 }
             }
 
@@ -673,7 +701,7 @@ CenteredGridView {
                     quitAppDialog.appName = appModel.getRunningAppName()
                     quitAppDialog.segueToStream = true
                     quitAppDialog.nextAppName = model.name
-                    quitAppDialog.nextAppIndex = index
+                    quitAppDialog.nextAppId = model.appid
                     quitAppDialog.open()
                 }
 
@@ -684,7 +712,7 @@ CenteredGridView {
             var segue = component.createObject(stackView, {
                                                    "appName": model.name,
                                                    "boxArtUrl": model.boxart,
-                                                   "session": appModel.createSessionForApp(index, selectedDisplayTarget),
+                                                   "session": appModel.createSessionForApp(model.appid, selectedDisplayTarget),
                                                    "isResume": runningId === model.appid
                                                })
             stackView.push(segue)
@@ -771,7 +799,7 @@ CenteredGridView {
                     checkable: true
                     checked: model.directLaunch
                     text: qsTr("Direct Launch")
-                    onTriggered: appModel.setAppDirectLaunch(model.index, !model.directLaunch)
+                    onTriggered: appModel.setAppDirectLaunch(model.appid, !model.directLaunch)
                     enabled: !model.hidden
 
                     ToolTip.text: qsTr("Launch this app immediately when the host is selected, bypassing the app selection grid.")
@@ -783,7 +811,7 @@ CenteredGridView {
                     checkable: true
                     checked: model.hidden
                     text: qsTr("Hide Game")
-                    onTriggered: appModel.setAppHidden(model.index, !model.hidden)
+                    onTriggered: appModel.setAppHidden(model.appid, !model.hidden)
                     enabled: model.hidden || (!model.running && !model.directLaunch)
 
                     ToolTip.text: qsTr("Hide this game from the app grid. To access hidden games, right-click on the host and choose %1.").arg(qsTr("View All Apps"))
@@ -804,7 +832,7 @@ CenteredGridView {
 
         Text {
             width: parent.width
-            text: qsTr("No Apps")
+            text: appGrid.hasActivePickerFilters ? qsTr("No matching apps") : qsTr("No Apps")
             color: Theme.text
             font.family: Theme.fontSans
             font.pointSize: 26
@@ -822,12 +850,27 @@ CenteredGridView {
 
         Text {
             width: parent.width
-            text: qsTr("This computer doesn't seem to have any applications or some applications are hidden")
+            text: appGrid.hasActivePickerFilters
+                  ? qsTr("Try changing your search or filters.")
+                  : qsTr("This computer doesn't seem to have any applications or some applications are hidden")
             color: Theme.textDim
             font.family: Theme.fontMono
             font.pointSize: Theme.fontBody
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
+        }
+
+        Item {
+            width: parent.width
+            height: clearFiltersButton.implicitHeight
+            visible: appGrid.hasActivePickerFilters
+
+            HardButton {
+                id: clearFiltersButton
+                anchors.centerIn: parent
+                text: qsTr("Clear filters")
+                onClicked: appModel.resetPickerOptions()
+            }
         }
     }
 
@@ -855,7 +898,7 @@ CenteredGridView {
         property string appName : ""
         property bool segueToStream : false
         property string nextAppName: ""
-        property int nextAppIndex: 0
+        property int nextAppId: 0
         text:qsTr("Are you sure you want to quit %1? Any unsaved progress will be lost.").arg(appName)
         standardButtons: Dialog.Yes | Dialog.No
 
@@ -866,8 +909,8 @@ CenteredGridView {
                 // Store the session and app name if we're going to stream after
                 // successfully quitting the old app.
                 params.nextAppName = nextAppName
-                params.nextBoxArtUrl = appModel.data(appModel.index(nextAppIndex, 0), boxArtRole)
-                params.nextSession = appModel.createSessionForApp(nextAppIndex, selectedDisplayTarget)
+                params.nextBoxArtUrl = appModel.getAppBoxArt(nextAppId)
+                params.nextSession = appModel.createSessionForApp(nextAppId, selectedDisplayTarget)
             }
             else {
                 params.nextAppName = null
@@ -933,6 +976,32 @@ CenteredGridView {
     // 修改数据变化监听
     Connections {
         target: appModel
+        function onModelAboutToBeReset() {
+            modelResetGeneration++
+            preserveSelectionAfterModelReset = currentIndex >= 0 && currentItem !== null
+            appIdBeforeModelReset = preserveSelectionAfterModelReset ? currentItem.appId : 0
+        }
+
+        function onModelReset() {
+            var resetGeneration = modelResetGeneration
+            Qt.callLater(function() {
+                if (resetGeneration !== modelResetGeneration) {
+                    return
+                }
+                if (count === 0) {
+                    currentIndex = -1
+                }
+                else if (preserveSelectionAfterModelReset) {
+                    var restoredIndex = appModel.getAppIndexById(appIdBeforeModelReset)
+                    currentIndex = restoredIndex >= 0 ? restoredIndex : 0
+                }
+                else {
+                    currentIndex = -1
+                }
+                preserveSelectionAfterModelReset = false
+            })
+        }
+
         function onDataChanged() {
             // 使用Qt.callLater防止重复更新
             Qt.callLater(function() {

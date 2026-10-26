@@ -1,5 +1,4 @@
-QT += core
-QT -= gui
+QT += core gui
 CONFIG += c++17 console
 CONFIG -= app_bundle
 
@@ -11,7 +10,9 @@ INCLUDEPATH += \
 
 SOURCES += \
     main.cpp \
+    ../../app/gui/shortcutmodel.cpp \
     ../../app/streaming/input/shortcuts.cpp
 
 HEADERS += \
+    ../../app/gui/shortcutmodel.h \
     ../../app/streaming/input/shortcuts.h

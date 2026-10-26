@@ -1,5 +1,9 @@
 #include "shortcutmodel.h"
 
+#include <QCoreApplication>
+#include <QEvent>
+#include <QKeyEvent>
+
 ShortcutModel::ShortcutModel(QObject* parent)
     : QAbstractListModel(parent), m_Profile(ShortcutProfile::loadFromSettings()),
 #ifdef Q_OS_WIN32
@@ -8,6 +12,11 @@ ShortcutModel::ShortcutModel(QObject* parent)
       m_ModifierRecorder(false)
 #endif
 {
+}
+
+ShortcutModel::~ShortcutModel()
+{
+    cancelCapture();
 }
 
 int ShortcutModel::rowCount(const QModelIndex& parent) const
@@ -125,6 +134,10 @@ int ShortcutModel::captureKey(int row, int slot, int qtKey, int qtModifiers, qui
 
     const int scancode = ShortcutKeys::fromQtKeyEvent(qtKey, nativeScanCode);
     if (row != m_RecorderRow || slot != m_RecorderSlot) {
+        if (m_CaptureFilterInstalled && QCoreApplication::instance() != nullptr) {
+            QCoreApplication::instance()->removeEventFilter(this);
+            m_CaptureFilterInstalled = false;
+        }
         m_ModifierRecorder.reset();
         m_RecorderRow = row;
         m_RecorderSlot = slot;
@@ -133,6 +146,10 @@ int ShortcutModel::captureKey(int row, int slot, int qtKey, int qtModifiers, qui
         // A modifier may become the binding when it comes up, see
         // captureKeyRelease()
         m_ModifierRecorder.press(scancode, ShortcutBinding::fromQtModifiers(qtModifiers));
+        if (!m_CaptureFilterInstalled && QCoreApplication::instance() != nullptr) {
+            QCoreApplication::instance()->installEventFilter(this);
+            m_CaptureFilterInstalled = true;
+        }
     }
 
     switch (qtKey) {
@@ -156,9 +173,11 @@ int ShortcutModel::captureKey(int row, int slot, int qtKey, int qtModifiers, qui
     const quint8 modifiers = ShortcutBinding::fromQtModifiers(qtModifiers);
     if (modifiers == ShortcutBinding::ModNone) {
         if (qtKey == Qt::Key_Escape) {
+            finishCapture(row, slot);
             return CaptureCancelled;
         } else if (qtKey == Qt::Key_Backspace || qtKey == Qt::Key_Delete) {
             clearBinding(row, slot);
+            finishCapture(row, slot);
             return CaptureCleared;
         }
     }
@@ -169,6 +188,7 @@ int ShortcutModel::captureKey(int row, int slot, int qtKey, int qtModifiers, qui
     }
 
     commit();
+    finishCapture(row, slot);
     return CaptureAccepted;
 }
 
@@ -189,7 +209,75 @@ int ShortcutModel::captureKeyRelease(int row, int slot, int qtKey, quint32 nativ
     }
 
     commit();
+    finishCapture(row, slot);
     return CaptureAccepted;
+}
+
+void ShortcutModel::cancelCapture()
+{
+    if (m_CaptureFilterInstalled && QCoreApplication::instance() != nullptr) {
+        QCoreApplication::instance()->removeEventFilter(this);
+    }
+    m_CaptureFilterInstalled = false;
+    m_RecorderRow = -1;
+    m_RecorderSlot = -1;
+    m_ModifierRecorder.reset();
+}
+
+void ShortcutModel::finishCapture(int row, int slot)
+{
+    if (row != m_RecorderRow || slot != m_RecorderSlot) {
+        return;
+    }
+    cancelCapture();
+    emit captureFinished(row, slot);
+}
+
+bool ShortcutModel::eventFilter(QObject* watched, QEvent* event)
+{
+    Q_UNUSED(watched);
+    if (!m_CaptureFilterInstalled) {
+        return QAbstractListModel::eventFilter(watched, event);
+    }
+
+    if (event->type() == QEvent::ApplicationDeactivate ||
+        event->type() == QEvent::MouseButtonPress) {
+        cancelCapture();
+        return false;
+    }
+
+    if (event->type() == QEvent::ShortcutOverride) {
+        event->accept();
+        return true;
+    }
+
+    if (event->type() == QEvent::KeyPress) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (!keyEvent->isAutoRepeat()) {
+            const int result = captureKey(m_RecorderRow, m_RecorderSlot, keyEvent->key(),
+                                          keyEvent->modifiers(), keyEvent->nativeScanCode());
+            if (result == CaptureInvalid) {
+                emit captureRejected(m_RecorderRow, m_RecorderSlot);
+            }
+        }
+        return true;
+    }
+
+    if (event->type() == QEvent::KeyRelease) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (!keyEvent->isAutoRepeat()) {
+            const int row = m_RecorderRow;
+            const int slot = m_RecorderSlot;
+            const int result =
+                captureKeyRelease(row, slot, keyEvent->key(), keyEvent->nativeScanCode());
+            if (result == CaptureInvalid) {
+                emit captureRejected(row, slot);
+            }
+        }
+        return true;
+    }
+
+    return QAbstractListModel::eventFilter(watched, event);
 }
 
 void ShortcutModel::clearBinding(int row, int slot)

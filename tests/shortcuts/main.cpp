@@ -1,6 +1,8 @@
 #include "streaming/input/shortcuts.h"
+#include "gui/shortcutmodel.h"
 
 #include <QCoreApplication>
+#include <QKeyEvent>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -324,6 +326,47 @@ bool testModifierRecorder(QTextStream& err)
                   QStringLiteral("AltGr was not recorded as Right Alt"), err);
 
     return ok;
+}
+
+bool testRightAltCaptureAfterFocusChange(QTextStream& err)
+{
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) {
+        return require(false, QStringLiteral("no temporary settings directory"), err);
+    }
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+    QCoreApplication::setOrganizationName(QStringLiteral("MoonlightTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("ShortcutCapture"));
+
+    ShortcutModel model;
+    int holdRow = -1;
+    for (int row = 0; row < model.rowCount(); row++) {
+        if (model.data(model.index(row), ShortcutModel::ActionIdRole).toString() ==
+            QLatin1String(ShortcutActions::HoldReleaseMouse)) {
+            holdRow = row;
+            break;
+        }
+    }
+    if (!require(holdRow >= 0, QStringLiteral("hold-to-release action missing"), err)) {
+        return false;
+    }
+
+    const int pressResult = model.captureKey(holdRow, 0, Qt::Key_Alt, Qt::AltModifier, 0x138);
+    if (!require(pressResult == ShortcutModel::CaptureIgnored,
+                 QStringLiteral("Right Alt press should wait for its release"), err)) {
+        return false;
+    }
+
+    // Alt can move focus away from the binding button before its key-up. The
+    // recorder must still finish from the application-level release event.
+    QObject newFocusTarget;
+    QKeyEvent release(QEvent::KeyRelease, Qt::Key_Alt, Qt::AltModifier, 0x138, 0, 0);
+    QCoreApplication::sendEvent(&newFocusTarget, &release);
+
+    return require(model.bindingText(QLatin1String(ShortcutActions::HoldReleaseMouse)) ==
+                       QLatin1String("Right Alt"),
+                   QStringLiteral("Right Alt was lost after the recorder button lost focus"), err);
 }
 
 bool testQtConversion(QTextStream& err)
@@ -706,6 +749,7 @@ int main(int argc, char* argv[])
     ok &= testMatcher(err);
     ok &= testHoldActions(err);
     ok &= testModifierRecorder(err);
+    ok &= testRightAltCaptureAfterFocusChange(err);
 
     out << (ok ? "PASS" : "FAILED") << '\n';
     return ok ? 0 : 1;

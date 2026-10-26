@@ -27,9 +27,26 @@ SettingsCard {
     }
 
     function stopCapture() {
+        ShortcutModel.cancelCapture()
         captureRow = -1
         captureSlot = -1
         captureRejected = false
+    }
+
+    Connections {
+        target: ShortcutModel
+
+        function onCaptureFinished(row, slot) {
+            if (shortcutCard.captureRow === row && shortcutCard.captureSlot === slot) {
+                shortcutCard.stopCapture()
+            }
+        }
+
+        function onCaptureRejected(row, slot) {
+            if (shortcutCard.captureRow === row && shortcutCard.captureSlot === slot) {
+                shortcutCard.captureRejected = true
+            }
+        }
     }
 
     ChoiceRow {
@@ -131,12 +148,6 @@ SettingsCard {
                             onClicked: {
                                 shortcutCard.startCapture(actionItem.index, index)
                                 forceActiveFocus()
-                            }
-
-                            onActiveFocusChanged: {
-                                if (!activeFocus && capturing) {
-                                    shortcutCard.stopCapture()
-                                }
                             }
 
                             // 录入时抢在窗口级快捷键之前拿到按键

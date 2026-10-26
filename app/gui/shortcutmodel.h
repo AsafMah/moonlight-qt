@@ -4,6 +4,8 @@
 
 #include <QAbstractListModel>
 
+class QEvent;
+
 // Exposes the keyboard shortcut profile to QML, one row per action.
 // Every change is saved to settings immediately.
 class ShortcutModel : public QAbstractListModel
@@ -50,6 +52,7 @@ public:
     Q_ENUM(CaptureResult)
 
     explicit ShortcutModel(QObject* parent = nullptr);
+    ~ShortcutModel() override;
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     QVariant data(const QModelIndex& index, int role) const override;
@@ -69,6 +72,7 @@ public:
     // modifier key on its own when that key comes up with no other key
     // pressed in between.
     Q_INVOKABLE int captureKeyRelease(int row, int slot, int qtKey, quint32 nativeScanCode);
+    Q_INVOKABLE void cancelCapture();
 
     Q_INVOKABLE void clearBinding(int row, int slot);
     Q_INVOKABLE void resetAction(int row);
@@ -80,14 +84,19 @@ public:
 signals:
     void defaultPrefixChanged();
     void bindingsChanged();
+    void captureFinished(int row, int slot);
+    void captureRejected(int row, int slot);
 
 private:
     const ShortcutAction* actionAt(int row) const;
     QString conflictText(const QString& actionId, int slot) const;
     void commit();
+    void finishCapture(int row, int slot);
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
     ShortcutProfile m_Profile;
     ModifierKeyRecorder m_ModifierRecorder;
     int m_RecorderRow = -1;
     int m_RecorderSlot = -1;
+    bool m_CaptureFilterInstalled = false;
 };

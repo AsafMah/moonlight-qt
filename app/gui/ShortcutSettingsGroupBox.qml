@@ -22,9 +22,28 @@ GroupBox {
     }
 
     function stopCapture() {
+        ShortcutModel.cancelCapture()
         captureRow = -1
         captureSlot = -1
         captureRejected = false
+    }
+
+    Connections {
+        target: ShortcutModel
+
+        function onCaptureFinished(row, slot) {
+            if (shortcutsGroupBox.captureRow === row &&
+                shortcutsGroupBox.captureSlot === slot) {
+                shortcutsGroupBox.stopCapture()
+            }
+        }
+
+        function onCaptureRejected(row, slot) {
+            if (shortcutsGroupBox.captureRow === row &&
+                shortcutsGroupBox.captureSlot === slot) {
+                shortcutsGroupBox.captureRejected = true
+            }
+        }
     }
 
     Column {
@@ -155,12 +174,6 @@ GroupBox {
                             onClicked: {
                                 shortcutsGroupBox.startCapture(actionDelegate.actionRow, index)
                                 forceActiveFocus()
-                            }
-
-                            onActiveFocusChanged: {
-                                if (!activeFocus && capturing) {
-                                    shortcutsGroupBox.stopCapture()
-                                }
                             }
 
                             // Claim keys that would otherwise trigger window shortcuts

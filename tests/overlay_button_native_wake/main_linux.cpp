@@ -156,9 +156,8 @@ int main(int argc, char* argv[])
         wakeCount.fetch_add(1, std::memory_order_acq_rel);
         wakeSemaphore.release();
     });
-    button.setClickCallback([&clickCount](const QPoint&, bool) {
-        clickCount.fetch_add(1, std::memory_order_acq_rel);
-    });
+    button.setClickCallback(
+        [&clickCount](const QPoint&) { clickCount.fetch_add(1, std::memory_order_acq_rel); });
     button.showButton(100, 100, 800, 600);
     settleQtEvents(button);
     drainSemaphore(wakeSemaphore);

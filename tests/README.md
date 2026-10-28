@@ -74,6 +74,20 @@ Ctrl+wheel changes opacity through the persistence callback. These use only thei
 own offscreen windows; OS-level capture and real-stream key delivery still require
 verification on the receiving client.
 
+`resolution_match` compiles the production Session resize/report methods with fake
+time, window geometry, transport and decoder-reset events. Run `python -m unittest
+discover -s tests/resolution_match -p 'test_*.py'` from a C++ compiler environment
+(MSVC developer shell on Windows). It covers disabled/unsupported hosts sending
+nothing, debounce, one outstanding request, timeout, 1:1 display gating, fullscreen,
+decoder reset failure and host-initiated changes with matching disabled. Source
+integration gates also protect unique SDL event codes, connection-state reset,
+active-size menu comparisons and explicit quality choices.
+
+Window matching defaults off. It needs a Foundation Sunshine build containing
+[AlkaidLab/foundation-sunshine#729](https://github.com/AlkaidLab/foundation-sunshine/pull/729)
+with `allow_client_resolution_change` enabled; normal releases without its negotiated
+`0x400` capability stay inert. These tests do not alter a host or its display.
+
 - 测试**不得**把 Makefile/.o/可执行文件提交进仓库(.gitignore 已覆盖
   `tests/*/{Makefile*,.qmake.stash,*.o,release,debug}`),历史上曾误提交过
   Linux 二进制毒化 Windows 构建(.qmake.stash 被 MSVC qmake 加载直接报错)。

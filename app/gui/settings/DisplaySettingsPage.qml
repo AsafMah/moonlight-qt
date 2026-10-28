@@ -106,6 +106,15 @@ Column {
         }
 
         ToggleRow {
+            applicable: SystemProperties.hasDesktopEnvironment
+            settingsSearchKeywords: "resolution resize window dynamic display matching sunshine"
+            title: qsTr("Match stream resolution to window size")
+            description: qsTr("Asks the host to change the stream resolution to match the window when it is resized. Fullscreen returns to the configured resolution. Requires a compatible Sunshine host.")
+            checked: StreamingPreferences.resolutionMatchWindow
+            onToggled: function(value) { StreamingPreferences.resolutionMatchWindow = value }
+        }
+
+        ToggleRow {
             settingsSearchKeywords: "aspect ratio stretch sbs 3d vr xr"
             title: qsTr("Stretch presentation")
             description: qsTr("Ignores both client and host PC aspect ratios, which is required for displaying Half-SBS (Side-By-Side) 3D signals to AR/XR devices that only support Full-SBS (usually 1920x1080 per eye, meaning a total resolution of 3840x1080)")

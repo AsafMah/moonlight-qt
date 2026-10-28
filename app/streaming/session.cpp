@@ -5545,6 +5545,8 @@ void Session::exec()
     m_MenuPanel->setActionCallback([this](OverlayMenuPanel::MenuAction action) {
         dispatchQtMenuAction(action);
     });
+    m_MenuPanel->setShortcutProfileCallback(
+        [this](const ShortcutProfile& profile) { m_InputHandler->reloadShortcuts(profile); });
     m_MenuPanel->setRemoteUsbDeviceCallback([this](const QString& deviceId) {
         startRemoteUsb(deviceId);
     });
@@ -5928,6 +5930,7 @@ void Session::exec()
                 }
                 break;
             case SDL_WINDOWEVENT_FOCUS_GAINED:
+                m_InputHandler->reloadShortcuts();
                 if (m_Preferences->muteOnFocusLoss) {
                     m_AudioMuted = false;
                 }

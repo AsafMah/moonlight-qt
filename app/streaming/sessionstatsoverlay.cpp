@@ -120,13 +120,6 @@ bool Session::handleStatsOverlayMenuAction(OverlayMenuPanel::MenuAction action)
         return true;
     }
 
-    if (action == OverlayMenuPanel::MenuAction::EditStatsOverlayPosition) {
-        if (m_StatsOverlay) {
-            m_StatsOverlay->beginEditing();
-        }
-        return true;
-    }
-
     if (action == OverlayMenuPanel::MenuAction::ToggleStatsOverlayDetached) {
         if (m_StatsOverlay) {
             m_PendingStatsOverlayDetached = !m_StatsOverlay->isDetached();

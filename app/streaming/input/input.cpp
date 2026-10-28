@@ -893,16 +893,16 @@ bool SdlInputHandler::isCaptureActive()
     return m_FakeMouseCaptureActive;
 }
 
+bool SdlInputHandler::isSystemKeyCaptureEnabledForWindow()
+{
+    return m_Window != nullptr && m_CaptureSystemKeysMode != StreamingPreferences::CSK_OFF &&
+           (m_CaptureSystemKeysMode != StreamingPreferences::CSK_FULLSCREEN ||
+            isStreamWindowFullscreen(m_Window));
+}
+
 void SdlInputHandler::updateKeyboardGrabState()
 {
-    bool shouldGrab = m_CaptureSystemKeysMode != StreamingPreferences::CSK_OFF && isCaptureActive();
-    if (shouldGrab) {
-        if (m_CaptureSystemKeysMode == StreamingPreferences::CSK_FULLSCREEN &&
-            !isStreamWindowFullscreen(m_Window)) {
-            // Ungrab if it's fullscreen only and we left fullscreen
-            shouldGrab = false;
-        }
-    }
+    const bool shouldGrab = isSystemKeyCaptureEnabledForWindow() && isCaptureActive();
 
 #if SDL_VERSION_ATLEAST(2, 0, 15)
     // On SDL 2.0.15+, we can get keyboard-only grab on Win32, X11, and Wayland.
@@ -932,12 +932,7 @@ bool SdlInputHandler::isSystemKeyCaptureActive()
         return false;
     }
 
-    if (m_CaptureSystemKeysMode == StreamingPreferences::CSK_FULLSCREEN &&
-        !isStreamWindowFullscreen(m_Window)) {
-        return false;
-    }
-
-    return true;
+    return isSystemKeyCaptureEnabledForWindow();
 }
 
 void SdlInputHandler::setCaptureActive(bool active)

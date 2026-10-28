@@ -2390,6 +2390,14 @@
 <context>
     <name>OverlayMenuPanel</name>
     <message>
+        <source>Toggle System Key Capture</source>
+        <translation>切换系统快捷键捕获</translation>
+    </message>
+    <message>
+        <source>Cycle Preset</source>
+        <translation>循环切换预设</translation>
+    </message>
+    <message>
         <source>Stream Quality</source>
         <translation>串流画质</translation>
     </message>

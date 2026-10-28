@@ -161,11 +161,11 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Detected keyboard grab toggle combo");
 
-        // Toggle the system key capture mode
-        if (isSystemKeyCaptureActive()) {
+        // The menu temporarily releases capture before invoking this action.
+        // Toggle the policy, not that temporary release.
+        if (isSystemKeyCaptureEnabledForWindow()) {
             m_CaptureSystemKeysMode = StreamingPreferences::CSK_OFF;
-        }
-        else {
+        } else {
             m_CaptureSystemKeysMode = StreamingPreferences::CSK_ALWAYS;
         }
 
@@ -253,9 +253,9 @@ static bool isAltGrControlPress(const SDL_KeyboardEvent* event)
 }
 #endif
 
-void SdlInputHandler::reloadShortcuts()
+void SdlInputHandler::reloadShortcuts(const ShortcutProfile& profile)
 {
-    m_ShortcutMatcher.setProfile(ShortcutProfile::loadFromSettings());
+    m_ShortcutMatcher.setProfile(profile);
 }
 
 void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)

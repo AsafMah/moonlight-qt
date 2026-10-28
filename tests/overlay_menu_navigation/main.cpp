@@ -5,6 +5,8 @@
 #include <QKeyEvent>
 #include <QWheelEvent>
 #include <QTest>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <optional>
 
 // Native preview of the production panel, with simulated USB status changes.
@@ -492,9 +494,152 @@ static void testPointerEditing()
     waitClosed(panel);
 }
 
+static void testShortcutParity()
+{
+    OverlayMenuPanel panel;
+    panel.updateHostCommands(true, { { QStringLiteral("test"), QStringLiteral("Test command") } });
+    panel.updateSendKeys({ { QStringLiteral("Ctrl+Alt+Del"), QStringLiteral("Ctrl+Alt+Del"),
+                             QStringLiteral("special:ctrl-alt-del") } },
+                         {});
+    const QStringList intentionallyMenuLess{
+        QLatin1String(ShortcutActions::ToggleOverlayMenu),   // Opens/closes this menu.
+        QLatin1String(ShortcutActions::RightAltMouseRelease) // A physical hold, not a click.
+    };
+    QStringList missing;
+    for (const ShortcutAction &action : ShortcutRegistry::instance().actions()) {
+        if (!intentionallyMenuLess.contains(action.id) &&
+            !panel.menuShortcutActions().contains(action.id)) {
+            missing.append(action.id);
+        }
+    }
+    if (!missing.isEmpty())
+        qFatal("registry actions without menu entries: %s", qPrintable(missing.join(", ")));
+}
+
+static void testShortcutRebinding()
+{
+    OverlayMenuPanel panel;
+    ShortcutMatcher matcher;
+    ShortcutDispatcher dispatcher;
+    int calls = 0;
+    dispatcher.setHandler(QLatin1String(ShortcutActions::Quit), [&] { ++calls; });
+    panel.setShortcutProfileCallback(
+        [&](const ShortcutProfile &value) { matcher.setProfile(value); });
+    ShortcutProfile profile;
+    const ShortcutBinding custom = ShortcutBinding::fromString(QStringLiteral("Ctrl+F9"));
+    if (!profile.setBinding(QLatin1String(ShortcutActions::Quit), 0, custom))
+        qFatal("test shortcut was rejected");
+    profile.saveToSettings();
+    panel.setGamepadHints(true, GamepadUiStyleXbox, false, QStringLiteral("Back+Start"));
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
+    QTest::qWait(240);
+    const QString detail = panel.rowDetail(rowOf(panel, MenuAction::Quit));
+    if (!detail.contains(custom.toDisplayString()) || !detail.contains("Back+Start"))
+        qFatal("Disconnect must show the current shortcut and retain its gamepad hint: %s",
+               qPrintable(detail));
+    if (!matcher.processKeyEvent(custom.scancode, 0, custom.modifiers, true, false, dispatcher) ||
+        calls != 1)
+        qFatal("menu hint refresh must update the input matcher too");
+    profile.setBinding(QLatin1String(ShortcutActions::Quit), 0, {});
+    profile.saveToSettings();
+    QTest::qWait(350);
+    if (panel.rowDetail(rowOf(panel, MenuAction::Quit)).contains(custom.toDisplayString()))
+        qFatal("visible menu retained an unbound shortcut");
+    if (!matcher.processKeyEvent(custom.scancode, 0, custom.modifiers, false, false, dispatcher))
+        qFatal("rebind lost the swallowed key-up of a shortcut already held");
+    if (matcher.processKeyEvent(custom.scancode, 0, custom.modifiers, true, false, dispatcher))
+        qFatal("unbound hint disappeared but old shortcut still triggers");
+    panel.closeMenu();
+    waitClosed(panel);
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
+    if (panel.rowDetail(rowOf(panel, MenuAction::Quit)).contains(custom.toDisplayString()))
+        qFatal("reopening retained an unbound shortcut");
+    panel.closeMenu();
+    waitClosed(panel);
+    ShortcutProfile().saveToSettings();
+}
+
+static void testShortcutDispatch()
+{
+    OverlayMenuPanel panel;
+    QString dispatched;
+    panel.setActionCallback(
+        [&](MenuAction action) { dispatched = OverlayMenuPanel::shortcutActionId(action); });
+    const struct
+    {
+        MenuAction action;
+        const char *id;
+    } cases[] = {
+        { MenuAction::ToggleKeyboardGrab, ShortcutActions::ToggleKeyboardGrab },
+        { MenuAction::CycleOverlayPreset, ShortcutActions::CycleOverlayPreset },
+        { MenuAction::EditStatsOverlayPosition, ShortcutActions::EditOverlayPosition },
+    };
+    for (const auto &test : cases) {
+        panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
+        QTest::qWait(240);
+        if (test.action == MenuAction::ToggleKeyboardGrab)
+            panel.showTab(MenuTab::Input);
+        else
+            panel.showLevel(MenuAction::OpenStatsOverlay);
+        QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                          rowCenter(panel, rowOf(panel, test.action)));
+        if (dispatched != QLatin1String(test.id))
+            qFatal("menu did not dispatch shortcut %s", test.id);
+        waitClosed(panel);
+    }
+
+    ShortcutProfile profile;
+    profile.setBinding(QLatin1String(ShortcutActions::SendCtrlAltDel), 0,
+                       ShortcutBinding::fromString(QStringLiteral("Ctrl+F11")));
+    profile.saveToSettings();
+    const QString payload = QStringLiteral("special:ctrl-alt-del");
+    panel.updateSendKeys(
+        { { QStringLiteral("Ctrl+Alt+Del"), QStringLiteral("Ctrl+Alt+Del"), payload },
+          { QStringLiteral("Alt+Tab"), QStringLiteral("Alt+Tab"),
+            QStringLiteral("special:alt-tab") } },
+        {});
+    panel.setPayloadActionCallback([&](MenuAction action, const QString &value) {
+        if (action != MenuAction::SendHostKeys || value != payload)
+            qFatal("Send Keys dispatched the wrong host payload");
+        dispatched = OverlayMenuPanel::shortcutActionId(action, value);
+    });
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
+    QTest::qWait(240);
+    panel.showSendKeysLevel();
+    const int row = rowOf(panel, MenuAction::SendHostKeys, payload);
+    const QString detail = panel.rowDetail(row);
+    if (!detail.contains("Ctrl+Alt+Del") || !detail.contains("Ctrl+F11"))
+        qFatal("Send Keys must retain the remote chord beside the rebound local hint");
+    if (!OverlayMenuPanel::shortcutActionId(MenuAction::SendHostKeys,
+                                            QStringLiteral("special:alt-tab"))
+             .isEmpty())
+        qFatal("Ctrl+Alt+Del hint was applied to a different Send Keys payload");
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, rowCenter(panel, row));
+    if (dispatched != QLatin1String(ShortcutActions::SendCtrlAltDel))
+        qFatal("Send Ctrl+Alt+Del was not reachable through Send Keys");
+    waitClosed(panel);
+    ShortcutProfile().saveToSettings();
+}
+
 int main(int argc, char **argv)
 {
     QGuiApplication app(argc, argv);
+    QTemporaryDir settingsDirectory;
+    if (!settingsDirectory.isValid())
+        qFatal("cannot create isolated settings");
+    QCoreApplication::setOrganizationName(QStringLiteral("MoonlightTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("OverlayMenuNavigation"));
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDirectory.path());
+    if (app.arguments().contains(QStringLiteral("--shortcut-parity"))) {
+        testShortcutParity();
+        return 0;
+    }
+    if (app.arguments().contains(QStringLiteral("--shortcut-rebinding"))) {
+        testShortcutRebinding();
+        testShortcutDispatch();
+        return 0;
+    }
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/Manrope-Regular.ttf"));
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/Manrope-SemiBold.ttf"));
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/DMMono-Regular.ttf"));
@@ -946,5 +1091,8 @@ int main(int argc, char **argv)
     testOverlayAttachmentOptions(panel);
     testMenuOptions(panel);
     testPointerEditing();
+    testShortcutParity();
+    testShortcutRebinding();
+    testShortcutDispatch();
     return 0;
 }

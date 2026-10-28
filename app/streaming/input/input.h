@@ -177,7 +177,7 @@ public:
     ShortcutDispatcher& getShortcutDispatcher() { return m_ShortcutDispatcher; }
 
     // Re-reads the keyboard shortcut bindings from settings
-    void reloadShortcuts();
+    void reloadShortcuts(const ShortcutProfile& profile = ShortcutProfile::loadFromSettings());
 
     void handleMouseButtonEvent(SDL_MouseButtonEvent* event);
 
@@ -271,6 +271,7 @@ public:
     bool cancelMouseHoldRelease();
 
     bool isSystemKeyCaptureActive();
+    bool isSystemKeyCaptureEnabledForWindow();
 
     void setCaptureActive(bool active);
 

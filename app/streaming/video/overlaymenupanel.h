@@ -134,6 +134,8 @@ public:
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         OpenStylusReplayPanel,
 #endif
+        ToggleKeyboardGrab,
+        CycleOverlayPreset,
         MenuActionMax
     };
 
@@ -266,7 +268,11 @@ public:
 
     // Shortcut action (see ShortcutActions) behind a quick action, or empty.
     // The session triggers these through the input handler's dispatcher.
-    static QString shortcutActionId(MenuAction action);
+    static QString shortcutActionId(MenuAction action, const QString& payload = {});
+    void setShortcutProfileCallback(std::function<void(const ShortcutProfile&)> callback)
+    {
+        m_ShortcutProfileCallback = std::move(callback);
+    }
 
     // Position the panel at the right edge of the given Qt logical parent rect.
     void showAtRightEdge(int parentX, int parentY, int parentW, int parentH,
@@ -403,6 +409,8 @@ public:
     // rows and tabs by identity instead of by pixel offsets.
     // Row of the shown level with this action (and payload, when given), or -1.
     int rowOfAction(MenuAction action, const QString& payload = QString()) const;
+    QStringList menuShortcutActions() const;
+    QString rowDetail(int row) const;
     QRect rowGeometry(int row) const;
     QRect tabGeometry(MenuTab tab) const; // empty when the tab is hidden
 
@@ -514,7 +522,9 @@ private:
     void saveEditedStyle();
     void applyStatsOverlayState();
     void applyMenuAttachmentState();
-    QString shortcutDetail(MenuAction action) const; // live key binding text
+    QString shortcutDetail(MenuAction action, const QString& payload = {}) const;
+    QString displayDetail(const MenuItem& item) const;
+    void refreshShortcuts();
     MenuLevel buildStreamQualityLevel() const;
     bool handleStreamQualityItem(const MenuItem& item); // true when consumed
     void navigateToLevel(int level);
@@ -576,6 +586,8 @@ private:
     bool m_SwapFaceButtons;
     QString m_QuitComboGlyphs;
     ShortcutProfile m_ShortcutProfile;
+    QTimer m_ShortcutRefreshTimer;
+    std::function<void(const ShortcutProfile&)> m_ShortcutProfileCallback;
     FileMappingState m_FileMappingState;
     QString m_FileMappingDetail;
     bool m_RemoteUsbAvailable;

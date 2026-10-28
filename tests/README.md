@@ -31,6 +31,7 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | usb_forwarding_backend_sysfs | Linux sysfs 枚举 → 设备表解析（夹具目录，跳过 hub/接口/根 hub） | Linux |
 | ds5_ir_renderer | DualSense 触觉 IR 渲染 | Windows |
 | keyboard_state | 扩展键区分、国际键标志、失焦松键失败重试 | Windows |
+| system_key_capture | Production capture policy and menu-toggle lifecycle with fake native input | Ubuntu(unittest + C++) |
 | gamepad_sensor_rate | 低传感器频率周期存储、禁用值、全频率范围限速上界 | Windows |
 | pen_history_selection | 手写笔历史选择 | Windows |
 | stylus_replay | 手写笔录制回放 | Windows |
@@ -73,6 +74,18 @@ actions, the body drags, edges resize with fixed opposite edges, wheel zooms and
 Ctrl+wheel changes opacity through the persistence callback. These use only their
 own offscreen windows; OS-level capture and real-stream key delivery still require
 verification on the receiving client.
+
+`overlay_menu_navigation` enforces shortcut-registry/menu parity with only the
+menu-toggle and physical Right Alt hold excluded. It checks actual row invocation,
+payload-specific Ctrl+Alt+Del hints, live rebinding and removal, retained gamepad
+and remote-chord details, and the input matcher's held-key release across a rebind.
+The same profile snapshot updates hints and dispatch while the menu is open.
+
+`system_key_capture` compiles the actual input capture methods and keyboard-toggle
+case against fake SDL input. It preserves the existing capture-mode matrix and
+checks that opening the menu does not turn the keyboard-capture toggle into an
+always-enable action. Run `python -m unittest discover -s tests/system_key_capture
+-p 'test_*.py'` from a C++ compiler environment; it never grabs desktop input.
 
 `resolution_match` compiles the production Session resize/report methods with fake
 time, window geometry, transport and decoder-reset events. Run `python -m unittest

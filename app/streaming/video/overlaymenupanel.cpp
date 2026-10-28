@@ -131,6 +131,7 @@ constexpr TabAssignment kTabAssignments[] = {
     { MenuAction::ToggleCursorHide, MenuTab::Input },
     { MenuAction::UngrabInput, MenuTab::Input },
     { MenuAction::TogglePointerRegionLock, MenuTab::Input },
+    { MenuAction::ToggleKeyboardGrab, MenuTab::Input },
     { MenuAction::PasteText, MenuTab::Input },
     { MenuAction::OpenRemoteUsbDevices, MenuTab::Input },
     // Host: features the host offers
@@ -242,8 +243,9 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode
         commitBitrateNow();
     });
 
-    // Bindings can only change in the settings page, never mid-stream
     m_ShortcutProfile = ShortcutProfile::loadFromSettings();
+    m_ShortcutRefreshTimer.setInterval(250);
+    connect(&m_ShortcutRefreshTimer, &QTimer::timeout, this, &OverlayMenuPanel::refreshShortcuts);
 
     buildMenuLevels();
 }
@@ -524,7 +526,8 @@ int OverlayMenuPanel::requiredMenuWidth() const
         const bool tabRoot = isTabRootLevel(l);
         titles.push_back({ m_MenuLevels[l].title, tabRoot });
         for (const MenuItem& item : m_MenuLevels[l].items) {
-            rows.emplace_back(item.label, item.detail, static_cast<int>(item.type), tabRoot);
+            rows.emplace_back(item.label, displayDetail(item), static_cast<int>(item.type),
+                              tabRoot);
         }
     }
     for (const TextNeed& need :
@@ -555,7 +558,8 @@ QStringList OverlayMenuPanel::clippedTexts() const
         const bool tabRoot = isTabRootLevel(l);
         titles.push_back({ m_MenuLevels[l].title, tabRoot });
         for (const MenuItem& item : m_MenuLevels[l].items) {
-            rows.emplace_back(item.label, item.detail, static_cast<int>(item.type), tabRoot);
+            rows.emplace_back(item.label, displayDetail(item), static_cast<int>(item.type),
+                              tabRoot);
         }
     }
     for (const TextNeed& need :
@@ -623,7 +627,7 @@ std::optional<OverlayMenu::Layout> OverlayMenuPanel::layoutForAction(MenuAction 
 // Menu structure
 // ---------------------------------------------------------------------------
 
-QString OverlayMenuPanel::shortcutActionId(MenuAction action)
+QString OverlayMenuPanel::shortcutActionId(MenuAction action, const QString& payload)
 {
     switch (action) {
     case MenuAction::Quit:
@@ -646,20 +650,79 @@ QString OverlayMenuPanel::shortcutActionId(MenuAction action)
         return QLatin1String(ShortcutActions::PasteText);
     case MenuAction::TogglePointerRegionLock:
         return QLatin1String(ShortcutActions::TogglePointerRegionLock);
+    case MenuAction::ToggleKeyboardGrab:
+        return QLatin1String(ShortcutActions::ToggleKeyboardGrab);
+    case MenuAction::CycleOverlayPreset:
+        return QLatin1String(ShortcutActions::CycleOverlayPreset);
+    case MenuAction::EditStatsOverlayPosition:
+        return QLatin1String(ShortcutActions::EditOverlayPosition);
+    case MenuAction::OpenHostCommands:
+        return QLatin1String(ShortcutActions::OpenHostCommands);
+    case MenuAction::SendHostKeys:
+        return payload == QLatin1String("special:ctrl-alt-del")
+                   ? QLatin1String(ShortcutActions::SendCtrlAltDel)
+                   : QString();
     default:
         return QString();
     }
 }
 
-QString OverlayMenuPanel::shortcutDetail(MenuAction action) const
+QString OverlayMenuPanel::shortcutDetail(MenuAction action, const QString& payload) const
 {
     QStringList texts;
-    for (const ShortcutBinding& binding : m_ShortcutProfile.bindings(shortcutActionId(action))) {
+    for (const ShortcutBinding& binding :
+         m_ShortcutProfile.bindings(shortcutActionId(action, payload))) {
         if (!binding.isNull()) {
             texts.append(binding.toDisplayString());
         }
     }
     return texts.join(QStringLiteral(" / "));
+}
+
+QString OverlayMenuPanel::displayDetail(const MenuItem& item) const
+{
+    const QString shortcut = shortcutDetail(item.action, item.payload);
+    if (shortcut.isEmpty() || shortcut == item.detail) {
+        return item.detail;
+    }
+    return item.detail.isEmpty() ? shortcut : item.detail + QStringLiteral(" · ") + shortcut;
+}
+
+void OverlayMenuPanel::refreshShortcuts()
+{
+    const ShortcutProfile profile = ShortcutProfile::loadFromSettings();
+    bool changed = false;
+    for (const ShortcutAction& action : ShortcutRegistry::instance().actions()) {
+        changed |= profile.bindings(action.id) != m_ShortcutProfile.bindings(action.id);
+    }
+    m_ShortcutProfile = profile;
+    if (m_ShortcutProfileCallback) {
+        m_ShortcutProfileCallback(profile);
+    }
+    if (changed && m_Visible) {
+        repositionWindow();
+        requestUpdate();
+    }
+}
+
+QStringList OverlayMenuPanel::menuShortcutActions() const
+{
+    QStringList actions;
+    for (const MenuLevel& level : m_MenuLevels) {
+        for (const MenuItem& item : level.items) {
+            const QString action = shortcutActionId(item.action, item.payload);
+            if (!action.isEmpty()) {
+                actions.append(action);
+            }
+        }
+    }
+    actions.removeDuplicates();
+    return actions;
+}
+
+QString OverlayMenuPanel::rowDetail(int row) const
+{
+    return displayDetail(m_MenuLevels.at(m_CurrentLevel).items.at(row));
 }
 
 OverlayMenuPanel::MenuTab OverlayMenuPanel::tabForAction(MenuAction action)
@@ -773,7 +836,7 @@ void OverlayMenuPanel::buildMenuLevels()
     // order inside a tab is the order of the tab table. ===
     std::vector<MenuItem> entries;
 
-    QString statsDetail = shortcutDetail(MenuAction::ToggleStatsOverlay);
+    QString statsDetail;
     if (m_HasGamepads) {
         // 手柄组合键与键盘快捷键并列展示,按键名按实体手柄风格显示;
         // swapFaceButtons 时同样补偿到实际要按的物理键
@@ -789,19 +852,18 @@ void OverlayMenuPanel::buildMenuLevels()
     // Quick
     entries.push_back({ tr("Performance Stats"), statsDetail, MenuItemType::Action,
                         MenuAction::ToggleStatsOverlay, 0, true, false, false });
-    entries.push_back({ tr("Mouse Mode"), shortcutDetail(MenuAction::ToggleMouseMode),
-                        MenuItemType::Action, MenuAction::ToggleMouseMode, 0, true, false, false });
-    entries.push_back({ tr("Toggle Fullscreen"), shortcutDetail(MenuAction::ToggleFullScreen),
-                        MenuItemType::Action, MenuAction::ToggleFullScreen, 0, true, false,
-                        false });
-    entries.push_back({ tr("Minimize"), shortcutDetail(MenuAction::ToggleMinimize),
-                        MenuItemType::Action, MenuAction::ToggleMinimize, 0, true, false, true });
+    entries.push_back({ tr("Mouse Mode"), QString(), MenuItemType::Action,
+                        MenuAction::ToggleMouseMode, 0, true, false, false });
+    entries.push_back({ tr("Toggle Fullscreen"), QString(), MenuItemType::Action,
+                        MenuAction::ToggleFullScreen, 0, true, false, false });
+    entries.push_back({ tr("Minimize"), QString(), MenuItemType::Action, MenuAction::ToggleMinimize,
+                        0, true, false, true });
     entries.push_back({ tr("Microphone"), QString(), MenuItemType::Toggle,
                         MenuAction::ToggleMicrophone, 0, true, false, true });
     entries.push_back({ tr("Disconnect"), m_HasGamepads ? m_QuitComboGlyphs : QString(),
                         MenuItemType::Action, MenuAction::Quit, 0, true, false, false });
-    entries.push_back({ tr("Quit Moonlight"), shortcutDetail(MenuAction::QuitAndExit),
-                        MenuItemType::Action, MenuAction::QuitAndExit, 0, true, false, false });
+    entries.push_back({ tr("Quit Moonlight"), QString(), MenuItemType::Action,
+                        MenuAction::QuitAndExit, 0, true, false, false });
     // Display. SubMenu target levels are filled in once the levels exist.
     entries.push_back({ tr("Stream Quality"),
                         m_StreamQuality.fps > 0
@@ -827,17 +889,16 @@ void OverlayMenuPanel::buildMenuLevels()
         entries.push_back({ tr("Gamepad Mouse"), QString(), MenuItemType::Toggle,
                             MenuAction::ToggleGamepadMouse, 0, true, false, false });
     }
-    entries.push_back({ tr("Show/Hide Cursor"), shortcutDetail(MenuAction::ToggleCursorHide),
-                        MenuItemType::Action, MenuAction::ToggleCursorHide, 0, true, false,
-                        false });
-    entries.push_back({ tr("Ungrab Mouse"), shortcutDetail(MenuAction::UngrabInput),
-                        MenuItemType::Action, MenuAction::UngrabInput, 0, true, false, false });
-    entries.push_back({ tr("Pointer Region Lock"),
-                        shortcutDetail(MenuAction::TogglePointerRegionLock), MenuItemType::Action,
+    entries.push_back({ tr("Show/Hide Cursor"), QString(), MenuItemType::Action,
+                        MenuAction::ToggleCursorHide, 0, true, false, false });
+    entries.push_back({ tr("Ungrab Mouse"), QString(), MenuItemType::Action,
+                        MenuAction::UngrabInput, 0, true, false, false });
+    entries.push_back({ tr("Pointer Region Lock"), QString(), MenuItemType::Action,
                         MenuAction::TogglePointerRegionLock, 0, true, false, false });
-    entries.push_back({ tr("Paste Clipboard"), shortcutDetail(MenuAction::PasteText),
-                        MenuItemType::Action, MenuAction::PasteText, 0, true, false,
-                        m_RemoteUsbAvailable });
+    entries.push_back({ tr("Toggle System Key Capture"), QString(), MenuItemType::Action,
+                        MenuAction::ToggleKeyboardGrab, 0, true, false, false });
+    entries.push_back({ tr("Paste Clipboard"), QString(), MenuItemType::Action,
+                        MenuAction::PasteText, 0, true, false, m_RemoteUsbAvailable });
     if (m_RemoteUsbAvailable) {
         entries.push_back({ tr("USB Devices"),
                             m_RemoteUsbNeedsActivation ? tr("Activate device") : m_RemoteUsbDetail,
@@ -1014,6 +1075,8 @@ void OverlayMenuPanel::buildMenuLevels()
                             MenuAction::SetStatsPresetDetailed, 0, true, false, false });
     stats.items.push_back({ tr("Custom"), QString(), MenuItemType::Action,
                             MenuAction::SetStatsPresetCustom, 0, true, false, true });
+    stats.items.push_back({ tr("Cycle Preset"), QString(), MenuItemType::Action,
+                            MenuAction::CycleOverlayPreset, 0, true, false, false });
     stats.items.push_back({ tr("Edit position"), QString(), MenuItemType::Action,
                             MenuAction::EditStatsOverlayPosition, 0, m_StatsOverlayEditable, false,
                             false });
@@ -2032,6 +2095,8 @@ void OverlayMenuPanel::showWithPlacement(OverlayMenu::Placement placement, int p
 
 void OverlayMenuPanel::showInternal()
 {
+    refreshShortcuts();
+    m_ShortcutRefreshTimer.start();
     m_UserInteracted = false;
     m_TitlePressed = false;
     m_TitleDragging = false;
@@ -2269,6 +2334,7 @@ void OverlayMenuPanel::ignoreOpeningClickAt(const QPoint& parentPosition)
 
 void OverlayMenuPanel::closeMenu()
 {
+    m_ShortcutRefreshTimer.stop();
     if (!m_Visible) return;
     if (m_Closing) return;  // already animating close
 
@@ -2594,25 +2660,25 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
         }
 
         // --- SubMenu item ---
+        const QString detail = displayDetail(item);
         if (item.type == MenuItemType::SubMenu) {
             p.setFont(m_LabelFont);
             p.setPen(activationPrompt ? MenuAccent : item.enabled ? MenuText : MenuFaint);
             // Detail text (e.g., "20 Mbps") right before the arrow, the
             // label in the rest of the row
             const int arrowSpace = textPad + 20;
-            const int detailWidth = item.detail.isEmpty()
-                                        ? 0
-                                        : QFontMetrics(m_DetailFont).horizontalAdvance(item.detail);
+            const int detailWidth =
+                detail.isEmpty() ? 0 : QFontMetrics(m_DetailFont).horizontalAdvance(detail);
             QRect lr(labelX, itemY,
                      rw - labelX - arrowSpace - (detailWidth > 0 ? detailWidth + 12 : 0),
                      m_ItemHeight);
             p.drawText(lr, Qt::AlignLeft | Qt::AlignVCenter, item.label);
 
-            if (!item.detail.isEmpty()) {
+            if (!detail.isEmpty()) {
                 p.setFont(m_DetailFont);
                 p.setPen(activationPrompt ? MenuAccent : MenuDim);
                 QRect dr(rw - arrowSpace - detailWidth, itemY, detailWidth, m_ItemHeight);
-                p.drawText(dr, Qt::AlignRight | Qt::AlignVCenter, item.detail);
+                p.drawText(dr, Qt::AlignRight | Qt::AlignVCenter, detail);
             }
 
             drawIcon(QStringLiteral("menu-next"),
@@ -2688,8 +2754,8 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
             p.setFont(m_LabelFont);
             p.setPen(item.enabled ? MenuText : MenuFaint);
 
-            bool hasLongDetail = !item.detail.isEmpty() && item.detail.length() > 3;
-            bool hasShortDetail = !item.detail.isEmpty() && item.detail.length() <= 3;
+            bool hasLongDetail = !detail.isEmpty() && detail.length() > 3;
+            bool hasShortDetail = !detail.isEmpty() && detail.length() <= 3;
 
             if (hasLongDetail) {
                 int topH = qRound(m_ItemHeight * 0.58);
@@ -2699,12 +2765,12 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
                 p.setFont(m_DetailFont);
                 p.setPen(activationPrompt ? MenuAccent : MenuDim);
                 QRect sr(labelX, itemY + topH, rw - labelX - textPad, m_ItemHeight - topH);
-                p.drawText(sr, Qt::AlignLeft | Qt::AlignTop, item.detail);
+                p.drawText(sr, Qt::AlignLeft | Qt::AlignTop, detail);
             } else {
                 int detailWidth = 0;
                 if (hasShortDetail) {
                     const QFontMetrics detailMetrics(m_DetailFont);
-                    detailWidth = qMax(20, detailMetrics.horizontalAdvance(item.detail) + 8);
+                    detailWidth = qMax(20, detailMetrics.horizontalAdvance(detail) + 8);
                 }
 
                 const int detailGap = hasShortDetail ? 8 : 0;
@@ -2717,7 +2783,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
                     p.setFont(m_DetailFont);
                     p.setPen(MenuAccent);
                     QRect cr(rw - textPad - detailWidth, itemY, detailWidth, m_ItemHeight);
-                    p.drawText(cr, Qt::AlignRight | Qt::AlignVCenter, item.detail);
+                    p.drawText(cr, Qt::AlignRight | Qt::AlignVCenter, detail);
                 }
             }
         }

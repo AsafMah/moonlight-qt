@@ -150,6 +150,7 @@ private:
     bool m_Editing = false;
     StatsOverlay::Preset m_Preset;
     StatsOverlay::Anchor m_Anchor = StatsOverlay::Anchor::TopLeft;
+    std::optional<QPoint> m_AttachedPosition;
     QVector<StatsOverlay::Metric> m_Metrics;
     QString m_DisplayKey;
     QSize m_WindowSize; // only grows between style changes, see refreshNow()

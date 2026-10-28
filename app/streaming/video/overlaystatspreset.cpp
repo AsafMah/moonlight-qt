@@ -274,6 +274,30 @@ Anchor nearestAnchor(const QRect& parent, const QPoint& point)
     return static_cast<Anchor>(row * 3 + column);
 }
 
+QPoint lightlySnappedPosition(const QPoint& topLeft, const QSize& size, const QRect& bounds,
+                              int threshold)
+{
+    if (!bounds.isValid()) {
+        return topLeft;
+    }
+    const auto placeAxis = [threshold](int value, int start, int span, int extent) {
+        const int end = start + std::max(span - extent, 0);
+        value = std::clamp(value, start, end);
+        int result = value;
+        int closest = threshold + 1;
+        for (int target : { start, start + (end - start) / 2, end }) {
+            const int distance = std::abs(value - target);
+            if (distance < closest) {
+                closest = distance;
+                result = target;
+            }
+        }
+        return result;
+    };
+    return QPoint(placeAxis(topLeft.x(), bounds.x(), bounds.width(), size.width()),
+                  placeAxis(topLeft.y(), bounds.y(), bounds.height(), size.height()));
+}
+
 namespace {
 
 // rect moved to lie inside area; its top-left wins when it is too big

@@ -60,6 +60,7 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 `stats_overlay_layout` also exercises the production overlay painter at 75/80/100% and
 1/1.5/2 device-pixel ratios, verifies readable Compact labels, all 13 metrics, flush-top
 placement/editing, 55% metric chips with transparent gaps and soft shadows,
+generous resize zones, exact free dragging with 4 px magnets,
 and preserves explicit settings when defaults change. Set
 `MOONLIGHT_OVERLAY_TEST_OUTPUT_DIR` to save PNGs for visual inspection; it does not start
 a stream or send desktop input.

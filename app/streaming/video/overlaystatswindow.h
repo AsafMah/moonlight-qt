@@ -71,6 +71,8 @@ public:
     // presets, which always fit their content.
     void setBodySize(const QSize& size) { m_BodySize = size; }
     void setMaximumBodySize(const QSize& size) { m_MaximumBodySize = size; }
+    void setMovementBounds(const QRect& bounds) { m_MovementBounds = bounds; }
+    QPoint bodyPosition() const;
     bool isResizable() const { return StatsOverlay::presetIsResizable(m_Preset); }
 
     // Where the body sits when the window is larger than it (the controller
@@ -196,6 +198,7 @@ private:
     int m_OpacityPercent = StatsOverlay::DefaultOpacityPercent;
     QSize m_BodySize;
     QSize m_MaximumBodySize;
+    QRect m_MovementBounds;
 
     Qt::Alignment m_BodyAlignment = Qt::AlignLeft | Qt::AlignTop;
 

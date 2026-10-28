@@ -208,6 +208,29 @@ bool testDefaultsAndPersistence(QTextStream& err)
     ok &=
         require(overlay.scalePercent() == 100 && overlay.opacityPercent() == 85,
                 QStringLiteral("explicit old defaults must not be mistaken for unset values"), err);
+    ok &= require(!overlay.attachedPosition(QStringLiteral("test")),
+                  QStringLiteral("legacy anchors must not be migrated to free positions"), err);
+    overlay.setAttachedPosition(QStringLiteral("test"), QPoint(237, 191));
+    overlay.setDisplayPreset(QStringLiteral("test"), Preset::Detailed);
+    overlay.setDisplaySize(QStringLiteral("test"), Preset::Detailed, QSize(500, 300));
+    StatsOverlaySettings reopened;
+    ok &=
+        require(reopened.attachedPosition(QStringLiteral("test")) == QPoint(237, 191) &&
+                    !reopened.attachedPosition(QStringLiteral("other")) &&
+                    reopened.detachedPosition(QStringLiteral("test")) == QPoint(-500, 300),
+                QStringLiteral("exact free placement must survive size/preset changes and reopen, "
+                               "without affecting another display or detached placement"),
+                err);
+    overlay.setDisplayAnchor(QStringLiteral("test"), Anchor::TopRight);
+    ok &= require(!overlay.attachedPosition(QStringLiteral("test")),
+                  QStringLiteral("an explicit anchor choice must replace free placement"), err);
+    overlay.setAttachedPosition(QStringLiteral("test"), QPoint(0, 0));
+    ok &= require(reopened.attachedPosition(QStringLiteral("test")) == QPoint(0, 0),
+                  QStringLiteral("zero-origin placement must not be confused with unset"), err);
+    overlay.resetPlacements();
+    ok &= require(!reopened.attachedPosition(QStringLiteral("test")) &&
+                      !reopened.detachedPosition(QStringLiteral("test")),
+                  QStringLiteral("reset placements must clear free and detached positions"), err);
     settings.clear();
     return ok;
 }
@@ -556,6 +579,108 @@ bool testFlushTop(QTextStream& err)
     return ok;
 }
 
+bool testResizeGrabZones(QTextStream& err)
+{
+    bool ok = true;
+    for (int zone = 0; zone < 3; zone++) {
+        RenderWindow window;
+        window.setStats(sample(), {});
+        window.setPreset(Preset::Compact);
+        window.render();
+        const int bodyHeight = window.height() - 4;
+        window.setEditing(true);
+        window.render();
+        bool resized = false;
+        bool moved = false;
+        window.setResizeFinishedCallback([&](const QPoint&, const QSize&) { resized = true; });
+        window.setDragFinishedCallback([&](const QPoint&) { moved = true; });
+        const QPoint point = zone == 0   ? QPoint(window.width() / 2, bodyHeight + 9)
+                             : zone == 1 ? QPoint(10, bodyHeight / 2)
+                                         : QPoint(window.width() / 2, bodyHeight / 2);
+        const QPoint global = window.position() + point;
+        QMouseEvent hover(QEvent::MouseMove, QPointF(point), QPointF(global), Qt::NoButton,
+                          Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &hover);
+        const Qt::CursorShape expected = zone == 0   ? Qt::SizeVerCursor
+                                         : zone == 1 ? Qt::SizeHorCursor
+                                                     : Qt::SizeAllCursor;
+        ok &= require(
+            window.cursor().shape() == expected,
+            QStringLiteral("resize zone %1 lacks the correct resize/move cursor").arg(zone), err);
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(point), QPointF(global), Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &press);
+        const QPoint delta(20, 20);
+        QMouseEvent move(QEvent::MouseMove, QPointF(point + delta), QPointF(global + delta),
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &move);
+        QMouseEvent release(QEvent::MouseButtonRelease, QPointF(point + delta),
+                            QPointF(global + delta), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &release);
+        ok &= require(zone == 2 ? moved && !resized : resized && !moved,
+                      QStringLiteral("zone %1 must %2")
+                          .arg(zone)
+                          .arg(zone == 2 ? QStringLiteral("move from the center")
+                                         : QStringLiteral("resize over edge/footer text")),
+                      err);
+    }
+    return ok;
+}
+
+bool testLightSnapping(QTextStream& err)
+{
+    bool ok = true;
+    const QSize size(600, 60);
+    for (const QRect& bounds : { QRect(0, 0, 1920, 1080), QRect(-1920, -500, 1920, 1080) }) {
+        const QPoint free = bounds.topLeft() + QPoint(237, 191);
+        ok &= require(lightlySnappedPosition(free, size, bounds) == free,
+                      QStringLiteral("an arbitrary drop must not jump to a nine-grid anchor"), err);
+        const QPoint near = bounds.topLeft() + QPoint(3, 191);
+        ok &=
+            require(lightlySnappedPosition(near, size, bounds) == bounds.topLeft() + QPoint(0, 191),
+                    QStringLiteral("edge magnet must only affect the nearby axis"), err);
+        const QPoint pulledAway = bounds.topLeft() + QPoint(5, 191);
+        ok &= require(lightlySnappedPosition(pulledAway, size, bounds) == pulledAway,
+                      QStringLiteral("edge magnet must release beyond four pixels"), err);
+    }
+    return ok;
+}
+
+bool testLiveFreeDrag(QTextStream& err)
+{
+    RenderWindow window;
+    window.setStats(sample(), {});
+    window.setPreset(Preset::Compact);
+    window.setEditing(true);
+    window.render();
+    const QRect bounds(-1920, -500, 1920, 1080);
+    window.setMovementBounds(bounds);
+    const QPoint start = bounds.topLeft() + QPoint(100, 50);
+    const QPoint local(window.width() / 2, 14);
+    bool ok = true;
+    for (const QPoint& offset : { QPoint(237, 191), QPoint(3, 191), QPoint(5, 191) }) {
+        window.setPosition(start);
+        const QPoint global = start + local;
+        const QPoint delta = bounds.topLeft() + offset - start;
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(local), QPointF(global), Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &press);
+        QMouseEvent move(QEvent::MouseMove, QPointF(local + delta), QPointF(global + delta),
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &move);
+        const QPoint expected =
+            bounds.topLeft() + QPoint(offset.x() == 3 ? 0 : offset.x(), offset.y());
+        ok &= require(window.position() == expected,
+                      QStringLiteral("live drag must only magnetize within four pixels"), err);
+        QMouseEvent release(QEvent::MouseButtonRelease, QPointF(local + delta),
+                            QPointF(global + delta), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &release);
+        ok &= require(window.position() == expected,
+                      QStringLiteral("dropping a free drag must not snap back to an anchor"), err);
+    }
+    return ok;
+}
+
 } // namespace
 
 bool runWindowRenderTests(QTextStream& err)
@@ -566,5 +691,8 @@ bool runWindowRenderTests(QTextStream& err)
     ok &= testSceneComposites(err);
     ok &= testAppearanceCandidates(err);
     ok &= testFlushTop(err);
+    ok &= testResizeGrabZones(err);
+    ok &= testLightSnapping(err);
+    ok &= testLiveFreeDrag(err);
     return ok;
 }

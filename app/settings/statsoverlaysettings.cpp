@@ -14,6 +14,7 @@
 #define SER_ANCHOR "anchor"
 #define SER_SIZE "size"
 #define SER_DETACHED_POS "detached/pos"
+#define SER_ATTACHED_POS "attached/pos"
 
 using namespace StatsOverlay;
 
@@ -234,8 +235,21 @@ StatsOverlaySettings::displayState(const QString& displayKey) const
 
 void StatsOverlaySettings::setDisplayAnchor(const QString& displayKey, Anchor anchor)
 {
-    QSettings().setValue(displayGroup(displayKey) + QStringLiteral("/" SER_ANCHOR),
-                         anchorId(anchor));
+    QSettings settings;
+    settings.setValue(displayGroup(displayKey) + QStringLiteral("/" SER_ANCHOR), anchorId(anchor));
+    settings.remove(displayGroup(displayKey) + QStringLiteral("/" SER_ATTACHED_POS));
+}
+
+std::optional<QPoint> StatsOverlaySettings::attachedPosition(const QString& displayKey) const
+{
+    const QVariant value =
+        QSettings().value(displayGroup(displayKey) + QStringLiteral("/" SER_ATTACHED_POS));
+    return value.isValid() ? std::optional<QPoint>(value.toPoint()) : std::nullopt;
+}
+
+void StatsOverlaySettings::setAttachedPosition(const QString& displayKey, const QPoint& position)
+{
+    QSettings().setValue(displayGroup(displayKey) + QStringLiteral("/" SER_ATTACHED_POS), position);
 }
 
 void StatsOverlaySettings::setDisplayPreset(const QString& displayKey, Preset preset)

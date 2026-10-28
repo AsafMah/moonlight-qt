@@ -47,7 +47,7 @@ const int kPad = PanelSpacing::Pad;
 const int kCellPadX = PanelSpacing::CellPadX;
 const int kLabelGap = PanelSpacing::LabelGap;
 // Width of the band along the edges that resizes in edit mode, in window pixels
-const int kResizeMargin = 6;
+const int kResizeMargin = 12;
 
 void drawOverlayText(QPainter* painter, const QRect& rect, int flags, const QString& text)
 {
@@ -187,6 +187,11 @@ void OverlayStatsWindow::setScalePercent(int percent)
     m_LabelFont = fonts.label;
     m_ValueFont = fonts.value;
     m_BigFont = fonts.big;
+}
+
+QPoint OverlayStatsWindow::bodyPosition() const
+{
+    return position() + (m_BodyOffset * scale()).toPoint();
 }
 
 void OverlayStatsWindow::setOpacityPercent(int percent)
@@ -1089,24 +1094,29 @@ int OverlayStatsWindow::edgesAt(const QPoint& local) const
         return 0;
     }
 
-    // The body, without the shadow and the edit hint below it
     const QSize body = panelBodySize();
     const QRectF rect(m_BodyOffset * scale(), QSizeF(body) * scale());
-    const QRectF band = rect.adjusted(-kResizeMargin, -kResizeMargin, kResizeMargin, kResizeMargin);
+    // Keep a central move zone even on the short Compact strip. The whole
+    // painted instruction footer belongs to the bottom resize edge.
+    const qreal horizontalMargin = std::min(qreal(kResizeMargin), rect.width() / 3);
+    const qreal verticalMargin = std::min(qreal(kResizeMargin), rect.height() / 3);
+    const qreal bottom =
+        m_Editing ? (m_BodyOffset.y() + layoutBody(nullptr).height()) * scale() : rect.bottom();
+    const QRectF band = rect.adjusted(-horizontalMargin, -verticalMargin, horizontalMargin,
+                                      std::max(qreal(kResizeMargin), bottom - rect.bottom()));
     if (!band.contains(local)) {
         return 0;
     }
 
     int edges = 0;
-    if (local.x() < rect.left() + kResizeMargin) {
+    if (local.x() < rect.left() + horizontalMargin) {
         edges |= EdgeLeft;
-    } else if (local.x() > rect.right() - kResizeMargin) {
+    } else if (local.x() > rect.right() - horizontalMargin) {
         edges |= EdgeRight;
     }
-    if (local.y() < rect.top() + kResizeMargin) {
+    if (local.y() < rect.top() + verticalMargin) {
         edges |= EdgeTop;
-    } else if (local.y() > rect.bottom() - kResizeMargin &&
-               local.y() <= rect.bottom() + kResizeMargin) {
+    } else if (local.y() > rect.bottom() - verticalMargin) {
         edges |= EdgeBottom;
     }
     return edges;
@@ -1222,7 +1232,11 @@ void OverlayStatsWindow::mouseMoveEvent(QMouseEvent* event)
         return;
     }
 
-    setPosition(m_PressWindowPos + (eventPosition(event) - m_PressPosition));
+    QPoint target = m_PressWindowPos + (eventPosition(event) - m_PressPosition);
+    if (!m_Standalone && m_MovementBounds.isValid()) {
+        target = lightlySnappedPosition(target, size(), m_MovementBounds);
+    }
+    setPosition(target);
     event->accept();
 }
 

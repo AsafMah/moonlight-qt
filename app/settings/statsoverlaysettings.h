@@ -98,6 +98,9 @@ public:
     DisplayState displayState(const QString& displayKey) const;
     void setDisplayAnchor(const QString& displayKey, StatsOverlay::Anchor anchor);
     void setDisplayPreset(const QString& displayKey, StatsOverlay::Preset preset);
+    // Free attached placement, relative to the stream window's top-left.
+    std::optional<QPoint> attachedPosition(const QString& displayKey) const;
+    void setAttachedPosition(const QString& displayKey, const QPoint& position);
 
     // Size of a resizable preset's panel at 100% scale, or an invalid size
     // when it was never resized on this display

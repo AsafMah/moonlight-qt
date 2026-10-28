@@ -404,6 +404,7 @@ void OverlayStatsController::updateDisplay()
     m_DisplayKey = key;
     const StatsOverlaySettings::DisplayState state = m_Settings.displayState(key);
     m_Anchor = state.hasAnchor ? state.anchor : Anchor::TopLeft;
+    m_AttachedPosition = m_Settings.attachedPosition(key);
     m_Preset = state.hasPreset ? state.preset : m_Settings.presetValue();
     applyStyle();
 }
@@ -453,9 +454,11 @@ void OverlayStatsController::reposition()
     }
 
     if (m_Detached) {
+        m_Window->setMovementBounds(QRect());
         repositionDetached(parentRect);
         return;
     }
+    m_Window->setMovementBounds(parentRect);
 
     // A panel can grow up to the stream's size, less the margins
     m_Window->setMaximumBodySize(
@@ -475,8 +478,14 @@ void OverlayStatsController::reposition()
         }
     }
 
-    const QRect target(anchoredPosition(m_Anchor, parentRect, m_WindowSize, EdgeMargin),
-                       m_WindowSize);
+    QPoint topLeft = anchoredPosition(m_Anchor, parentRect, m_WindowSize, EdgeMargin);
+    if (m_AttachedPosition) {
+        // A saved free position never turns back into an anchor on a refresh,
+        // preset switch or zoom. Clamp only to keep it inside changed bounds.
+        topLeft = lightlySnappedPosition(parentRect.topLeft() + *m_AttachedPosition, m_WindowSize,
+                                         parentRect, 0);
+    }
+    const QRect target(topLeft, m_WindowSize);
     if (m_Window->geometry() != target) {
         m_Window->setGeometry(target);
     }
@@ -567,7 +576,8 @@ void OverlayStatsController::applyStyle()
     m_Window->setOpacityPercent(m_Settings.opacityPercent());
     m_Window->setBodySize(m_DisplayKey.isEmpty() ? QSize()
                                                  : m_Settings.displaySize(m_DisplayKey, m_Preset));
-    m_Window->setBodyAlignment(m_Detached ? Qt::AlignLeft | Qt::AlignTop : alignmentFor(m_Anchor));
+    m_Window->setBodyAlignment(m_Detached || m_AttachedPosition ? Qt::AlignLeft | Qt::AlignTop
+                                                                : alignmentFor(m_Anchor));
     if (m_Tooltip != nullptr) {
         m_Tooltip->setScalePercent(m_Settings.scalePercent());
     }
@@ -577,6 +587,7 @@ void OverlayStatsController::applyStyle()
 
 void OverlayStatsController::onDragFinished(const QPoint& center)
 {
+    Q_UNUSED(center);
     if (m_Detached) {
         // Not anchored: the window stays where it was dropped
         if (m_DetachedSaveDue) {
@@ -591,9 +602,9 @@ void OverlayStatsController::onDragFinished(const QPoint& center)
         return;
     }
 
-    m_Anchor = nearestAnchor(m_ParentGeometryProvider(), center);
+    m_AttachedPosition = m_Window->bodyPosition() - m_ParentGeometryProvider().topLeft();
     if (!m_DisplayKey.isEmpty()) {
-        m_Settings.setDisplayAnchor(m_DisplayKey, m_Anchor);
+        m_Settings.setAttachedPosition(m_DisplayKey, *m_AttachedPosition);
     }
     applyStyle();
     refreshNow();
@@ -604,8 +615,7 @@ void OverlayStatsController::onResizeFinished(const QPoint& center, const QSize&
     if (!m_DisplayKey.isEmpty()) {
         m_Settings.setDisplaySize(m_DisplayKey, m_Preset, bodySize);
     }
-    // Resizing from the left or top edge moves the window, so it may now be
-    // nearer another anchor
+    // Resizing from the left/top also changes the exact saved position.
     onDragFinished(center);
 }
 

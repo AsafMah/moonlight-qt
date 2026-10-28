@@ -126,7 +126,7 @@ constexpr int DefaultOpacityPercent = 55;
 int clampScalePercent(int percent);
 int clampOpacityPercent(int percent);
 
-// The nine places the overlay snaps to, row by row
+// Legacy/default anchors, row by row; dragging saves a free position instead.
 enum class Anchor
 {
     TopLeft = 0,
@@ -149,6 +149,10 @@ QPoint anchoredPosition(Anchor anchor, const QRect& parent, const QSize& size, i
 
 // The anchor whose third of parent contains point (clamped into parent)
 Anchor nearestAnchor(const QRect& parent, const QPoint& point);
+
+// Position while dragging, with only a small magnet near edges/center lines.
+QPoint lightlySnappedPosition(const QPoint& topLeft, const QSize& size, const QRect& bounds,
+                              int threshold = 4);
 
 // How much of a remembered detached window, in pixels each way, must still be
 // on a screen for it to go back there

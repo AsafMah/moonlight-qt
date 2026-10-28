@@ -26,7 +26,8 @@ Column {
         id: usbForwardingCard
         title: qsTr("USB Device Forwarding")
         subtitle: qsTr("Share local gamepads and other peripherals with the streaming host. Forwarding is confirmed per device during a stream and can be stopped at any time.")
-        visible: SystemProperties.usbForwardingAvailable
+        applicable: SystemProperties.usbForwardingAvailable
+        settingsSearchKeywords: "usb usbip passthrough forwarding device"
 
         readonly property string usbipdUrl: "https://github.com/dorssel/usbipd-win/releases/latest"
 
@@ -127,14 +128,14 @@ Column {
 
         // macOS 平台说明：被系统驱动占用的设备（HID/存储/摄像头）无法共享。
         SettingsRow {
-            visible: peripheralsPage.isMac
+            applicable: peripheralsPage.isMac
             title: qsTr("Device availability")
             description: qsTr("Devices managed by macOS itself — keyboards, mice, storage, and cameras — are shown as \"In use by macOS\" and cannot be shared without administrator access.")
         }
 
         // Linux 平台说明：共享会接管设备，本机暂时不可用；共享需要管理员确认。
         SettingsRow {
-            visible: peripheralsPage.isLinux
+            applicable: peripheralsPage.isLinux
             title: qsTr("Device availability")
             description: qsTr("While a device is shared, it is taken over by the USB/IP driver and stops working on this computer until you release it. The first share asks for administrator confirmation; the authorization is remembered for a few minutes.")
         }

@@ -50,9 +50,74 @@ Flickable {
         autoScrollAnimation.start()
     }
 
+    // Set while a caller positions the view itself (settings search), so the
+    // focus-follow scroll below doesn't start a competing animation.
+    property bool suppressAutoScroll: false
+
+    // Scrolls `item` into view without animation: centered when it fits,
+    // otherwise top-aligned. If `focusItem` would still be off-screen, center
+    // on that instead.
+    function revealItem(item, focusItem) {
+        autoScrollAnimation.stop()
+        var margin = height > 100 ? 50 : 0
+        var pos = item.mapToItem(contentItem, 0, 0)
+        var to = item.height + margin * 2 <= height
+                ? pos.y - (height - item.height) / 2
+                : pos.y - margin
+        if (focusItem && focusItem !== item) {
+            var fpos = focusItem.mapToItem(contentItem, 0, 0)
+            if (fpos.y < to + margin || fpos.y + focusItem.height > to + height - margin) {
+                to = fpos.y - (height - focusItem.height) / 2
+            }
+        }
+        contentY = Math.max(0, Math.min(to, Math.max(0, contentHeight - height)))
+    }
+
+    readonly property Item highlightTarget: searchHighlight.target
+    readonly property real highlightOpacity: searchHighlight.opacity
+
+    // Briefly outlines `item`, e.g. a setting reached from search.
+    function flashItem(item) {
+        var pos = item.mapToItem(contentItem, 0, 0)
+        searchHighlight.target = item
+        searchHighlight.x = pos.x
+        searchHighlight.y = pos.y
+        searchHighlight.width = item.width
+        searchHighlight.height = item.height
+        searchHighlightAnimation.restart()
+    }
+
+    Rectangle {
+        id: searchHighlight
+
+        property Item target: null
+
+        z: 10
+        opacity: 0
+        visible: opacity > 0
+        radius: 0
+        color: Theme.accentSoft
+        border.width: 2
+        border.color: Theme.accent
+
+        SequentialAnimation {
+            id: searchHighlightAnimation
+            PropertyAction { target: searchHighlight; property: "opacity"; value: 1 }
+            PauseAnimation { duration: 700 }
+            NumberAnimation {
+                target: searchHighlight
+                property: "opacity"
+                to: 0
+                duration: 900
+                easing.type: Easing.InQuad
+            }
+            ScriptAction { script: searchHighlight.target = null }
+        }
+    }
+
     Window.onActiveFocusItemChanged: {
         var item = Window.activeFocusItem
-        if (!item || !isChildOfFlickable(item)) {
+        if (suppressAutoScroll || !item || !isChildOfFlickable(item)) {
             return
         }
 

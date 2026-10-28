@@ -52,6 +52,9 @@ TestCase {
         compare(qsTranslate("SettingsView", "Interface"), "界面")
         compare(qsTranslate("LegacySettingsPage", "Language"), "语言")
         compare(qsTranslate("AboutSettingsPage", "About"), "关于")
+        compare(qsTranslate("SettingsSearchField", "Search settings"), "搜索设置")
+        compare(qsTranslate("SettingsSearchResults", "Search results"), "搜索结果")
+        compare(qsTranslate("SettingsSearchResults", "No settings match \"%1\".").arg("vrr"), "没有匹配“vrr”的设置。")
         verify(qsTranslate("OverlayMenuPanel", "Connected — select to release") !== "Connected — select to release")
         verify(qsTranslate("StylusReplayTest", "Stylus replay stopped.") !== "Stylus replay stopped.")
     }

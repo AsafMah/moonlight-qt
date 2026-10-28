@@ -16,6 +16,12 @@ Item {
     // 底部留出硬投影的高度
     height: hdrBrightnessContent.implicitHeight + Theme.spaceLg * 2 + Theme.shadowOffset
 
+    // 设置搜索元数据（见 SettingsSearchIndex.js）。标题和说明直接取卡片里显示的文字。
+    property string settingsSearchTitle: profileTitle.text
+    property string settingsSearchDescription: profileDescription.text
+    property string settingsSearchKeywords: "hdr brightness nits luminance peak metadata calibration"
+    property Item settingsSearchFocusTarget: hdrBrightnessModeComboBox
+
     // 方角硬投影面板。数值不合法时整块的描边和粗条都转成珊瑚色 ——
     // 比原来只换一圈 1px 描边更扫得见。
     Panel {
@@ -202,6 +208,7 @@ Item {
                 spacing: Theme.spaceXs
 
                 Text {
+                    id: profileTitle
                     text: qsTr("HDR brightness profile")
                     color: Theme.text
                     font.family: Theme.fontSans
@@ -212,6 +219,7 @@ Item {
                 }
 
                 Text {
+                    id: profileDescription
                     width: parent.width
                     text: qsTr("Controls the display metadata used by Foundation Sunshine's virtual display.")
                     color: Theme.textDim

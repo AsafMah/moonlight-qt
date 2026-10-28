@@ -30,6 +30,7 @@ Column {
 
         SettingsRow {
             applicable: SystemProperties.hasDesktopEnvironment
+            settingsSearchKeywords: "fullscreen windowed borderless window"
             title: qsTr("Display mode")
             description: qsTr("Fullscreen generally provides the best performance, but borderless windowed may work better with features like macOS Spaces, Alt+Tab, screenshot tools, on-screen overlays, etc.")
 
@@ -105,6 +106,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "aspect ratio stretch sbs 3d vr xr"
             title: qsTr("Stretch presentation")
             description: qsTr("Ignores both client and host PC aspect ratios, which is required for displaying Half-SBS (Side-By-Side) 3D signals to AR/XR devices that only support Full-SBS (usually 1920x1080 per eye, meaning a total resolution of 3840x1080)")
             checked: StreamingPreferences.ignoreAspectRatio
@@ -113,6 +115,7 @@ Column {
 
         ToggleRow {
             id: vsyncToggle
+            settingsSearchKeywords: "vsync vertical sync tearing"
             title: qsTr("V-Sync")
             description: StreamingPreferences.enableVrr
                          ? qsTr("Not used while variable refresh rate is on.")
@@ -124,6 +127,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "stutter smooth judder"
             title: qsTr("Frame pacing")
             description: StreamingPreferences.enableVrr
                          ? qsTr("Not used while variable refresh rate is on.")
@@ -138,6 +142,7 @@ Column {
         // 可变刷新率：每帧一解码完就呈现（允许撕裂的翻转模型 / Vulkan Immediate），让
         // G-Sync/FreeSync 显示器跟着串流的帧时间刷新；取代垂直同步和帧平滑。
         ToggleRow {
+            settingsSearchKeywords: "vrr gsync freesync adaptive sync"
             title: qsTr("Variable refresh rate (G-Sync / FreeSync)")
             description: qsTr("Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). For the smoothest result, stream a few FPS below the display's refresh rate.")
             checked: StreamingPreferences.enableVrr
@@ -160,6 +165,7 @@ Column {
         Component.onCompleted: StatsOverlaySettings.reload()
 
         ChoiceRow {
+            settingsSearchKeywords: "stats performance overlay osd fps latency"
             title: qsTr("Preset")
             description: qsTr("What the performance overlay shows while streaming. Cycle presets in a stream with %1, or pick one from the overlay menu.")
                              .arg("Ctrl+Alt+Shift+P")
@@ -311,6 +317,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "csv log export statistics"
             title: qsTr("Record session stats to CSV")
             description: qsTr("Writes one row per second of stream statistics to a CSV file in %1.")
                              .arg(SessionStatsSettings.statsDirectory)
@@ -335,6 +342,7 @@ Column {
         title: qsTr("HDR")
 
         ToggleRow {
+            settingsSearchKeywords: "hdr high dynamic range"
             title: qsTr("Enable HDR")
             description: SystemProperties.supportsHdr ?
                              qsTr("The stream will be HDR-capable, but some games may require an HDR monitor on your host PC to enable HDR mode.")
@@ -347,6 +355,7 @@ Column {
 
         SettingsRow {
             id: hdrModeRow
+            settingsSearchKeywords: "hdr10 pq hlg"
             title: qsTr("HDR format")
             description: qsTr("HDR10 (PQ) is the standard HDR format. HLG offers better compatibility with SDR displays when HDR is not active on the host.")
 
@@ -389,8 +398,10 @@ Column {
         // HDR 亮度卡片体量太大，原样保留在自己的文件里
         Item {
             width: parent.width
-            // 同样不能用 visible，见 SettingsCard.hasVisibleContent 的注释
-            visible: hdrModeRow.applicable
+            // 同样不能用 visible，见 SettingsCard.hasVisibleContent 的注释；
+            // 条件写在 applicable 上，设置搜索才能在别的分类里判断它是否可用。
+            property bool applicable: hdrModeRow.applicable
+            visible: applicable
             height: visible ? hdrCard.height : 0
 
             HdrBrightnessCard {

@@ -19,3 +19,6 @@ EcosystemCapabilityGroup 1.0 EcosystemCapabilityGroup.qml
 CommunityLicenseNotice 1.0 CommunityLicenseNotice.qml
 ShortcutSettingsCard 1.0 ShortcutSettingsCard.qml
 KeyMacroSettingsCard 1.0 KeyMacroSettingsCard.qml
+SettingsSearchController 1.0 SettingsSearchController.qml
+SettingsSearchField 1.0 SettingsSearchField.qml
+SettingsSearchResults 1.0 SettingsSearchResults.qml

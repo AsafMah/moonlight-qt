@@ -68,6 +68,7 @@ Column {
         subtitle: qsTr("Setting values too high for your PC or network connection may cause lag, stuttering, or errors.")
 
         SettingsRow {
+            settingsSearchKeywords: "fps framerate frame rate refresh rate hz resolution 4k 1440p 1080p"
             title: qsTr("Resolution and FPS")
 
             Row {
@@ -614,6 +615,7 @@ Column {
         }
 
         ChoiceRow {
+            settingsSearchKeywords: "codec h264 hevc h265 av1 pyrowave encoder compression"
             title: qsTranslate("LegacySettingsPage", "Video codec")
             selectedValue: StreamingPreferences.videoCodecConfig
             onValueActivated: function(value) { StreamingPreferences.videoCodecConfig = value }
@@ -637,7 +639,7 @@ Column {
         }
 
         PyrowaveCodecPanel {
-            visible: PyrowaveStatus.runtimeAvailable &&
+            applicable: PyrowaveStatus.runtimeAvailable &&
                      StreamingPreferences.videoCodecConfig === StreamingPreferences.VCC_FORCE_PYROWAVE
         }
 
@@ -648,6 +650,7 @@ Column {
         subtitle: qsTr("These settings apply to the next stream. Bitrate adjustment and packet loss protection can be used independently.")
 
         ToggleRow {
+            settingsSearchKeywords: "abr adaptive bitrate auto bandwidth network"
             title: qsTr("Automatically adjust bitrate (ABR)")
             description: qsTr("Allows a compatible Sunshine host to lower the video bitrate when the network is congested, up to the limit below.")
             checked: StreamingPreferences.enableSunshineAbr
@@ -656,6 +659,7 @@ Column {
 
         SettingsRow {
             id: bitrateRow
+            settingsSearchKeywords: "bitrate mbps kbps bandwidth quality"
             title: StreamingPreferences.enableSunshineAbr ? qsTr("Video bitrate limit") : qsTr("Video bitrate")
             description: (StreamingPreferences.enableSunshineAbr
                           ? qsTr("The highest video bitrate ABR may select. FEC adds extra bandwidth.")
@@ -740,6 +744,7 @@ Column {
 
         SettingsRow {
             id: fecRow
+            settingsSearchKeywords: "fec packet loss error correction redundancy network"
             title: qsTr("Packet loss protection (FEC)")
             description: StreamingPreferences.fecPercentage === -2
                          ? qsTr("Use the host's FEC settings. Requires a compatible host; otherwise its default behavior is used.")
@@ -797,6 +802,7 @@ Column {
             readonly property bool softwareDecoderForced:
                 StreamingPreferences.videoDecoderSelection === StreamingPreferences.VDS_FORCE_SOFTWARE
 
+            settingsSearchKeywords: "ai upscaling super resolution rtx video vsr sharpen"
             title: !enhancementCapable
                    ? qsTr("Video AI-Enhancement (Not supported by the GPU)")
                    : (SystemProperties.isVideoEnhancementExperimental()
@@ -823,6 +829,7 @@ Column {
         }
 
         SettingsRow {
+            settingsSearchKeywords: "scale scaling render resolution upscale"
             title: qsTr("Stream Resolution Scale")
             description: qsTr("Renders the stream below the selected resolution and upscales it on the client.")
 
@@ -871,6 +878,7 @@ Column {
         subtitle: qsTr("Used instead of the values above when streaming over the internet.")
 
         SettingsRow {
+            settingsSearchKeywords: "host resolution override"
             title: qsTr("Remote Resolution")
 
             Row {
@@ -931,6 +939,7 @@ Column {
         }
 
         SettingsRow {
+            settingsSearchKeywords: "fps framerate host override"
             title: qsTr("Remote Frame Rate")
 
             Row {

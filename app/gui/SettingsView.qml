@@ -69,6 +69,7 @@ FocusScope {
 
     // 焦点在内容区时，B / Esc 先退回分类栏；已经在分类栏了才放行给 main.qml
     // 去弹出整个设置页。之前不分级，手柄用户在内容区随手一个 B 就整页退出了。
+    // 搜索框里有内容时 Esc 由搜索框自己吃掉（清空），不会走到这里。
     Keys.onEscapePressed: function(event) {
         event.accepted = !rail.railFocused
         if (event.accepted) {
@@ -113,6 +114,8 @@ FocusScope {
     // 手柄 LB/RB 映射成 PageUp/PageDown，用来切分类
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_PageUp) {
+            // 搜索中切分类先退出搜索，结果列表不能盖在另一个分类的页面上
+            search.handlePageKey(event)
             rail.step(-1)
             // 切完分类要把焦点收回分类栏：原来持焦的控件已经随着旧分类隐藏了，
             // 焦点会凭空消失，手柄看起来就像失灵。
@@ -120,10 +123,37 @@ FocusScope {
             event.accepted = true
         }
         else if (event.key === Qt.Key_PageDown) {
+            search.handlePageKey(event)
             rail.step(1)
             rail.focusCurrent()
             event.accepted = true
         }
+        // 焦点不在输入框时直接打字，等于在设置搜索里输入
+        else if (search.handleTypeToSearch(event)) {
+            event.accepted = true
+        }
+    }
+
+    // 设置搜索。索引不是手写清单，而是每次输入时从 scrollArea 里的真实控件现采：
+    // SettingsRow / SettingsCard 自带标题、说明和 settingsSearchKeywords，分类取
+    // 最近的 settingsCategory 祖先。新增分区只要用这些组件、放在带 settingsCategory
+    // 的页面或卡片里就能被搜到；tests/settings_search 里的门禁会检查这一点。
+    SettingsSearchController {
+        id: search
+        categories: settingsPage.categories
+        currentCategory: settingsPage.category
+        indexRoot: scrollArea.contentItem
+        scrollArea: scrollArea
+        onCategoryRequested: function(key) {
+            settingsPage.category = key
+        }
+        onFocusFieldRequested: searchField.focusField()
+    }
+
+    Shortcut {
+        sequences: [StandardKey.Find]
+        enabled: settingsPage.StackView.status === StackView.Active
+        onActivated: searchField.focusField()
     }
 
     // Reuse the background already owned by the application window. Creating a
@@ -166,7 +196,9 @@ FocusScope {
                 top: parent.top
             }
             width: settingsPage.compact ? body.width : Theme.railWidth
-            height: settingsPage.compact ? 52 : body.height
+            height: settingsPage.compact
+                    ? 52 + searchField.height + Theme.spaceXs
+                    : body.height
 
             // 分类栏底板。方角 + 1px 描边，不用硬投影：它贴着窗口左边，
             // 投影只会在右侧和内容区挤在一起。
@@ -175,10 +207,27 @@ FocusScope {
             border.width: 1
             border.color: Theme.line
 
+            // 搜索框放在分类栏顶上：窄窗口时分类栏变成横向 tab 条，搜索框跟着变成
+            // 整行宽，仍在 tab 条上方。
+            SettingsSearchField {
+                id: searchField
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    top: parent.top
+                    margins: Theme.spaceXs
+                }
+                controller: search
+                resultsView: searchResults
+            }
+
             CategoryRail {
                 id: rail
                 anchors {
-                    fill: parent
+                    left: parent.left
+                    right: parent.right
+                    top: searchField.bottom
+                    bottom: parent.bottom
                     margins: Theme.spaceXs
                 }
                 compact: settingsPage.compact
@@ -195,6 +244,11 @@ FocusScope {
         SettingsScrollArea {
             id: scrollArea
 
+            // 搜索时内容区让给结果列表。用 opacity 而不是 visible：搜索要读当前分类里控件的
+            // 真实 visible 来判断它们此刻是否可用，整块隐藏会让它们全变成不可见。
+            opacity: search.active ? 0 : 1
+            enabled: !search.active
+
             anchors {
                 top: settingsPage.compact ? railBackground.bottom : parent.top
                 topMargin: settingsPage.compact ? Theme.spaceMd : 0
@@ -207,7 +261,8 @@ FocusScope {
             BasicSettingsPage {
                 id: basicPage
                 width: parent.width
-                visible: settingsPage.category === "basic"
+                readonly property string settingsCategory: "basic"
+                visible: settingsPage.category === settingsCategory
                 height: visible ? implicitHeight : 0
             }
 
@@ -215,7 +270,8 @@ FocusScope {
                 id: displayPage
                 y: basicPage.height
                 width: parent.width
-                visible: settingsPage.category === "display"
+                readonly property string settingsCategory: "display"
+                visible: settingsPage.category === settingsCategory
                 height: visible ? implicitHeight : 0
             }
 
@@ -233,7 +289,8 @@ FocusScope {
                 id: ecosystemPage
                 y: basicPage.height + displayPage.height + legacyPage.height
                 width: parent.width
-                visible: settingsPage.category === "ecosystem"
+                readonly property string settingsCategory: "ecosystem"
+                visible: settingsPage.category === settingsCategory
                 height: visible ? implicitHeight : 0
                 onAboutRequested: {
                     settingsPage.category = "about"
@@ -246,7 +303,8 @@ FocusScope {
                 id: aboutPage
                 y: basicPage.height + displayPage.height + legacyPage.height + ecosystemPage.height
                 width: parent.width
-                visible: settingsPage.category === "about"
+                readonly property string settingsCategory: "about"
+                visible: settingsPage.category === settingsCategory
                 height: visible ? implicitHeight : 0
                 onScrollToEndRequested: scrollArea.scrollToEnd()
             }
@@ -256,9 +314,17 @@ FocusScope {
                 y: basicPage.height + displayPage.height + legacyPage.height
                    + ecosystemPage.height + aboutPage.height
                 width: parent.width
-                visible: settingsPage.category === "peripherals"
+                readonly property string settingsCategory: "peripherals"
+                visible: settingsPage.category === settingsCategory
                 height: visible ? implicitHeight : 0
             }
+        }
+
+        SettingsSearchResults {
+            id: searchResults
+            anchors.fill: scrollArea
+            controller: search
+            searchField: searchField
         }
     }
 

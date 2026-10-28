@@ -67,5 +67,9 @@
         <file>gui/settings/CommunityLicenseNotice.qml</file>
         <file>gui/settings/ShortcutSettingsCard.qml</file>
         <file>gui/settings/KeyMacroSettingsCard.qml</file>
+        <file>gui/settings/SettingsSearchIndex.js</file>
+        <file>gui/settings/SettingsSearchController.qml</file>
+        <file>gui/settings/SettingsSearchField.qml</file>
+        <file>gui/settings/SettingsSearchResults.qml</file>
     </qresource>
 </RCC>

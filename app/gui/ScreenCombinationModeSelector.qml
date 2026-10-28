@@ -75,6 +75,10 @@ Item {
 
                 readonly property bool selected: StreamingPreferences.screenCombinationMode === modelData.modeValue
 
+                // 每个模式都是独立的设置项，设置搜索能直接搜到并定位到这个按钮
+                property string settingsSearchTitle: modelData.title
+                property string settingsSearchDescription: modelData.description
+                property string settingsSearchKeywords: "display monitor screen layout virtual display"
                 Layout.fillWidth: true
                 Layout.preferredWidth: (selector.width - optionGrid.columnSpacing * (selector.columns - 1)) / selector.columns
                 Layout.preferredHeight: selector.compact ? 78 : 112

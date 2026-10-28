@@ -21,7 +21,16 @@ enum class MessageType
     Pong,
 };
 
+// Which clipboard flavors this client syncs, in both directions. A configure
+// message without a policy (older main process) means everything enabled.
+struct SyncPolicy
+{
+    bool text = true;
+    bool images = true;
+};
+
 struct HostConfig {
+    SyncPolicy policy;
     QString address;
     quint16 httpsPort = 0;
     QByteArray serverCertPem;

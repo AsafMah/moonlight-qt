@@ -35,6 +35,11 @@ ClipboardHelperClient::~ClipboardHelperClient()
     stop();
 }
 
+void ClipboardHelperClient::setSyncPolicy(const ClipboardIpc::SyncPolicy& policy)
+{
+    m_Policy = policy;
+}
+
 void ClipboardHelperClient::start()
 {
     if (m_Enabled) {
@@ -280,6 +285,7 @@ QString ClipboardHelperClient::findHelperExecutable() const
 bool ClipboardHelperClient::sendCurrentConfig()
 {
     ClipboardIpc::HostConfig config;
+    config.policy = m_Policy;
     if (m_Computer != nullptr) {
         config.address = m_Computer->activeAddress.address();
         config.httpsPort = m_Computer->activeHttpsPort;

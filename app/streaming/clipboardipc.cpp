@@ -101,8 +101,13 @@ QByteArray encodeConfigure(quint32 sequence, const HostConfig& config)
     host.insert(QStringLiteral("clientKeyPem"),
                 QString::fromLatin1(config.clientKeyPem.toBase64()));
 
+    QJsonObject policy;
+    policy.insert(QStringLiteral("text"), config.policy.text);
+    policy.insert(QStringLiteral("images"), config.policy.images);
+
     QJsonObject obj = baseMessage(MessageType::Configure, sequence);
     obj.insert(QStringLiteral("host"), host);
+    obj.insert(QStringLiteral("policy"), policy);
     return encodeObject(obj);
 }
 
@@ -215,6 +220,9 @@ bool decodeLine(const QByteArray& line, Message& outMessage, QString& outError)
             readBase64Payload(host, QStringLiteral("serverCertPem"), outMessage.config.serverCertPem);
             readBase64Payload(host, QStringLiteral("clientCertPem"), outMessage.config.clientCertPem);
             readBase64Payload(host, QStringLiteral("clientKeyPem"), outMessage.config.clientKeyPem);
+            QJsonObject policy = obj.value(QStringLiteral("policy")).toObject();
+            outMessage.config.policy.text = policy.value(QStringLiteral("text")).toBool(true);
+            outMessage.config.policy.images = policy.value(QStringLiteral("images")).toBool(true);
             return true;
         }
     case MessageType::HostFrame:

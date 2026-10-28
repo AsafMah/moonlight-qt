@@ -4979,10 +4979,18 @@ void Session::start()
 #ifndef STEAM_LINK
     // Construct the clipboard sync helper process before the control receive
     // thread can possibly invoke clClipboardData(). Host frames are queued by
-    // ClipboardHelperClient and flushed from the SDL loop.
-    if (m_ClipboardHelper == nullptr) {
+    // ClipboardHelperClient and flushed from the SDL loop. With sync disabled
+    // (or every flavor off) no helper runs and host frames are dropped.
+    if (m_ClipboardHelper == nullptr && m_Preferences->clipboardSyncEnabled &&
+        (m_Preferences->clipboardSyncText || m_Preferences->clipboardSyncImages)) {
+        ClipboardIpc::SyncPolicy policy;
+        policy.text = m_Preferences->clipboardSyncText;
+        policy.images = m_Preferences->clipboardSyncImages;
         m_ClipboardHelper = new ClipboardHelperClient(m_Computer, this);
+        m_ClipboardHelper->setSyncPolicy(policy);
         m_ClipboardHelper->start();
+    } else if (m_ClipboardHelper == nullptr) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Clipboard sync disabled in settings");
     }
 #endif
 

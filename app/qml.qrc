@@ -56,6 +56,7 @@
         <file>gui/settings/LegacySettingsPage.qml</file>
         <file>gui/settings/EcosystemSettingsPage.qml</file>
         <file>gui/settings/PeripheralsSettingsPage.qml</file>
+        <file>gui/settings/ClipboardSettingsPage.qml</file>
         <file>gui/settings/UsbForwardingBindDialog.qml</file>
         <file>gui/settings/AboutSettingsPage.qml</file>
         <file>gui/settings/EcosystemPlatformCatalog.qml</file>

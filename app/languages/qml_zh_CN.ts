@@ -2961,6 +2961,41 @@
     </message>
 </context>
 <context>
+    <name>ClipboardSettingsPage</name>
+    <message>
+        <source>Clipboard</source>
+        <translation>剪贴板</translation>
+    </message>
+    <message>
+        <source>Share what you copy between this device and the host while streaming. Requires a host with clipboard sync enabled. Changes apply to the next stream.</source>
+        <translation>串流时在本机与主机之间共享复制的内容。需要主机开启剪贴板同步。更改在下次串流时生效。</translation>
+    </message>
+    <message>
+        <source>Sync clipboard with host</source>
+        <translation>与主机同步剪贴板</translation>
+    </message>
+    <message>
+        <source>When off, nothing is copied to or from the host clipboard.</source>
+        <translation>关闭后，不会与主机剪贴板互相复制任何内容。</translation>
+    </message>
+    <message>
+        <source>Text</source>
+        <translation>文本</translation>
+    </message>
+    <message>
+        <source>Sync copied text in both directions.</source>
+        <translation>双向同步复制的文本。</translation>
+    </message>
+    <message>
+        <source>Images</source>
+        <translation>图片</translation>
+    </message>
+    <message>
+        <source>Sync copied images and screenshots in both directions.</source>
+        <translation>双向同步复制的图片和截图。</translation>
+    </message>
+</context>
+<context>
     <name>PeripheralsSettingsPage</name>
     <message>
         <source>USB driver not running. Start VBoxUSBMon as administrator, or restart Windows.</source>
@@ -4049,6 +4084,10 @@
     <message>
         <source>Peripherals Settings</source>
         <translation>外设设置</translation>
+    </message>
+    <message>
+        <source>Clipboard</source>
+        <translation>剪贴板</translation>
     </message>
     <message>
         <source>Software Settings</source>

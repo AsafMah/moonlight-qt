@@ -84,6 +84,9 @@
 #define SER_AUTOUPDATECHECK "autoupdatecheck"
 #define SER_USBFORWARDING "usbforwarding"
 #define SER_USBFORWARDINGBOUND "usbforwardingbound"
+#define SER_CLIPBOARDSYNC "clipboardsync"
+#define SER_CLIPBOARDSYNCTEXT "clipboardsynctext"
+#define SER_CLIPBOARDSYNCIMAGES "clipboardsyncimages"
 #define SER_RENDERER "renderer"
 #define SER_BACKGROUNDSOURCE "backgroundsource"
 #define SER_BACKGROUNDIMAGEAPI "backgroundimageapi"
@@ -286,6 +289,9 @@ void StreamingPreferences::reload()
     autoUpdateCheck = settings.value(SER_AUTOUPDATECHECK, true).toBool();
     usbForwardingEnabled = settings.value(SER_USBFORWARDING, false).toBool();
     m_UsbForwardingBoundDevices = settings.value(SER_USBFORWARDINGBOUND, QStringList()).toStringList();
+    clipboardSyncEnabled = settings.value(SER_CLIPBOARDSYNC, true).toBool();
+    clipboardSyncText = settings.value(SER_CLIPBOARDSYNCTEXT, true).toBool();
+    clipboardSyncImages = settings.value(SER_CLIPBOARDSYNCIMAGES, true).toBool();
 
     streamResolutionScale = settings.value(SER_STREAMRESOLUTIONSCALE, false).toBool();
     streamResolutionScaleRatio = settings.value(SER_STREAMRESOLUTIONSCALERATIO, 100).toInt();
@@ -768,6 +774,9 @@ void StreamingPreferences::save()
     settings.setValue(SER_AUTOUPDATECHECK, autoUpdateCheck);
     settings.setValue(SER_USBFORWARDING, usbForwardingEnabled);
     settings.setValue(SER_USBFORWARDINGBOUND, m_UsbForwardingBoundDevices);
+    settings.setValue(SER_CLIPBOARDSYNC, clipboardSyncEnabled);
+    settings.setValue(SER_CLIPBOARDSYNCTEXT, clipboardSyncText);
+    settings.setValue(SER_CLIPBOARDSYNCIMAGES, clipboardSyncImages);
 }
 
 int StreamingPreferences::getDefaultBitrate(int width, int height, int fps, bool yuv444)

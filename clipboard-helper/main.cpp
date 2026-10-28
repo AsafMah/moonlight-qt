@@ -116,13 +116,19 @@ private:
             return;
         }
 
+        ClipboardSyncPolicy policy;
+        policy.text = config.policy.text;
+        policy.images = config.policy.images;
+
         if (m_ClipboardEngine == nullptr) {
             m_ClipboardEngine = new ClipboardSync(context, this);
+            m_ClipboardEngine->setPolicy(policy);
             connect(m_ClipboardEngine, &ClipboardSync::outboundFrame,
                     this, &ClipboardHelperController::sendLocalFrame);
             m_ClipboardEngine->start();
         }
         else {
+            m_ClipboardEngine->setPolicy(policy);
             m_ClipboardEngine->setHostContext(context);
         }
 

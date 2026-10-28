@@ -39,6 +39,7 @@ FocusScope {
         { key: "input",    icon: "qrc:/res/fluent/cat-input.svg",    title: qsTr("Input Settings") },
         { key: "gamepad",  icon: "qrc:/res/fluent/cat-gamepad.svg",  title: qsTr("Gamepad Settings") },
         { key: "peripherals", icon: "qrc:/res/fluent/cat-peripherals.svg", title: qsTr("Peripherals Settings") },
+        { key: "clipboard", icon: "qrc:/res/fluent/cat-clipboard.svg", title: qsTr("Clipboard") },
         { key: "advanced", icon: "qrc:/res/fluent/cat-advanced.svg", title: qsTr("Compatibility and diagnostics") },
         { key: "ui",       icon: "qrc:/res/fluent/cat-ui.svg",       title: qsTr("Interface") },
         { key: "ecosystem",icon: "qrc:/res/fluent/cat-ecosystem.svg",title: qsTr("AlkaidLab Ecosystem") },
@@ -315,6 +316,16 @@ FocusScope {
                    + ecosystemPage.height + aboutPage.height
                 width: parent.width
                 readonly property string settingsCategory: "peripherals"
+                visible: settingsPage.category === settingsCategory
+                height: visible ? implicitHeight : 0
+            }
+
+            ClipboardSettingsPage {
+                id: clipboardPage
+                y: basicPage.height + displayPage.height + legacyPage.height
+                   + ecosystemPage.height + aboutPage.height + peripheralsPage.height
+                width: parent.width
+                readonly property string settingsCategory: "clipboard"
                 visible: settingsPage.category === settingsCategory
                 height: visible ? implicitHeight : 0
             }

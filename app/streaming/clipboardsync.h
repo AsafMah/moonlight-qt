@@ -30,6 +30,14 @@ struct ClipboardSyncHostContext
     QSslKey clientPrivateKey;
 };
 
+// User-selected clipboard flavors. A disabled flavor is neither sent to the
+// host nor applied from it, so it can never overwrite the local clipboard.
+struct ClipboardSyncPolicy
+{
+    bool text = true;
+    bool images = true;
+};
+
 // ClipboardSync owns the local clipboard state inside the clipboard helper
 // process. It implements the v1 wire format (u8 version=1, u8 kind, u32
 // token, u32 length, bytes payload, little-endian) used by the Limelight
@@ -118,6 +126,7 @@ public:
     ~ClipboardSync() override;
 
     void setHostContext(const ClipboardSyncHostContext& hostContext);
+    void setPolicy(const ClipboardSyncPolicy& policy);
 
     // Start watching the local clipboard and accepting inbound payloads.
     // Must be called on the GUI thread.
@@ -223,6 +232,7 @@ private:
     void applyCompound(const QByteArray& text, const QByteArray& png);
 
     ClipboardSyncHostContext m_HostContext;
+    ClipboardSyncPolicy m_Policy;
     QNetworkAccessManager* m_Nam = nullptr;
 
     bool m_Active = false;

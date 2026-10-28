@@ -246,7 +246,88 @@ public:
             ok &= check(!ClipboardSync::decodeImage(bmp, decoded),
                         "oversized image header rejected", err);
         }
+        {
+            cb->setText("local");
+            ClipboardSync sync;
+            ClipboardSyncPolicy policy;
+            policy.images = false;
+            sync.setPolicy(policy);
+            QList<QByteArray> sent;
+            QObject::connect(&sync, &ClipboardSync::outboundFrame,
+                             [&](QByteArray b) { sent.append(b); });
+            sync.start();
+            incoming(sync, 2, 0, png);
+            ok &= check(cb->text() == "local" && !cb->mimeData()->hasImage(),
+                        "images disabled: inbound PNG ignored", err);
+            incoming(sync, 2, 77, png);
+            ok &= check(cb->text() == "local" && !cb->mimeData()->hasImage(),
+                        "images disabled: inbound burst PNG ignored", err);
+            incoming(sync, 1, 0, "remote");
+            ok &= check(cb->text() == "remote", "images disabled: inbound text still applies", err);
+            sent.clear();
+            auto* imageOnly = new QMimeData;
+            imageOnly->setData("image/png", png);
+            cb->setMimeData(imageOnly);
+            ok &= check(sent.isEmpty(), "images disabled: outbound image not sent", err);
+            auto* captioned = new QMimeData;
+            captioned->setText("caption");
+            captioned->setData("image/png", png);
+            cb->setMimeData(captioned);
+            ok &= check(sent.size() == 1 && sent[0][1] == 1 &&
+                            sent[0].mid(10) == QByteArray("caption"),
+                        "images disabled: captioned image sends text only", err);
+        }
+        {
+            cb->setText("local");
+            ClipboardSync sync;
+            ClipboardSyncPolicy policy;
+            policy.text = false;
+            sync.setPolicy(policy);
+            QList<QByteArray> sent;
+            QObject::connect(&sync, &ClipboardSync::outboundFrame,
+                             [&](QByteArray b) { sent.append(b); });
+            sync.start();
+            incoming(sync, 1, 0, "remote");
+            ok &= check(cb->text() == "local", "text disabled: inbound text ignored", err);
+            incoming(sync, 1, 78, "remote");
+            ok &= check(cb->text() == "local", "text disabled: inbound burst text ignored", err);
+            sent.clear();
+            cb->setText("secret");
+            ok &= check(sent.isEmpty(), "text disabled: outbound text not sent", err);
+            auto* captioned = new QMimeData;
+            captioned->setText("caption");
+            captioned->setData("image/png", png);
+            cb->setMimeData(captioned);
+            ok &= check(sent.size() == 1 && sent[0][1] == 2,
+                        "text disabled: captioned image sends image only", err);
+            incoming(sync, 2, 0, png);
+            ok &= check(cb->mimeData()->hasImage(), "text disabled: inbound image applies", err);
+        }
 #endif
+        {
+            ClipboardIpc::HostConfig config;
+            config.address = "host";
+            config.httpsPort = 1;
+            config.policy.text = false;
+            config.policy.images = true;
+            ClipboardIpc::Message message;
+            QString error;
+            ok &= check(ClipboardIpc::decodeLine(ClipboardIpc::encodeConfigure(5, config), message,
+                                                 error) &&
+                            !message.config.policy.text && message.config.policy.images,
+                        "configure carries sync policy", err);
+            config.policy.text = true;
+            config.policy.images = false;
+            ok &= check(ClipboardIpc::decodeLine(ClipboardIpc::encodeConfigure(6, config), message,
+                                                 error) &&
+                            message.config.policy.text && !message.config.policy.images,
+                        "configure carries images policy", err);
+            const QByteArray legacy =
+                R"({"type":"configure","sequence":7,"version":1,"host":{"address":"h","httpsPort":1}})";
+            ok &= check(ClipboardIpc::decodeLine(legacy, message, error) &&
+                            message.config.policy.text && message.config.policy.images,
+                        "configure without policy defaults to text and images enabled", err);
+        }
         {
             ClipboardSync sync;
             QByteArray frame;

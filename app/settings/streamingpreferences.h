@@ -278,6 +278,11 @@ public:
     Q_PROPERTY(OverlayMenuPosition overlayMenuPosition MEMBER overlayMenuPosition NOTIFY overlayMenuPositionChanged)
     Q_PROPERTY(bool autoUpdateCheck MEMBER autoUpdateCheck NOTIFY autoUpdateCheckChanged)
     Q_PROPERTY(bool usbForwardingEnabled MEMBER usbForwardingEnabled NOTIFY usbForwardingEnabledChanged)
+    Q_PROPERTY(
+        bool clipboardSyncEnabled MEMBER clipboardSyncEnabled NOTIFY clipboardSyncEnabledChanged)
+    Q_PROPERTY(bool clipboardSyncText MEMBER clipboardSyncText NOTIFY clipboardSyncTextChanged)
+    Q_PROPERTY(
+        bool clipboardSyncImages MEMBER clipboardSyncImages NOTIFY clipboardSyncImagesChanged)
     Q_PROPERTY(QStringList usbForwardingBoundDevices READ usbForwardingBoundDevices WRITE setUsbForwardingBoundDevices NOTIFY usbForwardingBoundDevicesChanged)
 
     Q_INVOKABLE bool retranslate();
@@ -357,6 +362,11 @@ public:
     OverlayMenuPosition overlayMenuPosition;
     bool autoUpdateCheck;
     bool usbForwardingEnabled;
+    // Clipboard sync was unconditionally on (text + images) before these
+    // settings existed, so all three default to true.
+    bool clipboardSyncEnabled;
+    bool clipboardSyncText;
+    bool clipboardSyncImages;
     RendererSelection rendererSelection;
 
 signals:
@@ -427,6 +437,9 @@ signals:
     void autoUpdateCheckChanged();
     void usbForwardingEnabledChanged();
     void usbForwardingBoundDevicesChanged();
+    void clipboardSyncEnabledChanged();
+    void clipboardSyncTextChanged();
+    void clipboardSyncImagesChanged();
     void rendererSelectionChanged();
 
 private:

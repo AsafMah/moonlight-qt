@@ -83,41 +83,73 @@ constexpr SyncDecision decide(const SyncInput& in)
     return SyncDecision{ vsync, vsync && in.framePacing, false, 0, false };
 }
 
-// Spaces presents at least minPresentIntervalUs(capFps) apart. Frames are
-// never reordered or dropped here; the caller only waits before presenting.
+// How many queued frames to drop before presenting. While the present-rate cap
+// held a frame back, newer frames may have arrived; only the newest is worth
+// presenting, so the rest are dropped instead of building up a backlog.
+constexpr int staleQueuedFrames(int queuedFrames, bool waitedForSlot)
+{
+    return waitedForSlot && queuedFrames > 1 ? queuedFrames - 1 : 0;
+}
+
+// Spaces presents to at most capFps per second, and never closer together
+// than one refresh of a displayHz display. Each present gets a slot on a fixed
+// schedule one interval apart, so a present that goes out a little late does
+// not push back the ones after it, as long as the next one still comes a full
+// refresh after it. A frame that is ready after its slot is presented at once
+// and the schedule restarts from it, so slow periods never build up credit
+// for a later burst.
 class FrameLimiter
 {
 public:
-    explicit FrameLimiter(int capFps = 0) : m_MinIntervalUs(minPresentIntervalUs(capFps)) {}
+    explicit FrameLimiter(int capFps = 0, int displayHz = 0)
+        : m_MinIntervalUs(minPresentIntervalUs(capFps)),
+          m_MinGapUs(minPresentIntervalUs(displayHz) < m_MinIntervalUs
+                         ? minPresentIntervalUs(displayHz)
+                         : m_MinIntervalUs)
+    {
+    }
 
     bool isEnabled() const { return m_MinIntervalUs != 0; }
 
     uint64_t minIntervalUs() const { return m_MinIntervalUs; }
 
-    // How long to wait before presenting at nowUs (0 = present now)
-    uint64_t waitUs(uint64_t nowUs) const
+    // The earliest time a frame that is ready at nowUs may be presented
+    uint64_t presentSlotUs(uint64_t nowUs) const
     {
-        if (m_MinIntervalUs == 0 || !m_HasLastPresent) {
-            return 0;
+        if (m_MinIntervalUs == 0 || !m_HasNextSlot || nowUs >= m_NextSlotUs) {
+            return nowUs;
         }
-        if (nowUs < m_LastPresentUs) {
+        if (m_NextSlotUs - nowUs > m_MinIntervalUs) {
             // Clock went backwards; never block on it
-            return 0;
+            return nowUs;
         }
-        const uint64_t elapsed = nowUs - m_LastPresentUs;
-        return elapsed >= m_MinIntervalUs ? 0 : m_MinIntervalUs - elapsed;
+        return m_NextSlotUs;
     }
 
-    void onPresented(uint64_t nowUs)
+    // How long to wait before presenting at nowUs (0 = present now)
+    uint64_t waitUs(uint64_t nowUs) const { return presentSlotUs(nowUs) - nowUs; }
+
+    // Records a present in slotUs (from presentSlotUs()) that actually went
+    // out at nowUs. The next slot is one interval after slotUs, unless the
+    // present was a whole interval late (a stall), then one interval after
+    // nowUs. Either way it is at least one display refresh after nowUs.
+    void onPresented(uint64_t slotUs, uint64_t nowUs)
     {
-        m_LastPresentUs = nowUs;
-        m_HasLastPresent = true;
+        const uint64_t base = nowUs > slotUs && nowUs - slotUs >= m_MinIntervalUs ? nowUs : slotUs;
+        const uint64_t earliest = nowUs + m_MinGapUs;
+        m_NextSlotUs = base + m_MinIntervalUs > earliest ? base + m_MinIntervalUs : earliest;
+        m_HasNextSlot = true;
     }
+
+    // Records a present at nowUs without a slot: the next one may go out one
+    // interval later, so any lateness carries over
+    void onPresented(uint64_t nowUs) { onPresented(nowUs, nowUs); }
 
 private:
     uint64_t m_MinIntervalUs;
-    uint64_t m_LastPresentUs = 0;
-    bool m_HasLastPresent = false;
+    uint64_t m_MinGapUs;
+    uint64_t m_NextSlotUs = 0;
+    bool m_HasNextSlot = false;
 };
 
 } // namespace VrrPolicy

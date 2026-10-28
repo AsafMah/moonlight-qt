@@ -35,6 +35,25 @@ public:
     }
 };
 
+// Sleeps with sub-millisecond precision where the OS allows it. On Windows a
+// plain Sleep() is millisecond-granular, which is too coarse to pace presents
+// at high refresh rates.
+class PreciseSleeper
+{
+public:
+    PreciseSleeper();
+    ~PreciseSleeper();
+    PreciseSleeper(const PreciseSleeper&) = delete;
+    PreciseSleeper& operator=(const PreciseSleeper&) = delete;
+
+    void sleepUs(uint64_t us);
+
+private:
+    // High-resolution waitable timer HANDLE on Windows, null elsewhere or
+    // when the OS doesn't support one
+    void* m_Timer = nullptr;
+};
+
 class Pacer
 {
 public:
@@ -91,6 +110,7 @@ private:
 
     // Present-rate cap for VRR mode (disabled otherwise)
     VrrPolicy::FrameLimiter m_VrrLimiter;
+    PreciseSleeper m_PresentSleeper;
     std::unique_ptr<PresentStallDetector> m_PresentStallDetector;
     uint64_t m_DrainSkippedFrames = 0;
     bool m_PostDrainCollectionPending = false;

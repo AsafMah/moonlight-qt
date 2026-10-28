@@ -49,10 +49,12 @@ Column {
 
     // ================= 音频 =================
     SettingsCard {
-        visible: settingsPage.category === "audio" && hasVisibleContent
+        settingsCategory: "audio"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Audio Settings")
 
         ChoiceRow {
+            settingsSearchKeywords: "audio sound surround stereo 5.1 7.1 speakers channels"
             title: qsTr("Audio configuration")
             selectedValue: StreamingPreferences.audioConfig
             onValueActivated: function(value) { StreamingPreferences.audioConfig = value }
@@ -66,6 +68,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "sound audio silence"
             title: qsTr("Mute host PC speakers while streaming")
             description: qsTr("You must restart any game currently in progress for this setting to take effect")
             checked: !StreamingPreferences.playAudioOnHost
@@ -74,6 +77,7 @@ Column {
 
         ToggleRow {
             applicable: SystemProperties.hasDesktopEnvironment
+            settingsSearchKeywords: "sound background focus"
             title: Brand.text(qsTr("Mute audio stream when Moonlight is not the active window"))
             description: Brand.text(qsTr("Mutes Moonlight's audio when you Alt+Tab out of the stream or click on a different window."))
             checked: StreamingPreferences.muteOnFocusLoss
@@ -81,6 +85,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "microphone mic voice"
             title: qsTr("Enable microphone streaming (test)")
             checked: StreamingPreferences.enableMicrophone
             onToggled: function(value) { StreamingPreferences.enableMicrophone = value }
@@ -89,7 +94,8 @@ Column {
 
     // ================= 主机 =================
     SettingsCard {
-        visible: settingsPage.category === "host" && hasVisibleContent
+        settingsCategory: "host"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Screen Combination Mode")
         subtitle: qsTr("Sunshine Foundation display control")
 
@@ -99,10 +105,12 @@ Column {
     }
 
     SettingsCard {
-        visible: settingsPage.category === "host" && hasVisibleContent
+        settingsCategory: "host"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Host Settings")
 
         ToggleRow {
+            settingsSearchKeywords: "geforce experience game settings"
             title: qsTr("Optimize game settings for streaming")
             checked: StreamingPreferences.gameOptimizations
             onToggled: function(value) { StreamingPreferences.gameOptimizations = value }
@@ -118,11 +126,13 @@ Column {
 
     // ================= 软件 =================
     SettingsCard {
-        visible: settingsPage.category === "ui" && hasVisibleContent
+        settingsCategory: "ui"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Software Settings")
 
         ChoiceRow {
             id: languageRow
+            settingsSearchKeywords: "language translation locale chinese english"
             title: qsTr("Language")
             maximumControlWidth: 260
             controlWidth: 260
@@ -199,12 +209,14 @@ Column {
     }
 
     SettingsCard {
-        visible: settingsPage.category === "ui" && hasVisibleContent
+        settingsCategory: "ui"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Background image")
         subtitle: qsTr("Choose the background shown on the computer list and shared application pages.")
 
         ChoiceRow {
             id: backgroundSourceRow
+            settingsSearchKeywords: "wallpaper background image"
             title: qsTr("Background source")
             description: qsTr("Choose photography, Anime, a custom API, a local image, or no background.")
             maximumControlWidth: 260
@@ -343,7 +355,8 @@ Column {
     }
 
     SettingsCard {
-        visible: settingsPage.category === "ui" && hasVisibleContent
+        settingsCategory: "ui"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Notifications and integrations")
 
         ToggleRow {
@@ -360,6 +373,7 @@ Column {
 
         ToggleRow {
             applicable: SystemProperties.hasDiscordIntegration
+            settingsSearchKeywords: "discord rich presence status"
             title: qsTr("Discord Rich Presence integration")
             description: qsTr("Updates your Discord status to display the name of the game you're streaming.")
             checked: StreamingPreferences.richPresence
@@ -367,6 +381,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "sleep screensaver power"
             title: qsTr("Keep the display awake while streaming")
             description: qsTr("Prevents the screensaver from starting or the display from going to sleep while streaming.")
             checked: StreamingPreferences.keepAwake
@@ -374,6 +389,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "update version upgrade"
             title: qsTr("Automatically check for updates")
             description: Brand.text(qsTr("Check for new versions of Moonlight when the app starts."))
             checked: StreamingPreferences.autoUpdateCheck
@@ -383,10 +399,12 @@ Column {
 
     // ================= 输入 =================
     SettingsCard {
-        visible: settingsPage.category === "input" && hasVisibleContent
+        settingsCategory: "input"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Mouse")
 
         ToggleRow {
+            settingsSearchKeywords: "mouse remote desktop absolute pointer"
             title: qsTr("Optimize mouse for remote desktop instead of games")
             description: qsTr("This enables seamless mouse control without capturing the client's mouse cursor. It is ideal for remote desktop usage but will not work in most games.") + " " +
                          qsTr("You can toggle this while streaming using Ctrl+Alt+Shift+M.") + "\n\n" +
@@ -396,6 +414,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "mouse pointer cursor"
             title: qsTr("Show local cursor")
             description: qsTr("This makes the client's mouse cursor visible in the stream.") + " " +
                          qsTr("You can toggle this while streaming using Ctrl+Alt+Shift+C.")
@@ -404,18 +423,21 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "mouse left handed click"
             title: qsTr("Swap left and right mouse buttons")
             checked: StreamingPreferences.swapMouseButtons
             onToggled: function(value) { StreamingPreferences.swapMouseButtons = value }
         }
 
         ToggleRow {
+            settingsSearchKeywords: "keyboard mac command option"
             title: qsTr("Swap Alt and Win keys")
             checked: StreamingPreferences.swapWinAltKeys
             onToggled: function(value) { StreamingPreferences.swapWinAltKeys = value }
         }
 
         ToggleRow {
+            settingsSearchKeywords: "mouse scroll wheel natural invert"
             title: qsTr("Reverse mouse scrolling direction")
             checked: StreamingPreferences.reverseScrollDirection
             onToggled: function(value) { StreamingPreferences.reverseScrollDirection = value }
@@ -423,12 +445,14 @@ Column {
     }
 
     SettingsCard {
-        visible: settingsPage.category === "input" && hasVisibleContent
+        settingsCategory: "input"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Keyboard")
 
         ToggleRow {
             id: captureSysKeysToggle
             applicable: SystemProperties.hasDesktopEnvironment
+            settingsSearchKeywords: "keyboard hotkeys alt tab win key"
             title: qsTr("Capture system keyboard shortcuts")
             description: qsTr("This enables the capture of system-wide keyboard shortcuts like Alt+Tab that would normally be handled by the client OS while streaming.") + "\n\n" +
                          Brand.text(qsTr("NOTE: Certain keyboard shortcuts like Ctrl+Alt+Del on Windows cannot be intercepted by any application, including Moonlight."))
@@ -461,18 +485,22 @@ Column {
     }
 
     ShortcutSettingsCard {
-        visible: settingsPage.category === "input" && hasVisibleContent
+        settingsCategory: "input"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
     }
 
     KeyMacroSettingsCard {
-        visible: settingsPage.category === "input" && hasVisibleContent
+        settingsCategory: "input"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
     }
 
     SettingsCard {
-        visible: settingsPage.category === "input" && hasVisibleContent
+        settingsCategory: "input"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Touch input")
 
         ToggleRow {
+            settingsSearchKeywords: "touch touchscreen trackpad"
             title: qsTr("Use touchscreen as a virtual trackpad")
             description: qsTr("When checked, the touchscreen acts like a trackpad. When unchecked, the touchscreen will directly control the mouse pointer.")
             checked: !StreamingPreferences.absoluteTouchMode
@@ -480,6 +508,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "touchpad trackpad gestures"
             title: qsTr("Use precision touchpad input when available")
             description: qsTr("Sends native multi-touch trackpad contacts to compatible Sunshine hosts. Unsupported devices and hosts fall back to pointer input. Changes apply to the next stream.")
             checked: StreamingPreferences.enableNativeTouchpad
@@ -488,11 +517,13 @@ Column {
     }
 
     SettingsCard {
-        visible: settingsPage.category === "gamepad" && hasVisibleContent
+        settingsCategory: "gamepad"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("DualSense haptics")
 
         ChoiceRow {
             id: dualSenseHapticsRow
+            settingsSearchKeywords: "ps5 dualsense rumble vibration haptic feedback controller"
             title: qsTr("DualSense haptics")
             description: selectedValue === StreamingPreferences.DSHM_PHYSICAL
                 ? qsTr("Sends the original authored PCM to channels 3 and 4 of a USB-connected DualSense. The endpoint is checked before connecting. Changes apply to the next stream.")
@@ -510,10 +541,12 @@ Column {
 
     // ================= 手柄 =================
     SettingsCard {
-        visible: settingsPage.category === "gamepad" && hasVisibleContent
+        settingsCategory: "gamepad"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Gamepad Settings")
 
         ToggleRow {
+            settingsSearchKeywords: "controller nintendo layout abxy"
             title: qsTr("Swap A/B and X/Y gamepad buttons")
             description: qsTr("This switches gamepads into a Nintendo-style button layout")
             checked: StreamingPreferences.swapFaceButtons
@@ -522,6 +555,7 @@ Column {
 
         SettingsRow {
             id: stickDeadzoneRow
+            settingsSearchKeywords: "stick joystick controller drift"
             title: qsTr("Joystick deadzone")
             description: qsTr("Ignores stick deflections below this percentage, e.g. to compensate for a drifting stick. 0% sends stick input unmodified.")
 
@@ -559,6 +593,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "controller gamepad"
             title: qsTr("Force gamepad #1 always connected")
             description: qsTr("Forces a single gamepad to always stay connected to the host, even if no gamepads are actually connected to this PC.") + " " +
                          qsTr("Only enable this option when streaming a game that doesn't support gamepads being connected after startup.")
@@ -567,6 +602,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "controller mouse emulation"
             title: qsTr("Enable mouse control with gamepads by holding the '%1' button").arg(SdlGamepadKeyNavigation.startButtonName())
             description: qsTr("While this is off, holding %1 opens the in-stream overlay menu instead.").arg(SdlGamepadKeyNavigation.startButtonName())
             checked: StreamingPreferences.gamepadMouse
@@ -583,7 +619,8 @@ Column {
     }
 
     SettingsCard {
-        visible: settingsPage.category === "gamepad" && hasVisibleContent
+        settingsCategory: "gamepad"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Gamepad quit combo")
 
         // 按键名按当前连接的手柄风格显示(PS 显示 Options/Share/✕,
@@ -628,6 +665,7 @@ Column {
 
         ChoiceRow {
             id: quitComboRow
+            settingsSearchKeywords: "controller exit shortcut"
             title: qsTr("Gamepad quit combo")
             description: qsTr("Choose which button combination exits streaming. Use alternatives if the default doesn't work on your device.")
             selectedValue: StreamingPreferences.gamepadQuitCombo
@@ -641,10 +679,12 @@ Column {
 
     // ================= 高级 =================
     SettingsCard {
-        visible: settingsPage.category === "advanced" && hasVisibleContent
+        settingsCategory: "advanced"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Video pipeline")
 
         ChoiceRow {
+            settingsSearchKeywords: "hardware software decoding gpu dxva d3d11va vaapi"
             title: qsTr("Video decoder")
             description: settingsPage.pyrowaveSelected
                          ? settingsPage.pyrowaveLockNote(qsTranslate("PyrowaveCodecPanel", "PyroWave always decodes on the GPU with Vulkan. Your saved setting is kept and still applies to other codecs, including the fallback codec."))
@@ -662,6 +702,7 @@ Column {
 
         ChoiceRow {
             applicable: SystemProperties.isDarwin
+            settingsSearchKeywords: "metal vulkan opengl"
             title: qsTr("Renderer")
             selectedValue: StreamingPreferences.rendererSelection
             onValueActivated: function(value) { StreamingPreferences.rendererSelection = value }
@@ -675,6 +716,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "chroma 444 subsampling text clarity"
             title: qsTr("Enable YUV 4:4:4")
             description: qsTr("Good for streaming desktop and text-heavy games, but not recommended for fast-paced games.") +
                          (settingsPage.pyrowaveSelected
@@ -701,10 +743,12 @@ Column {
     }
 
     SettingsCard {
-        visible: settingsPage.category === "advanced" && hasVisibleContent
+        settingsCategory: "advanced"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Network")
 
         ToggleRow {
+            settingsSearchKeywords: "mdns discovery lan network"
             title: qsTr("Automatically find PCs on the local network (Recommended)")
             checked: StreamingPreferences.enableMdns
             onToggled: function(value) {
@@ -721,6 +765,7 @@ Column {
         }
 
         ToggleRow {
+            settingsSearchKeywords: "nat firewall ports network"
             title: qsTr("Automatically detect blocked connections (Recommended)")
             checked: StreamingPreferences.detectNetworkBlocking
             onToggled: function(value) { StreamingPreferences.detectNetworkBlocking = value }
@@ -728,10 +773,12 @@ Column {
     }
 
     SettingsCard {
-        visible: settingsPage.category === "advanced" && hasVisibleContent
+        settingsCategory: "advanced"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Diagnostics")
 
         ToggleRow {
+            settingsSearchKeywords: "stats fps latency overlay osd"
             title: qsTr("Show performance stats while streaming")
             description: qsTr("Display real-time stream performance information while streaming.") + "\n\n" +
                          qsTr("You can toggle it at any time while streaming using %1 or %2.")
@@ -749,7 +796,8 @@ Column {
 
     SettingsCard {
         id: overlayMenuCard
-        visible: settingsPage.category === "advanced" && hasVisibleContent
+        settingsCategory: "advanced"
+        visible: settingsPage.category === settingsCategory && hasVisibleContent
         title: qsTr("Overlay menu position")
 
         readonly property bool menuEnabled:
@@ -758,6 +806,7 @@ Column {
         Component.onCompleted: OverlayMenuSettings.reload()
 
         ChoiceRow {
+            settingsSearchKeywords: "overlay menu osd in-stream"
             title: qsTr("Overlay menu position")
             description: qsTr("With a gamepad connected, holding %1 also opens the menu while this is not Disabled (requires Gamepad Mouse to be off).").arg(SdlGamepadKeyNavigation.startButtonName())
             selectedValue: StreamingPreferences.overlayMenuPosition

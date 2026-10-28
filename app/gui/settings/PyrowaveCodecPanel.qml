@@ -13,6 +13,16 @@ import PyrowaveStatus 1.0
 Column {
     id: panel
 
+    // Shown only while PyroWave is the selected codec. `applicable` rather than
+    // a `visible` binding so settings search can tell whether it's available.
+    property bool applicable: true
+    visible: applicable
+
+    // Settings search metadata (see SettingsSearchIndex.js)
+    property string settingsSearchTitle: "PyroWave"
+    property string settingsSearchDescription: qsTr("PyroWave capability check")
+    property string settingsSearchKeywords: "pyrowave codec wavelet gpu capability check bitrate"
+
     // Not in Theme: an amber for "works, but not here yet" states.
     readonly property color warnColor: "#FFC861"
     readonly property bool lowBitrate:

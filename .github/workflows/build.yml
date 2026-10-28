@@ -69,6 +69,11 @@ jobs:
     - name: Test version derivation
       run: python3 -m unittest discover -s tests/derive_version -p 'test_*.py'
 
+    - name: Check settings search metadata
+      # 设置搜索的索引是运行期从真实控件现采的；这里拦的是元数据漂移
+      # （没标题、没分类、用 visible 代替 applicable 等），见脚本头注释。
+      run: python3 -m unittest discover -s tests/settings_search -p 'test_*.py'
+
   cpp-format:
     # C++ 格式门禁:用 git clang-format 只检查相对目标分支**改动过的行**,
     # 不做全量重排 —— 全量重排会让每次 merge 上游都变成格式冲突灾难。
@@ -265,6 +270,10 @@ jobs:
         if errorlevel 1 exit /b %ERRORLEVEL%
         set QT_QPA_PLATFORM=offscreen
         qmltestrunner -input tests\settings_localization -translation app\languages\qml_zh_CN.qm
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        rem 设置搜索：排序 + 真实设置组件上的导航/滚动/焦点/高亮/Esc。
+        rem mocks 里是 SdlGamepadKeyNavigation 的 QML 替身。
+        qmltestrunner -input tests\settings_search -import tests\settings_search\mocks
         if errorlevel 1 exit /b %ERRORLEVEL%
 
     - name: Test clipboard / cursor / file-mapping / overlay layout logic

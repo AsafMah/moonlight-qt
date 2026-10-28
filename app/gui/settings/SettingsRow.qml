@@ -13,6 +13,15 @@ FocusScope {
     property real descriptionFontPointSize: Theme.fontSettingsSubtitle
     // 业务上是否该显示这一行（例如某功能在当前平台不可用）
     property bool applicable: true
+
+    // 设置搜索元数据，由 SettingsSearchIndex.collect() 读取。标题和说明就是界面上
+    // 显示的（已翻译的）文字；keywords 是额外的英文同义词，不翻译，例如 "fps framerate"。
+    readonly property string settingsSearchKind: "row"
+    property string settingsSearchTitle: title
+    property string settingsSearchDescription: description
+    property string settingsSearchKeywords: ""
+    property Item settingsSearchFocusTarget: null
+
     readonly property bool stacked: width < Theme.settingsRowStackBreakpoint
     readonly property bool hoverable: controlSlot.children.length > 0
 

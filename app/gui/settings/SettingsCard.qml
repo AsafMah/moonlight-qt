@@ -12,6 +12,22 @@ Item {
     property string subtitle: ""
     default property alias cardContent: contentColumn.data
 
+    // 业务上是否该显示这张卡（例如某功能在当前平台不可用）。和 SettingsRow 一样用
+    // applicable 而不是直接绑 visible：设置搜索要在卡片所在分类没打开时也能判断它是否可用。
+    property bool applicable: true
+
+    // 这张卡属于哪个分类（SettingsView 的分类 key）。只有和其它分类的卡片混放在同一个
+    // 页面里时才需要设（LegacySettingsPage）；独立页面由 SettingsView 在页面实例上声明。
+    property string settingsCategory: ""
+
+    // 设置搜索元数据，见 SettingsSearchIndex.js。卡片里有可搜索的行时，卡片标题只作为
+    // 这些行的「分区」参与匹配；整张卡没有可搜索的行时，卡片自己才是一条结果。
+    readonly property string settingsSearchKind: "card"
+    property string settingsSearchTitle: title
+    property string settingsSearchDescription: subtitle
+    property string settingsSearchKeywords: ""
+    property Item settingsSearchFocusTarget: null
+
     // 卡片内是否还有适用的行。全部被过滤掉时整张卡自动隐藏。
     //
     // 这里必须看 applicable 这类「显式意图」，绝对不能看 visible。visible 是实际可见性：
@@ -30,7 +46,7 @@ Item {
     }
 
     width: parent ? parent.width : 0
-    visible: hasVisibleContent
+    visible: applicable && hasVisibleContent
     height: visible ? implicitHeight : 0
     // 底部多留出投影的高度，否则硬投影会压在下一张卡片的上沿
     implicitHeight: layout.implicitHeight + Theme.spaceLg * 2 + Theme.shadowOffset

@@ -38,3 +38,9 @@ MIT License, Copyright (c) 2020 Microsoft Corporation.
 | `menu-microphone.svg` | `Mic/SVG/ic_fluent_mic_24_regular.svg` |
 | `menu-close.svg` | `Dismiss/SVG/ic_fluent_dismiss_24_regular.svg` |
 | `menu-next.svg` | `Chevron Right/SVG/ic_fluent_chevron_right_24_regular.svg` |
+
+设置搜索框新增（同样仅将填色改为白色）：
+
+| 文件 | 上游资源 |
+| --- | --- |
+| `search.svg` | `Search/SVG/ic_fluent_search_24_regular.svg` |

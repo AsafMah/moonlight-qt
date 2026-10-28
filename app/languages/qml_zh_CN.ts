@@ -3999,6 +3999,28 @@
     </message>
 </context>
 <context>
+    <name>SettingsSearchField</name>
+    <message>
+        <source>Search settings</source>
+        <translation>搜索设置</translation>
+    </message>
+    <message>
+        <source>Clear search</source>
+        <translation>清除搜索</translation>
+    </message>
+</context>
+<context>
+    <name>SettingsSearchResults</name>
+    <message>
+        <source>Search results</source>
+        <translation>搜索结果</translation>
+    </message>
+    <message>
+        <source>No settings match &quot;%1&quot;.</source>
+        <translation>没有匹配“%1”的设置。</translation>
+    </message>
+</context>
+<context>
     <name>SettingsView</name>
     <message>
         <source>Settings</source>

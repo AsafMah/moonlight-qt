@@ -13,6 +13,7 @@
 #include <QPainter>
 #include <QSurfaceFormat>
 #include <QWheelEvent>
+#include <QtMath>
 
 #include <algorithm>
 #include <cmath>

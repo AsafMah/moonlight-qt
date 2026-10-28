@@ -156,6 +156,7 @@ constexpr const char PasteText[] = "paste-text";
 constexpr const char TogglePointerRegionLock[] = "toggle-pointer-region-lock";
 constexpr const char ToggleKeyboardGrab[] = "toggle-keyboard-grab";
 constexpr const char HoldReleaseMouse[] = "hold-release-mouse";
+constexpr const char RightAltMouseRelease[] = "right-alt-mouse-release";
 // Moonlight V+ only
 constexpr const char ToggleOverlayMenu[] = "toggle-overlay-menu";
 constexpr const char CycleOverlayPreset[] = "cycle-overlay-preset";
@@ -261,6 +262,8 @@ public:
 
     void resetAction(const QString& actionId);
     void resetAll();
+    bool rightAltReleaseEnabled() const { return m_RightAltReleaseEnabled; }
+    void setRightAltReleaseEnabled(bool enabled) { m_RightAltReleaseEnabled = enabled; }
 
     // All pairs of slots that share the same binding
     QVector<Conflict> conflicts() const;
@@ -271,6 +274,7 @@ public:
 private:
     const ShortcutRegistry* m_Registry;
     DefaultPrefix m_Prefix;
+    bool m_RightAltReleaseEnabled = false;
     // Present only for customized actions; always MaxBindings long
     QHash<QString, QVector<ShortcutBinding>> m_Overrides;
 };
@@ -395,6 +399,7 @@ private:
     // Binding key() to actions in registry order. Conflicting bindings list
     // several actions; the first one that has a handler wins.
     QHash<int, QStringList> m_Bindings;
+    bool m_ReserveRightAlt = false;
     QSet<int> m_SwallowedKeys;
     // Hold actions in progress, by the scancode that started them
     QHash<int, QString> m_HeldActions;

@@ -9,6 +9,24 @@
 void Session::setupStatsOverlayShortcuts()
 {
     ShortcutDispatcher& dispatcher = m_InputHandler->getShortcutDispatcher();
+    m_InputHandler->setMouseReleaseModeCallback([this](bool persistent) {
+        if (persistent) {
+            m_WasCapturedBeforeStatsEdit = false;
+            m_WasCapturedBeforeMenu = false;
+            showStreamingToast(tr("Mouse free: click the overlay or menu to edit. "
+                                  "Double-tap Right Alt or press Esc to finish."),
+                               3500);
+        }
+        if (m_StatsOverlay) {
+            m_StatsOverlay->setPointerEditMode(persistent);
+        }
+        if (m_MenuPanel) {
+            m_MenuPanel->setPointerEditMode(persistent);
+            if (!persistent && m_MenuPanel->isMenuVisible()) {
+                m_MenuPanel->closeMenu();
+            }
+        }
+    });
 
     // Replaces the input handler's own toggle, which only knows the text overlay.
     // Until the overlay exists (before the stream starts) keep that behavior.
@@ -50,6 +68,10 @@ void Session::createStatsOverlay(OverlayWindowMode windowMode)
 
     m_StatsOverlay->setEditModeCallback([this](bool editing) {
         if (editing) {
+            if (m_InputHandler->isMouseReleasePersistent()) {
+                m_WasCapturedBeforeStatsEdit = false;
+                return;
+            }
             // The pointer has to be free to drag the overlay. If the overlay
             // menu started this, take over its pending capture restore so the
             // menu's close animation does not recapture mid-edit.

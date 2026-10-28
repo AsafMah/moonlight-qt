@@ -15,6 +15,8 @@ class ShortcutModel : public QAbstractListModel
     Q_PROPERTY(DefaultPrefix defaultPrefix READ defaultPrefix WRITE setDefaultPrefix NOTIFY
                    defaultPrefixChanged)
     Q_PROPERTY(int conflictCount READ conflictCount NOTIFY bindingsChanged)
+    Q_PROPERTY(bool rightAltReleaseEnabled READ rightAltReleaseEnabled WRITE
+                   setRightAltReleaseEnabled NOTIFY bindingsChanged)
 
 public:
     enum Roles
@@ -62,6 +64,8 @@ public:
     void setDefaultPrefix(DefaultPrefix prefix);
 
     int conflictCount() const;
+    bool rightAltReleaseEnabled() const { return m_Profile.rightAltReleaseEnabled(); }
+    void setRightAltReleaseEnabled(bool enabled);
 
     // Handles a key press while capturing a binding for (row, slot).
     // Esc cancels and Backspace or Delete clears, when pressed without modifiers.
@@ -95,6 +99,7 @@ private:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
     ShortcutProfile m_Profile;
+    QVector<ShortcutAction> m_VisibleActions;
     ModifierKeyRecorder m_ModifierRecorder;
     int m_RecorderRow = -1;
     int m_RecorderSlot = -1;

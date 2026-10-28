@@ -5973,6 +5973,9 @@ void Session::exec()
         case SDL_KEYUP:
         case SDL_KEYDOWN: {
             presence.runCallbacks();
+            if (m_InputHandler->handleMouseReleaseEscape(&event.key)) {
+                break;
+            }
             // Escape follows the same back/close rule as the controller. Swallow
             // both halves of the key press so it cannot reach the remote app.
             if (m_MenuPanel && (m_MenuPanel->isMenuVisible() || m_MenuPanel->isClosing()) &&
@@ -6034,7 +6037,8 @@ void Session::exec()
             }
 
             // A click on the stream outside the overlay ends moving it
-            if (m_StatsOverlay && m_StatsOverlay->isEditing()) {
+            if (m_StatsOverlay && m_StatsOverlay->isEditing() &&
+                !m_InputHandler->isMouseReleasePersistent()) {
                 if (event.type == SDL_MOUSEBUTTONUP) {
                     m_StatsOverlay->endEditing();
                 }

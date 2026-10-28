@@ -73,6 +73,7 @@ OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayM
             onResizeFinished(center, bodySize);
         });
         m_Window->setEndEditingCallback([this] { endEditing(); });
+        m_Window->setBeginEditingCallback([this] { beginEditing(); });
         createTooltip();
         applyStyle();
     }
@@ -255,6 +256,16 @@ void OverlayStatsController::toggleEditing()
         endEditing();
     } else {
         beginEditing();
+    }
+}
+
+void OverlayStatsController::setPointerEditMode(bool enabled)
+{
+    if (!enabled) {
+        endEditing();
+    }
+    if (m_Window) {
+        m_Window->setEditOnClick(enabled);
     }
 }
 

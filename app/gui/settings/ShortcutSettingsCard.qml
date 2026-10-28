@@ -62,6 +62,13 @@ SettingsCard {
         }
     }
 
+    ToggleRow {
+        title: qsTr("Hold Right Alt to release the mouse")
+        description: qsTr("Hold to release; let go to recapture. Double-tap for persistent mouse-free editing, then double-tap again or press Esc to exit. Right Alt and AltGr are not sent to the host.")
+        checked: ShortcutModel.rightAltReleaseEnabled
+        onToggled: function(value) { ShortcutModel.rightAltReleaseEnabled = value }
+    }
+
     Repeater {
         model: ShortcutModel
 

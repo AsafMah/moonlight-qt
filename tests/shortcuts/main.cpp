@@ -1,4 +1,5 @@
 #include "streaming/input/shortcuts.h"
+#include "streaming/input/mousereleasegesture.h"
 #include "gui/shortcutmodel.h"
 
 #include <QCoreApplication>
@@ -163,7 +164,10 @@ bool testHoldActions(QTextStream& err)
 
     const QString holdId = QLatin1String(ShortcutActions::HoldReleaseMouse);
     const QString stats = QLatin1String(ShortcutActions::ToggleStatsOverlay);
-    const ShortcutAction* hold = ShortcutRegistry::instance().find(holdId);
+    auto actions = ShortcutRegistry::instance().actions();
+    actions.append(ShortcutAction{ holdId, "Test hold", "Input", {}, true });
+    const ShortcutRegistry registry(actions);
+    const ShortcutAction* hold = registry.find(holdId);
     ok &=
         require(hold != nullptr && hold->hold && hold->defaults.isEmpty(),
                 QStringLiteral("hold-release-mouse is missing, not a hold action, or bound"), err);
@@ -178,7 +182,7 @@ bool testHoldActions(QTextStream& err)
     const quint8 alt = ShortcutBinding::ModAlt;
     const quint8 ctrl = ShortcutBinding::ModCtrl;
 
-    ShortcutProfile profile;
+    ShortcutProfile profile(registry);
     const ShortcutBinding rightAlt(noMods, ralt);
     ok &= require(profile.bindings(holdId) == QVector<ShortcutBinding>(2),
                   QStringLiteral("hold-release-mouse has a default binding"), err);
@@ -191,7 +195,7 @@ bool testHoldActions(QTextStream& err)
         QTemporaryDir dir;
         QSettings settings(dir.filePath(QStringLiteral("hold.ini")), QSettings::IniFormat);
         profile.save(settings);
-        ShortcutProfile loaded;
+        ShortcutProfile loaded(registry);
         loaded.load(settings);
         ok &= require(loaded.bindings(holdId)[0] == rightAlt,
                       QStringLiteral("hold binding did not round-trip"), err);
@@ -328,45 +332,120 @@ bool testModifierRecorder(QTextStream& err)
     return ok;
 }
 
-bool testRightAltCaptureAfterFocusChange(QTextStream& err)
+bool testRightAltCheckbox(QTextStream& err)
 {
     QTemporaryDir settingsDir;
-    if (!settingsDir.isValid()) {
-        return require(false, QStringLiteral("no temporary settings directory"), err);
+    if (!require(settingsDir.isValid(), QStringLiteral("temporary shortcut settings"), err)) {
+        return false;
     }
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QCoreApplication::setOrganizationName(QStringLiteral("MoonlightTests"));
-    QCoreApplication::setApplicationName(QStringLiteral("ShortcutCapture"));
-
+    QCoreApplication::setApplicationName(QStringLiteral("ShortcutCheckbox"));
     ShortcutModel model;
-    int holdRow = -1;
-    for (int row = 0; row < model.rowCount(); row++) {
-        if (model.data(model.index(row), ShortcutModel::ActionIdRole).toString() ==
-            QLatin1String(ShortcutActions::HoldReleaseMouse)) {
-            holdRow = row;
-            break;
-        }
+    bool ok =
+        require(model.metaObject()->indexOfProperty("rightAltReleaseEnabled") >= 0,
+                QStringLiteral("Right Alt must be enabled without recording a modifier key"), err);
+    for (int row = 0; row < model.rowCount(); ++row) {
+        ok &= require(model.data(model.index(row), ShortcutModel::ActionIdRole).toString() !=
+                          QLatin1String(ShortcutActions::HoldReleaseMouse),
+                      QStringLiteral("replace the unreliable hold-binding capture row"), err);
     }
-    if (!require(holdRow >= 0, QStringLiteral("hold-to-release action missing"), err)) {
-        return false;
-    }
+    ok &= require(!model.rightAltReleaseEnabled(),
+                  QStringLiteral("fresh clients must not silently lose AltGr typing"), err);
+    model.setRightAltReleaseEnabled(true);
+    ShortcutModel reopened;
+    ok &= require(reopened.rightAltReleaseEnabled(),
+                  QStringLiteral("checkbox must persist without any key capture"), err);
+    ShortcutProfile profile = ShortcutProfile::loadFromSettings();
+    ShortcutMatcher matcher;
+    matcher.setProfile(profile);
+    ShortcutDispatcher dispatcher;
+    int presses = 0;
+    int releases = 0;
+    dispatcher.setHoldHandler(QLatin1String(ShortcutActions::RightAltMouseRelease),
+                              [&](bool held) { held ? ++presses : ++releases; });
+    const quint8 ctrlAlt = ShortcutBinding::ModCtrl | ShortcutBinding::ModAlt;
+    ok &= require(
+        matcher.processAltGrControl(true, dispatcher) &&
+            matcher.processKeyEvent(ShortcutKeys::RightAlt, 0, ctrlAlt, true, false, dispatcher) &&
+            matcher.processKeyEvent(ShortcutKeys::RightAlt, 0, ctrlAlt, true, true, dispatcher) &&
+            presses == 1 && matcher.suppressedModifiers() == ctrlAlt &&
+            matcher.processKeyEvent(ShortcutKeys::RightAlt, 0, ShortcutBinding::ModCtrl, false,
+                                    false, dispatcher) &&
+            matcher.processAltGrControl(false, dispatcher) && releases == 1,
+        QStringLiteral("enabled Right Alt/repeats/fake AltGr Ctrl must stay local"), err);
+    matcher.reset();
+    ok &= require(
+        matcher.processKeyEvent(ShortcutKeys::RightAlt, 0, ctrlAlt, true, false, dispatcher),
+        QStringLiteral("real additional modifiers must not forward reserved Right Alt"), err);
+    matcher.reset();
+    QSettings settings;
+    settings.setValue(QStringLiteral("shortcuts/bindings/hold-release-mouse"),
+                      QStringLiteral("RightAlt"));
+    model.setRightAltReleaseEnabled(false);
+    ok &= require(!ShortcutProfile::loadFromSettings().rightAltReleaseEnabled(),
+                  QStringLiteral("explicit checkbox off must win over the old binding"), err);
+    settings.remove(QStringLiteral("shortcuts/right-alt-release-enabled"));
+    ok &= require(ShortcutProfile::loadFromSettings().rightAltReleaseEnabled(),
+                  QStringLiteral("a saved bare Right Alt binding must retain its opt-in"), err);
+    return ok;
+}
 
-    const int pressResult = model.captureKey(holdRow, 0, Qt::Key_Alt, Qt::AltModifier, 0x138);
-    if (!require(pressResult == ShortcutModel::CaptureIgnored,
-                 QStringLiteral("Right Alt press should wait for its release"), err)) {
-        return false;
-    }
-
-    // Alt can move focus away from the binding button before its key-up. The
-    // recorder must still finish from the application-level release event.
-    QObject newFocusTarget;
-    QKeyEvent release(QEvent::KeyRelease, Qt::Key_Alt, Qt::AltModifier, 0x138, 0, 0);
-    QCoreApplication::sendEvent(&newFocusTarget, &release);
-
-    return require(model.bindingText(QLatin1String(ShortcutActions::HoldReleaseMouse)) ==
-                       QLatin1String("Right Alt"),
-                   QStringLiteral("Right Alt was lost after the recorder button lost focus"), err);
+bool testMouseReleaseGesture(QTextStream& err)
+{
+    MouseReleaseGesture gesture;
+    gesture.hold(true, 0);
+    bool ok = require(gesture.isFree() && !gesture.isPersistent(),
+                      QStringLiteral("holding Right Alt must free the mouse immediately"), err);
+    gesture.hold(false, 50);
+    ok &= require(!gesture.isFree(), QStringLiteral("a single release must recapture"), err);
+    gesture.hold(true, 150);
+    gesture.hold(false, 200);
+    ok &= require(gesture.isFree() && gesture.isPersistent(),
+                  QStringLiteral("double tap must latch free mode after key-up"), err);
+    gesture.focusLost();
+    ok &= require(
+        gesture.isPersistent() && gesture.isFree(),
+        QStringLiteral("persistent release must survive focus changes until explicit exit"), err);
+    gesture.hold(true, 1000);
+    gesture.hold(false, 1050);
+    ok &= require(gesture.isPersistent(), QStringLiteral("one tap must not unlatch mode"), err);
+    gesture.hold(true, 1150);
+    gesture.hold(false, 1200);
+    ok &= require(!gesture.isFree(), QStringLiteral("another double tap must recapture"), err);
+    gesture.hold(true, 2000);
+    gesture.hold(false, 2050);
+    gesture.hold(true, 2100);
+    gesture.hold(false, 2150);
+    ok &= require(gesture.escape(true) && !gesture.isFree() && gesture.escape(false) &&
+                      !gesture.escape(false),
+                  QStringLiteral("Esc must exit and swallow exactly its press/release pair"), err);
+    gesture.hold(true, 3000);
+    gesture.hold(false, 3050);
+    gesture.hold(true, 3100);
+    gesture.hold(false, 3100 + MouseReleaseGesture::TapDurationMs + 1);
+    ok &= require(!gesture.isPersistent(),
+                  QStringLiteral("a real hold must not complete a double tap"), err);
+    gesture.hold(true, 4000);
+    gesture.hold(false, 4050);
+    gesture.hold(true, 4050 + MouseReleaseGesture::DoubleTapGapMs + 1);
+    gesture.hold(false, 4500);
+    ok &= require(!gesture.isPersistent(), QStringLiteral("late taps must not latch"), err);
+    gesture.reset();
+    gesture.hold(false, 5000);
+    ok &= require(!gesture.isFree(), QStringLiteral("focus loss must cancel without relatching"),
+                  err);
+    gesture.reset();
+    gesture.hold(true, 0);
+    gesture.hold(false, MouseReleaseGesture::TapDurationMs);
+    gesture.hold(true, MouseReleaseGesture::TapDurationMs + MouseReleaseGesture::DoubleTapGapMs);
+    gesture.hold(false,
+                 MouseReleaseGesture::TapDurationMs * 2 + MouseReleaseGesture::DoubleTapGapMs);
+    ok &= require(gesture.isPersistent(),
+                  QStringLiteral("exact tap-duration and double-tap-gap limits must be inclusive"),
+                  err);
+    return ok;
 }
 
 bool testQtConversion(QTextStream& err)
@@ -749,7 +828,8 @@ int main(int argc, char* argv[])
     ok &= testMatcher(err);
     ok &= testHoldActions(err);
     ok &= testModifierRecorder(err);
-    ok &= testRightAltCaptureAfterFocusChange(err);
+    ok &= testRightAltCheckbox(err);
+    ok &= testMouseReleaseGesture(err);
 
     out << (ok ? "PASS" : "FAILED") << '\n';
     return ok ? 0 : 1;

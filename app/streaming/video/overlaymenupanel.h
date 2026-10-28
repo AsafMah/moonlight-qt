@@ -295,6 +295,13 @@ public:
     OverlayMenu::Layout menuLayout() const { return m_Layout; }
     // The chosen scale; a level too tall for the stream is shown smaller
     int scalePercent() const { return qRound(m_RequestedScale * 100); }
+    int opacityPercent() const { return qRound(m_PanelOpacity * 100); }
+    void setPointerEditMode(bool enabled);
+    bool isEditing() const { return m_Editing; }
+    void setStyleEditedCallback(std::function<void(int, int)> callback)
+    {
+        m_StyleEditedCallback = std::move(callback);
+    }
 
     // The panel without its shadow margin, in the parent's coordinates
     QRect contentGeometry() const;
@@ -502,6 +509,9 @@ private:
     QPoint slideVector() const;
     void goBack(); // up one level, or close from a tab
     void finishTitleDrag();
+    Qt::Edges editEdgesAt(const QPoint& parentPosition) const;
+    void resizeForEditing(const QPoint& parentPosition);
+    void saveEditedStyle();
     void applyStatsOverlayState();
     void applyMenuAttachmentState();
     QString shortcutDetail(MenuAction action) const; // live key binding text
@@ -648,6 +658,12 @@ private:
 
     // Title bar drag: armed on press, a drag once the pointer moves
     bool m_TitlePressed = false;
+    bool m_PointerEditMode = false;
+    bool m_Editing = false;
+    Qt::Edges m_EditResizeEdges;
+    QRect m_EditPressGeometry;
+    int m_EditPressScale = 100;
+    std::function<void(int, int)> m_StyleEditedCallback;
     bool m_TitleDragging = false;
     int m_TitlePressIndex = -1;  // -1 title, -2 back button
     QPoint m_TitlePressPosition; // parent coordinates

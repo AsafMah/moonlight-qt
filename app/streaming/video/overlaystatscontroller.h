@@ -35,8 +35,8 @@ class OverlayManager;
  *
  * While the stream does not have the mouse (edit mode, the pointer released,
  * or a hold-to-release key), hovering a metric shows a tooltip about it. The
- * overlay stays click-through outside edit mode, so the pointer is polled
- * through the PointerProvider rather than taken from mouse events.
+ * overlay stays click-through outside edit/persistent-release selection mode.
+ * Ordinary tooltips poll PointerProvider rather than taking mouse events.
  *
  * While detached, the overlay is a top-level window that the user can drag
  * anywhere, including another screen. It is not anchored to the stream; its
@@ -94,6 +94,7 @@ public:
     void beginEditing();
     void endEditing();
     void toggleEditing();
+    void setPointerEditMode(bool enabled);
 
     // Session calls these from the SDL loop
     void syncWithStreamWindow(bool streamVisible);

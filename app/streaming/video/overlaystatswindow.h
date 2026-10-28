@@ -92,6 +92,11 @@ public:
     // Edit mode accepts mouse input; otherwise the window is click-through
     // (unless it is standalone)
     void setEditing(bool editing);
+    void setEditOnClick(bool enabled);
+    void setBeginEditingCallback(std::function<void()> callback)
+    {
+        m_BeginEditingCallback = std::move(callback);
+    }
     bool isEditing() const { return m_Editing; }
     // Moving or resizing with the mouse
     bool isDragging() const { return m_Dragging || m_ResizeEdges != 0; }
@@ -182,7 +187,10 @@ private:
     void paintResizeGrip(QPainter* painter, const QSize& body) const;
 
     // Takes mouse input: edit mode, or always when standalone
-    bool isInteractive() const { return m_Editing || m_Standalone; }
+    bool isInteractive() const { return m_Editing || m_Standalone || m_EditOnClick; }
+    void updateInputFlags();
+    bool m_EditOnClick = false;
+    std::function<void()> m_BeginEditingCallback;
     qreal scale() const { return m_ScalePercent / 100.0; }
     QPoint eventPosition(QMouseEvent* event) const;
     QPoint localPosition(QMouseEvent* event) const;

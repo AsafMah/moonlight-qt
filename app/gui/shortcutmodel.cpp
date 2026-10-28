@@ -12,6 +12,11 @@ ShortcutModel::ShortcutModel(QObject* parent)
       m_ModifierRecorder(false)
 #endif
 {
+    for (const ShortcutAction& action : m_Profile.registry().actions()) {
+        if (action.id != QLatin1String(ShortcutActions::RightAltMouseRelease)) {
+            m_VisibleActions.append(action);
+        }
+    }
 }
 
 ShortcutModel::~ShortcutModel()
@@ -24,12 +29,12 @@ int ShortcutModel::rowCount(const QModelIndex& parent) const
     if (parent.isValid()) {
         return 0;
     }
-    return m_Profile.registry().actions().size();
+    return m_VisibleActions.size();
 }
 
 const ShortcutAction* ShortcutModel::actionAt(int row) const
 {
-    const QVector<ShortcutAction>& actions = m_Profile.registry().actions();
+    const QVector<ShortcutAction>& actions = m_VisibleActions;
     if (row < 0 || row >= actions.size()) {
         return nullptr;
     }
@@ -123,6 +128,12 @@ void ShortcutModel::setDefaultPrefix(DefaultPrefix prefix)
 int ShortcutModel::conflictCount() const
 {
     return m_Profile.conflicts().size();
+}
+
+void ShortcutModel::setRightAltReleaseEnabled(bool enabled)
+{
+    m_Profile.setRightAltReleaseEnabled(enabled);
+    commit();
 }
 
 int ShortcutModel::captureKey(int row, int slot, int qtKey, int qtModifiers, quint32 nativeScanCode)

@@ -374,6 +374,7 @@ HEADERS += \
     gui/keymacromodel.h \
     gui/apppicker.h \
     streaming/input/shortcuts.h \
+    streaming/input/mousereleasegesture.h \
     streaming/input/hostkeys.h \
     gui/appmodel.h \
     streaming/video/decoder.h \

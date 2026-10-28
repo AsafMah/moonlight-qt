@@ -112,6 +112,14 @@ GroupBox {
             }
         }
 
+        CheckBox {
+            text: qsTr("Hold Right Alt to release the mouse")
+            checked: ShortcutModel.rightAltReleaseEnabled
+            onToggled: ShortcutModel.rightAltReleaseEnabled = checked
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Hold to release; let go to recapture. Double-tap for persistent mouse-free editing, then double-tap again or press Esc to exit. Right Alt and AltGr are not sent to the host.")
+        }
+
         Repeater {
             model: ShortcutModel
 

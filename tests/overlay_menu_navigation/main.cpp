@@ -423,6 +423,75 @@ static void testMenuOptions(OverlayMenuPanel &panel)
     waitClosed(panel);
 }
 
+static void testPointerEditing()
+{
+    OverlayMenuPanel panel;
+    int actions = 0;
+    int savedScale = 0;
+    int savedOpacity = 0;
+    panel.setStyleEditedCallback([&](int scale, int opacity) {
+        savedScale = scale;
+        savedOpacity = opacity;
+    });
+    panel.setActionCallback([&](MenuAction) { ++actions; });
+    panel.showAtCursor(0, 0, 1920, 1080, QPoint(400, 100));
+    QTest::qWait(250);
+    panel.showTab(MenuTab::Quick);
+    panel.setPointerEditMode(true);
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      rowCenter(panel, rowOf(panel, MenuAction::ToggleFullScreen)));
+    if (actions != 0 || !panel.isEditing() || !panel.isMenuVisible())
+        qFatal("persistent-mode click must edit the menu, not fire its action");
+    const int scale = panel.scalePercent();
+    const QPoint point = panel.contentGeometry().center() - panel.position();
+    QWheelEvent zoom(QPointF(point), QPointF(panel.position() + point), QPoint(), QPoint(0, 120),
+                     Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(&panel, &zoom);
+    if (panel.scalePercent() != scale + 5)
+        qFatal("editing wheel must zoom the menu instead of touching its controls");
+    const int opacity = panel.opacityPercent();
+    QWheelEvent fade(QPointF(point), QPointF(panel.position() + point), QPoint(), QPoint(0, -120),
+                     Qt::NoButton, Qt::ControlModifier, Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(&panel, &fade);
+    if (panel.opacityPercent() != opacity - 5)
+        qFatal("editing Ctrl+wheel must change opacity");
+    if (savedScale != panel.scalePercent() || savedOpacity != panel.opacityPercent())
+        qFatal("edited menu style must reach the persistence callback");
+    const auto drag = [&](const QPoint &local, const QPoint &delta) {
+        const QPoint global = panel.position() + local;
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(local), QPointF(global), Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&panel, &press);
+        QMouseEvent move(QEvent::MouseMove, QPointF(local + delta), QPointF(global + delta),
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&panel, &move);
+        QMouseEvent release(QEvent::MouseButtonRelease, QPointF(local + delta),
+                            QPointF(global + delta), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&panel, &release);
+    };
+    const QPoint beforeMove = panel.position();
+    drag(panel.contentGeometry().center() - panel.position(), QPoint(30, 20));
+    if (panel.position() != beforeMove + QPoint(30, 20))
+        qFatal("edit-mode dragging over menu controls must move the menu");
+    const QRect beforeResize = panel.contentGeometry();
+    const QPoint edge =
+        QPoint(beforeResize.right() - 6, beforeResize.center().y()) - panel.position();
+    drag(edge, QPoint(40, 0));
+    if (panel.contentGeometry().width() <= beforeResize.width() ||
+        panel.contentGeometry().left() != beforeResize.left() || savedScale != panel.scalePercent())
+        qFatal(
+            "menu edge drag must resize and persist scale while keeping the opposite edge fixed");
+    panel.setPointerEditMode(false);
+    if (panel.isEditing())
+        qFatal("persistent-mode exit must finish menu editing");
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      rowCenter(panel, rowOf(panel, MenuAction::ToggleFullScreen)));
+    if (actions != 1)
+        qFatal("normal menu actions must work again outside persistent editing");
+    panel.closeMenu();
+    waitClosed(panel);
+}
+
 int main(int argc, char **argv)
 {
     QGuiApplication app(argc, argv);
@@ -876,5 +945,6 @@ int main(int argc, char **argv)
     testOpeningClickSuppression(panel);
     testOverlayAttachmentOptions(panel);
     testMenuOptions(panel);
+    testPointerEditing();
     return 0;
 }

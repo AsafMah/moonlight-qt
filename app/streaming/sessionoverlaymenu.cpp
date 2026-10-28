@@ -198,6 +198,11 @@ void Session::setupOverlayMenuShortcut()
             OverlayMenuSettings().setDraggedPosition(position);
         }
     });
+    m_MenuPanel->setStyleEditedCallback([](int scale, int opacity) {
+        OverlayMenuSettings settings;
+        settings.setScalePercent(scale);
+        settings.setOpacityPercent(opacity);
+    });
 }
 
 void Session::updateOverlayMenuEdgeTrigger()

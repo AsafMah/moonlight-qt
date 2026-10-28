@@ -14,5 +14,6 @@ SOURCES += \
     ../../app/streaming/input/shortcuts.cpp
 
 HEADERS += \
+    ../../app/streaming/input/mousereleasegesture.h \
     ../../app/gui/shortcutmodel.h \
     ../../app/streaming/input/shortcuts.h

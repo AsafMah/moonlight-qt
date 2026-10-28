@@ -325,6 +325,73 @@ QRect OverlayMenuPanel::contentGeometry() const
     return geometry().adjusted(shadow, shadow, -shadow, -shadow);
 }
 
+void OverlayMenuPanel::setPointerEditMode(bool enabled)
+{
+    m_PointerEditMode = enabled;
+    if (!enabled) {
+        m_Editing = false;
+        m_EditResizeEdges = {};
+        m_TitlePressed = m_TitleDragging = false;
+        setMouseGrabEnabled(false);
+        unsetCursor();
+        if (m_Visible) {
+            repositionWindow();
+            forceRepaint();
+        }
+    }
+}
+
+Qt::Edges OverlayMenuPanel::editEdgesAt(const QPoint& point) const
+{
+    Qt::Edges edges;
+    const QRect rect = contentGeometry();
+    if (point.x() <= rect.left() + 12)
+        edges |= Qt::LeftEdge;
+    else if (point.x() >= rect.right() - 12)
+        edges |= Qt::RightEdge;
+    if (point.y() <= rect.top() + 12)
+        edges |= Qt::TopEdge;
+    else if (point.y() >= rect.bottom() - 12)
+        edges |= Qt::BottomEdge;
+    return edges;
+}
+
+void OverlayMenuPanel::resizeForEditing(const QPoint& point)
+{
+    const QPoint delta = point - m_TitlePressPosition;
+    const bool horizontal =
+        m_EditResizeEdges.testFlag(Qt::LeftEdge) || m_EditResizeEdges.testFlag(Qt::RightEdge);
+    const bool vertical =
+        m_EditResizeEdges.testFlag(Qt::TopEdge) || m_EditResizeEdges.testFlag(Qt::BottomEdge);
+    const qreal dx = (m_EditResizeEdges.testFlag(Qt::LeftEdge) ? -delta.x() : delta.x()) /
+                     qreal(m_EditPressGeometry.width());
+    const qreal dy = (m_EditResizeEdges.testFlag(Qt::TopEdge) ? -delta.y() : delta.y()) /
+                     qreal(m_EditPressGeometry.height());
+    const qreal change = horizontal && (!vertical || std::abs(dx) >= std::abs(dy)) ? dx : dy;
+    setStyle(m_Layout, qRound(m_EditPressScale * (1 + change)), opacityPercent());
+    const QSize content = contentGeometry().size();
+    QPoint topLeft = m_EditPressGeometry.topLeft();
+    if (m_EditResizeEdges.testFlag(Qt::LeftEdge)) {
+        topLeft.setX(m_EditPressGeometry.right() + 1 - content.width());
+    }
+    if (m_EditResizeEdges.testFlag(Qt::TopEdge)) {
+        topLeft.setY(m_EditPressGeometry.bottom() + 1 - content.height());
+    }
+    const QRect bounds =
+        m_Bounds.isValid() ? m_Bounds : QRect(m_ParentX, m_ParentY, m_ParentW, m_ParentH);
+    const int shadow = qRound(m_ShadowMargin * m_Scale);
+    setPosition(OverlayMenu::clampToBounds(topLeft, content, bounds) - QPoint(shadow, shadow));
+    m_TargetPosition = position();
+}
+
+void OverlayMenuPanel::saveEditedStyle()
+{
+    finishTitleDrag();
+    if (m_StyleEditedCallback) {
+        m_StyleEditedCallback(scalePercent(), opacityPercent());
+    }
+}
+
 QPoint OverlayMenuPanel::layoutPosition(const QPointF& windowPosition) const
 {
     return (windowPosition / m_Scale).toPoint();
@@ -532,7 +599,7 @@ int OverlayMenuPanel::menuHeight() const
         height = qMax(height, m_TitleHeight + m_Padding * 2 +
                                   static_cast<int>(m_TabLevels.size()) * railTabHeight());
     }
-    if (m_HasGamepads) {
+    if (m_HasGamepads || m_Editing) {
         height += kGamepadHintBarHeight;
     }
     return height;
@@ -1188,22 +1255,20 @@ OverlayMenuPanel::SliderRowRects OverlayMenuPanel::sliderRowRects(int contentWid
 
     SliderRowRects r;
     r.value = QRect(textPad, itemY, 78, m_ItemHeight);
-    r.plus = QRect(contentWidth - textPad - buttonSize,
-                   itemY + (m_ItemHeight - buttonSize) / 2, buttonSize, buttonSize);
-    r.minus = QRect(r.plus.x() - buttonSize - buttonGap, r.plus.y(),
-                    buttonSize, buttonSize);
+    r.plus = QRect(contentWidth - textPad - buttonSize, itemY + (m_ItemHeight - buttonSize) / 2,
+                   buttonSize, buttonSize);
+    r.minus = QRect(r.plus.x() - buttonSize - buttonGap, r.plus.y(), buttonSize, buttonSize);
     const int trackLeft = r.value.right() + 1 + 8;
     const int trackRight = r.minus.x() - 6;
-    r.track = QRect(trackLeft, itemY + m_ItemHeight / 2 - 3,
-                    qMax(0, trackRight - trackLeft), 6);
+    r.track = QRect(trackLeft, itemY + m_ItemHeight / 2 - 3, qMax(0, trackRight - trackLeft), 6);
     return r;
 }
 
-OverlayMenuPanel::SliderZone OverlayMenuPanel::sliderZoneAt(const QPoint& windowPos, int rowIdx) const
+OverlayMenuPanel::SliderZone OverlayMenuPanel::sliderZoneAt(const QPoint& windowPos,
+                                                            int rowIdx) const
 {
     const auto& items = m_MenuLevels[m_CurrentLevel].items;
-    if (rowIdx < 0 || rowIdx >= (int)items.size()
-            || items[rowIdx].type != MenuItemType::Slider) {
+    if (rowIdx < 0 || rowIdx >= (int)items.size() || items[rowIdx].type != MenuItemType::Slider) {
         return SliderZone::None;
     }
 
@@ -1213,8 +1278,10 @@ OverlayMenuPanel::SliderZone OverlayMenuPanel::sliderZoneAt(const QPoint& window
     const SliderRowRects r = sliderRowRects(rowsWidth(), itemY);
 
     // Buttons win over the track so their hit area feels solid.
-    if (r.minus.adjusted(-2, -2, 2, 2).contains(contentPos)) return SliderZone::Minus;
-    if (r.plus.adjusted(-2, -2, 2, 2).contains(contentPos)) return SliderZone::Plus;
+    if (r.minus.adjusted(-2, -2, 2, 2).contains(contentPos))
+        return SliderZone::Minus;
+    if (r.plus.adjusted(-2, -2, 2, 2).contains(contentPos))
+        return SliderZone::Plus;
     if (QRect(r.track.x() - 4, itemY, r.track.width() + 8, m_ItemHeight).contains(contentPos)) {
         return SliderZone::Track;
     }
@@ -1223,7 +1290,8 @@ OverlayMenuPanel::SliderZone OverlayMenuPanel::sliderZoneAt(const QPoint& window
 
 void OverlayMenuPanel::gamepadAdjustSlider(int direction)
 {
-    if (!m_Visible) return;
+    if (!m_Visible)
+        return;
     const auto& items = m_MenuLevels[m_CurrentLevel].items;
 
     // D-pad left/right anywhere in the scrubber's submenu drives the slider;
@@ -1235,7 +1303,8 @@ void OverlayMenuPanel::gamepadAdjustSlider(int direction)
             break;
         }
     }
-    if (rowIdx < 0) return;
+    if (rowIdx < 0)
+        return;
 
     beginInteraction();
     if (m_HoveredIndex != rowIdx) {
@@ -1501,12 +1570,9 @@ void OverlayMenuPanel::updateFileMappingState(FileMappingState state, const QStr
     }
 }
 
-void OverlayMenuPanel::updateRemoteUsbState(
-    bool available,
-    RemoteUsbState state,
-    std::vector<RemoteUsbDevice> devices,
-    const QString& activeDeviceId,
-    const QString& detail)
+void OverlayMenuPanel::updateRemoteUsbState(bool available, RemoteUsbState state,
+                                            std::vector<RemoteUsbDevice> devices,
+                                            const QString& activeDeviceId, const QString& detail)
 {
     m_RemoteUsbAvailable = available;
     m_RemoteUsbState = state;
@@ -2180,6 +2246,9 @@ void OverlayMenuPanel::beginInteraction()
 
 void OverlayMenuPanel::dismissOnOutsideClick(const QPoint& parentPosition)
 {
+    if (m_PointerEditMode) {
+        return;
+    }
     if (m_OpeningClickPosition) {
         const bool openingClick = parentPosition == *m_OpeningClickPosition;
         m_OpeningClickPosition.reset();
@@ -2346,7 +2415,7 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
     p.save();
     p.translate(sm, sm);
     p.fillRect(QRect(0, 0, cw, ch), MenuSurface);
-    p.setPen(QPen(MenuLine, 1));
+    p.setPen(QPen(m_Editing ? MenuAccent : MenuLine, 1, m_Editing ? Qt::DashLine : Qt::SolidLine));
     p.drawRect(QRect(0, 0, cw - 1, ch - 1));
     p.setClipRect(QRect(1, 1, cw - 2, ch - 2));
     p.fillRect(QRect(1, 1, 4, m_TitleHeight - 1), MenuAccent);
@@ -2672,13 +2741,14 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
     // instead of having to know them. Faces follow the controller style
     // (PS: ✕ Select / ○ Back; Nintendo: B Select / A Back), compensated for
     // swapFaceButtons so the hint names the physical button to press.
-    if (m_HasGamepads) {
+    if (m_HasGamepads || m_Editing) {
         const int hintTop = ch - m_Padding - kGamepadHintBarHeight;
         p.setPen(QPen(MenuLine, 1));
         p.drawLine(textPad, hintTop, rw - textPad, hintTop);
         p.setFont(m_DetailFont);
         p.setPen(MenuDim);
-        const QString hint = gamepadHintText();
+        const QString hint =
+            m_Editing ? tr("Wheel: size  Ctrl+wheel: opacity  Esc: done") : gamepadHintText();
         p.drawText(QRect(textPad, hintTop + 1, rw - textPad * 2, kGamepadHintBarHeight - 1),
                    Qt::AlignLeft | Qt::AlignVCenter, hint);
     }
@@ -2693,6 +2763,23 @@ void OverlayMenuPanel::paintOverlay(QPainter& p)
 
 void OverlayMenuPanel::mouseMoveEvent(QMouseEvent* event)
 {
+    if (m_EditResizeEdges) {
+        resizeForEditing(parentPosition(event));
+        return;
+    }
+    if (m_PointerEditMode && !m_TitlePressed) {
+        const Qt::Edges edges = editEdgesAt(parentPosition(event));
+        const bool horizontal = edges.testFlag(Qt::LeftEdge) || edges.testFlag(Qt::RightEdge);
+        const bool vertical = edges.testFlag(Qt::TopEdge) || edges.testFlag(Qt::BottomEdge);
+        setCursor(horizontal && vertical
+                      ? (edges.testFlag(Qt::LeftEdge) == edges.testFlag(Qt::TopEdge)
+                             ? Qt::SizeFDiagCursor
+                             : Qt::SizeBDiagCursor)
+                  : horizontal ? Qt::SizeHorCursor
+                  : vertical   ? Qt::SizeVerCursor
+                               : Qt::SizeAllCursor);
+        return;
+    }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     const QPoint pos = layoutPosition(event->position());
 #else
@@ -2749,6 +2836,25 @@ void OverlayMenuPanel::mouseMoveEvent(QMouseEvent* event)
 void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() != Qt::LeftButton) return;
+    if (m_PointerEditMode) {
+        beginInteraction();
+        if (!m_Editing) {
+            finishTitleDrag();
+            m_Editing = true;
+            repositionWindow();
+            forceRepaint();
+        }
+        m_TitlePressPosition = parentPosition(event);
+        m_EditPressGeometry = contentGeometry();
+        m_EditPressScale = scalePercent();
+        m_TitlePressWindowPos = position();
+        m_EditResizeEdges = editEdgesAt(m_TitlePressPosition);
+        m_TitlePressed = !m_EditResizeEdges;
+        m_TitleDragging = false;
+        m_TitlePressIndex = -1;
+        setMouseGrabEnabled(true);
+        return;
+    }
     beginInteraction();
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -2872,6 +2978,12 @@ void OverlayMenuPanel::finishTitleDrag()
 
 void OverlayMenuPanel::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (m_EditResizeEdges && event->button() == Qt::LeftButton) {
+        m_EditResizeEdges = {};
+        setMouseGrabEnabled(false);
+        saveEditedStyle();
+        return;
+    }
     if (m_TitlePressed && event->button() == Qt::LeftButton) {
         const bool dragged = m_TitleDragging;
         const int pressIndex = m_TitlePressIndex;
@@ -2902,6 +3014,15 @@ void OverlayMenuPanel::wheelEvent(QWheelEvent* event)
 {
     if (!m_Visible) {
         event->ignore();
+        return;
+    }
+    if (m_Editing) {
+        const int steps = event->angleDelta().y() / 120;
+        const bool opacity = event->modifiers().testFlag(Qt::ControlModifier);
+        setStyle(m_Layout, scalePercent() + (opacity ? 0 : steps * 5),
+                 opacityPercent() + (opacity ? steps * 5 : 0));
+        saveEditedStyle();
+        event->accept();
         return;
     }
 

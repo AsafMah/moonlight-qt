@@ -12,8 +12,10 @@
 #include "SDL_compat.h"
 
 #include "shortcuts.h"
+#include "mousereleasegesture.h"
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QSet>
 
@@ -251,9 +253,17 @@ public:
 
     bool isCaptureActive();
 
-    // Hold to release mouse: true while its key is held and the hold released
-    // a captured mouse, which the key-up captures again
-    bool isMouseHoldReleased() const { return m_MouseHoldReleased; }
+    // The Right Alt gesture owns a free mouse, temporarily or persistently.
+    bool isMouseHoldReleased() const
+    {
+        return m_MouseHoldReleased || m_MouseReleaseGesture.isFree();
+    }
+    bool isMouseReleasePersistent() const { return m_MouseReleaseGesture.isPersistent(); }
+    bool handleMouseReleaseEscape(SDL_KeyboardEvent* event);
+    void setMouseReleaseModeCallback(std::function<void(bool)> callback)
+    {
+        m_MouseReleaseModeCallback = std::move(callback);
+    }
 
     // Ends a hold to release the mouse without capturing it again, e.g. when
     // a menu opens and takes over the pointer. Returns true if the hold had
@@ -477,8 +487,13 @@ private:
     QSet<uint32_t> m_KeysDown;
     bool m_FakeMouseCaptureActive;
 
-    // hold-release-mouse handler, see isMouseHoldReleased()
+    // Only the gesture (or an explicit editor handoff) restores its capture.
     void holdReleaseMouse(bool held);
+    void handleMouseReleaseHold(bool held);
+    void applyMouseReleaseGesture(bool wasFree, bool wasPersistent);
+    MouseReleaseGesture m_MouseReleaseGesture;
+    QElapsedTimer m_MouseReleaseClock;
+    std::function<void(bool)> m_MouseReleaseModeCallback;
     bool m_MouseHoldReleased = false;
     bool m_KeyboardCaptureActive;
     QString m_OldIgnoreDevices;

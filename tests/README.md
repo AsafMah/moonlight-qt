@@ -60,10 +60,18 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 `stats_overlay_layout` also exercises the production overlay painter at 75/80/100% and
 1/1.5/2 device-pixel ratios, verifies readable Compact labels, all 13 metrics, flush-top
 placement/editing, 55% metric chips with transparent gaps and soft shadows,
-generous resize zones, exact free dragging with 4 px magnets,
+generous resize zones, exact free dragging with 4 px magnets, conditional edit-on-click,
 and preserves explicit settings when defaults change. Set
 `MOONLIGHT_OVERLAY_TEST_OUTPUT_DIR` to save PNGs for visual inspection; it does not start
 a stream or send desktop input.
+
+`shortcuts` covers the Right Alt checkbox, legacy bare-Right-Alt opt-in, the existing
+matcher's AltGr suppression, and deterministic hold/double-tap/Esc/focus behavior.
+`overlay_menu_navigation` also tests persistent-release editing: clicks do not fire
+actions, the body drags, edges resize with fixed opposite edges, wheel zooms and
+Ctrl+wheel changes opacity through the persistence callback. These use only their
+own offscreen windows; OS-level capture and real-stream key delivery still require
+verification on the receiving client.
 
 - 测试**不得**把 Makefile/.o/可执行文件提交进仓库(.gitignore 已覆盖
   `tests/*/{Makefile*,.qmake.stash,*.o,release,debug}`),历史上曾误提交过

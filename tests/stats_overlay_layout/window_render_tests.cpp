@@ -627,6 +627,36 @@ bool testResizeGrabZones(QTextStream& err)
     return ok;
 }
 
+bool testConditionalClickThrough(QTextStream& err)
+{
+    RenderWindow window;
+    window.setStats(sample(), {});
+    window.render();
+    bool ok = require(window.flags().testFlag(Qt::WindowTransparentForInput),
+                      QStringLiteral("normal streaming stats must be click-through"), err);
+    window.setBeginEditingCallback([&] { window.setEditing(true); });
+    window.setEditOnClick(true);
+    ok &= require(!window.flags().testFlag(Qt::WindowTransparentForInput) && !window.isEditing(),
+                  QStringLiteral("persistent release must allow selecting, not auto-start editing"),
+                  err);
+    const QPoint point(window.width() / 2, 14);
+    QMouseEvent press(QEvent::MouseButtonPress, QPointF(point), QPointF(point), Qt::LeftButton,
+                      Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&window, &press);
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(point), QPointF(point), Qt::LeftButton,
+                        Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&window, &release);
+    ok &= require(window.isEditing(),
+                  QStringLiteral("selecting stats must start existing edit mode"), err);
+    window.setEditing(false);
+    ok &= require(!window.flags().testFlag(Qt::WindowTransparentForInput),
+                  QStringLiteral("finishing one edit must not end persistent selection mode"), err);
+    window.setEditOnClick(false);
+    ok &= require(window.flags().testFlag(Qt::WindowTransparentForInput),
+                  QStringLiteral("exiting persistent release must restore click-through"), err);
+    return ok;
+}
+
 bool testLightSnapping(QTextStream& err)
 {
     bool ok = true;
@@ -693,6 +723,7 @@ bool runWindowRenderTests(QTextStream& err)
     ok &= testFlushTop(err);
     ok &= testResizeGrabZones(err);
     ok &= testLightSnapping(err);
+    ok &= testConditionalClickThrough(err);
     ok &= testLiveFreeDrag(err);
     return ok;
 }

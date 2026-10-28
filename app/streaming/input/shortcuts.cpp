@@ -6,6 +6,7 @@
 #define SER_SHORTCUTS "shortcuts"
 #define SER_DEFAULTPREFIX "defaultPrefix"
 #define SER_BINDINGS "bindings"
+#define SER_RIGHT_ALT_RELEASE "right-alt-release-enabled"
 
 namespace {
 
@@ -506,8 +507,8 @@ QVector<ShortcutAction> builtinActions()
         makeUnboundAction(ShortcutActions::OpenHostCommands,
                           QT_TRANSLATE_NOOP("Shortcuts", "Open the host commands menu"),
                           QT_TRANSLATE_NOOP("Shortcuts", "Host")),
-        makeHoldAction(ShortcutActions::HoldReleaseMouse,
-                       QT_TRANSLATE_NOOP("Shortcuts", "Hold to release mouse"),
+        makeHoldAction(ShortcutActions::RightAltMouseRelease,
+                       QT_TRANSLATE_NOOP("Shortcuts", "Hold Right Alt to release the mouse"),
                        QT_TRANSLATE_NOOP("Shortcuts", "Input")),
     };
 }
@@ -834,6 +835,17 @@ void ShortcutProfile::load(QSettings& settings)
 
     settings.beginGroup(QStringLiteral(SER_SHORTCUTS));
 
+    const QVariant legacy =
+        settings.value(settingsKey(QLatin1String(ShortcutActions::HoldReleaseMouse)));
+    const QStringList legacyBindings =
+        legacy.toStringList().join(QLatin1Char(',')).split(QLatin1Char(','));
+    const bool legacyRightAlt =
+        std::any_of(legacyBindings.cbegin(), legacyBindings.cend(), [](const QString& entry) {
+            return ShortcutBinding::fromString(entry) ==
+                   ShortcutBinding(ShortcutBinding::ModNone, ShortcutKeys::RightAlt);
+        });
+    m_RightAltReleaseEnabled =
+        settings.value(QStringLiteral(SER_RIGHT_ALT_RELEASE), legacyRightAlt).toBool();
     const QString prefix = settings.value(QStringLiteral(SER_DEFAULTPREFIX)).toString();
     if (prefix == QLatin1String(k_PrefixTokens[PrefixCtrlAlt])) {
         m_Prefix = PrefixCtrlAlt;
@@ -870,6 +882,7 @@ void ShortcutProfile::save(QSettings& settings) const
     settings.beginGroup(QStringLiteral(SER_SHORTCUTS));
 
     settings.setValue(QStringLiteral(SER_DEFAULTPREFIX), QLatin1String(k_PrefixTokens[m_Prefix]));
+    settings.setValue(QStringLiteral(SER_RIGHT_ALT_RELEASE), m_RightAltReleaseEnabled);
 
     // Only touch keys of known actions, so a build with a different set of
     // actions doesn't wipe out the others' settings.
@@ -928,6 +941,13 @@ QVector<ShortcutBinding> ShortcutProfile::defaultBindings(const QString& actionI
 
 QVector<ShortcutBinding> ShortcutProfile::bindings(const QString& actionId) const
 {
+    if (actionId == QLatin1String(ShortcutActions::RightAltMouseRelease)) {
+        auto result = emptyBindings();
+        if (m_RightAltReleaseEnabled && m_Registry->find(actionId) != nullptr) {
+            result[0] = ShortcutBinding(ShortcutBinding::ModNone, ShortcutKeys::RightAlt);
+        }
+        return result;
+    }
     auto it = m_Overrides.constFind(actionId);
     if (it != m_Overrides.constEnd()) {
         return *it;
@@ -942,6 +962,9 @@ bool ShortcutProfile::isCustomized(const QString& actionId) const
 
 bool ShortcutProfile::setBinding(const QString& actionId, int slot, const ShortcutBinding& binding)
 {
+    if (actionId == QLatin1String(ShortcutActions::RightAltMouseRelease)) {
+        return false;
+    }
     const ShortcutAction* action = m_Registry->find(actionId);
     if (action == nullptr || slot < 0 || slot >= ShortcutRegistry::MaxBindings ||
         (!binding.isNull() && !action->accepts(binding))) {
@@ -976,6 +999,7 @@ void ShortcutProfile::resetAll()
 {
     m_Overrides.clear();
     m_Prefix = PrefixCtrlAltShift;
+    m_RightAltReleaseEnabled = false;
 }
 
 QVector<ShortcutProfile::Conflict> ShortcutProfile::conflicts() const
@@ -1125,6 +1149,7 @@ ShortcutBinding ModifierKeyRecorder::release(int scancode)
 
 void ShortcutMatcher::setProfile(const ShortcutProfile& profile)
 {
+    m_ReserveRightAlt = profile.rightAltReleaseEnabled();
     m_Bindings.clear();
     for (const ShortcutAction& action : profile.registry().actions()) {
         for (const ShortcutBinding& binding : profile.bindings(action.id)) {
@@ -1167,7 +1192,10 @@ bool ShortcutMatcher::processKeyEvent(int scancode, int latinKey, quint8 modifie
         }
 
         // Swallow the key-up that belongs to a swallowed key-down
-        return m_SwallowedKeys.remove(scancode);
+        const bool swallowed = m_SwallowedKeys.remove(scancode);
+        return swallowed ||
+               (m_ReserveRightAlt && scancode == ShortcutKeys::RightAlt &&
+                dispatcher.hasHandler(QLatin1String(ShortcutActions::RightAltMouseRelease)));
     }
 
     if (repeat) {
@@ -1181,9 +1209,11 @@ bool ShortcutMatcher::processKeyEvent(int scancode, int latinKey, quint8 modifie
 
     // Ignore the key's own modifier, and those of swallowed modifier keys,
     // which the host and the bindings never see
-    const quint8 exactModifiers = modifiers & ShortcutBinding::ModAll &
-                                  ~ShortcutBinding::modifierForKey(scancode) &
-                                  ~suppressedModifiers();
+    const quint8 exactModifiers = m_ReserveRightAlt && scancode == ShortcutKeys::RightAlt
+                                      ? 0
+                                      : modifiers & ShortcutBinding::ModAll &
+                                            ~ShortcutBinding::modifierForKey(scancode) &
+                                            ~suppressedModifiers();
 
     // Character pass over all bindings, then the physical key pass
     QString actionId;

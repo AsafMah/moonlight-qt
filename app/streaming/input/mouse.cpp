@@ -63,7 +63,7 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
         // While the hold to release the mouse lasts, clicks stay local; the
         // key-up captures again
         if (event->button == SDL_BUTTON_LEFT && event->state == SDL_RELEASED &&
-            !m_MouseHoldReleased && isMouseInVideoRegion(event->x, event->y)) {
+            !isMouseHoldReleased() && isMouseInVideoRegion(event->x, event->y)) {
             // Capture the mouse again if clicked when unbound.
             // We start capture on left button released instead of
             // pressed to avoid sending an errant mouse button released

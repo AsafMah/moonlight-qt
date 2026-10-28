@@ -209,7 +209,7 @@ void OverlayStatsWindow::setStandalone(bool standalone)
                  Qt::WindowDoesNotAcceptFocus);
         setTitle(tr("Moonlight performance overlay"));
     } else {
-        setFlags(OverlayWindowPolicy::flags(m_WindowMode, !m_Editing));
+        setFlags(OverlayWindowPolicy::flags(m_WindowMode, !isInteractive()));
     }
 }
 
@@ -221,7 +221,7 @@ void OverlayStatsWindow::configureWindow(QWindow* parent, OverlayWindowMode wind
     const Qt::WindowFlags flags = standalone
                                       ? Qt::Window | Qt::FramelessWindowHint |
                                             Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus
-                                      : OverlayWindowPolicy::flags(windowMode, !m_Editing);
+                                      : OverlayWindowPolicy::flags(windowMode, !isInteractive());
     reconfigureSurface(parent, windowMode, flags);
     if (standalone) {
         setTitle(tr("Moonlight performance overlay"));
@@ -240,8 +240,23 @@ void OverlayStatsWindow::setEditing(bool editing)
     if (!editing) {
         unsetCursor();
     }
+    updateInputFlags();
+}
+
+void OverlayStatsWindow::setEditOnClick(bool enabled)
+{
+    m_EditOnClick = enabled;
+    updateInputFlags();
+}
+
+void OverlayStatsWindow::updateInputFlags()
+{
     if (m_Standalone) {
         // Always takes input, so the flags stay as they are
+        return;
+    }
+    const auto flags = OverlayWindowPolicy::flags(m_WindowMode, !isInteractive());
+    if (this->flags() == flags) {
         return;
     }
 
@@ -251,7 +266,7 @@ void OverlayStatsWindow::setEditing(bool editing)
     if (wasVisible) {
         hide();
     }
-    setFlags(OverlayWindowPolicy::flags(m_WindowMode, !editing));
+    setFlags(flags);
     if (wasVisible) {
         show();
         raise();
@@ -1180,6 +1195,10 @@ void OverlayStatsWindow::mousePressEvent(QMouseEvent* event)
     if (!isInteractive()) {
         event->ignore();
         return;
+    }
+    if (m_EditOnClick && !m_Editing && event->button() == Qt::LeftButton &&
+        m_BeginEditingCallback) {
+        m_BeginEditingCallback();
     }
 
     if (event->button() == Qt::LeftButton) {

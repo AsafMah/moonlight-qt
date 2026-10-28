@@ -248,7 +248,7 @@ QPoint anchoredPosition(Anchor anchor, const QRect& parent, const QSize& size, i
     int y;
     switch (row) {
     case 0:
-        y = parent.y() + margin;
+        y = parent.y();
         break;
     case 1:
         y = parent.y() + (parent.height() - size.height()) / 2;

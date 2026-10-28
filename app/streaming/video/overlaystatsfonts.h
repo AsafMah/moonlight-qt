@@ -6,6 +6,9 @@
 #include <QFont>
 #include <QFontMetrics>
 
+#include <algorithm>
+#include <cmath>
+
 // The performance overlay's fonts, and a TextMeasurer over them. Shared by
 // OverlayStatsWindow and its layout test so both measure the same way.
 namespace StatsOverlay {
@@ -19,16 +22,18 @@ struct OverlayFonts
 
 // Fixed pixel sizes for the same reason as OverlayToast: point sizes go
 // through the platform font DPI, which differs from Qt's UI scale on Linux
-inline OverlayFonts overlayFonts()
+inline OverlayFonts overlayFonts(int scalePercent = 100)
 {
+    const qreal scale = clampScalePercent(scalePercent) / 100.0;
     OverlayFonts fonts;
     fonts.label.setFamilies(UiFont::familyChain(QStringLiteral("DM Mono")));
-    fonts.label.setPixelSize(10);
+    // The painter scales the whole panel; preserve readable text at small zooms.
+    fonts.label.setPixelSize(std::max(10, int(std::ceil(11 / scale))));
     fonts.label.setCapitalization(QFont::AllUppercase);
     fonts.label.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
 
     fonts.value.setFamilies(UiFont::familyChain(QStringLiteral("Manrope")));
-    fonts.value.setPixelSize(14);
+    fonts.value.setPixelSize(std::max(14, int(std::ceil(12 / scale))));
     fonts.value.setWeight(QFont::DemiBold);
     fonts.value.setStyleHint(QFont::SansSerif);
 

@@ -7,6 +7,8 @@
 
 using namespace StatsOverlay;
 
+bool runWindowRenderTests(QTextStream& err);
+
 namespace {
 bool require(bool condition, const QString& message, QTextStream& err)
 {
@@ -116,7 +118,7 @@ bool testPlacement(QTextStream& err)
     const QSize size(300, 120);
     const int margin = 16;
 
-    ok &= require(anchoredPosition(Anchor::TopLeft, parent, size, margin) == QPoint(116, 66),
+    ok &= require(anchoredPosition(Anchor::TopLeft, parent, size, margin) == QPoint(116, 50),
                   QStringLiteral("top-left position"), err);
     ok &= require(anchoredPosition(Anchor::BottomRight, parent, size, margin) ==
                       QPoint(100 + 1920 - 300 - 16, 50 + 1080 - 120 - 16),
@@ -238,6 +240,7 @@ int main(int argc, char* argv[])
     ok &= testPlacement(err);
     ok &= testDetachedPlacement(err);
     ok &= runPanelLayoutTests(err);
+    ok &= runWindowRenderTests(err);
 
     out << (ok ? "PASS" : "FAILED") << '\n';
     return ok ? 0 : 1;

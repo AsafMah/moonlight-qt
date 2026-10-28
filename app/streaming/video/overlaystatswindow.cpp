@@ -2,8 +2,11 @@
 #include "overlaystatsfonts.h"
 
 #include <QCoreApplication>
+#include <QCache>
 #include <QCursor>
+#include <QDataStream>
 #include <QFontMetrics>
+#include <QIODevice>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QMoveEvent>
@@ -33,6 +36,7 @@ const QColor kAcid(0xC8, 0xFF, 0x4D);      // Theme.acid
 const QColor kShadow(0, 0, 0, 0x8C);       // Theme.shadowColor
 // Theme.qml has no warning color; amber sits between accent and danger
 const QColor kWarn(0xFF, 0xC8, 0x57);
+const QColor kGoodText(0x7C, 0xF5, 0xE5);
 // Latency stages, chosen to stay apart from the grade colors
 const QColor kStageHost(0x8A, 0x9B, 0xFF);
 const QColor kStageRender(0xD6, 0x8C, 0xFF);
@@ -45,11 +49,70 @@ const int kLabelGap = PanelSpacing::LabelGap;
 // Width of the band along the edges that resizes in edit mode, in window pixels
 const int kResizeMargin = 6;
 
+void drawOverlayText(QPainter* painter, const QRect& rect, int flags, const QString& text)
+{
+    if (!rect.isEmpty() && !text.isEmpty()) {
+        // Cache masks, not colored text, so opacity/grade changes leave glyphs
+        // fully opaque. Take the DPR from the actual paint device (also Wayland).
+        static QCache<QByteArray, QImage> shadows(4 * 1024 * 1024);
+        const qreal dpr = painter->device()->devicePixelRatioF();
+        QByteArray key;
+        QDataStream stream(&key, QIODevice::WriteOnly);
+        stream << painter->font() << rect.size() << flags << text << dpr
+               << int(painter->layoutDirection());
+        QImage shadow;
+        if (const QImage* cached = shadows.object(key)) {
+            shadow = *cached;
+        } else {
+            constexpr int padding = 4;
+            shadow = QImage(QSize(qCeil((rect.width() + padding * 2) * dpr),
+                                  qCeil((rect.height() + padding * 2) * dpr)),
+                            QImage::Format_ARGB32_Premultiplied);
+            shadow.setDevicePixelRatio(dpr);
+            shadow.fill(Qt::transparent);
+            {
+                QPainter mask(&shadow);
+                mask.setRenderHint(QPainter::TextAntialiasing);
+                mask.setFont(painter->font());
+                mask.setLayoutDirection(painter->layoutDirection());
+                mask.setPen(QColor(0, 0, 0, 153));
+                mask.drawText(QRect(QPoint(padding, padding), rect.size()), flags, text);
+            }
+            QImage horizontal(shadow.size(), shadow.format());
+            const int radius = qCeil(3 * dpr);
+            const int divisor = (radius + 1) * (radius + 1);
+            for (int pass = 0; pass < 2; ++pass) {
+                const QImage& source = pass == 0 ? shadow : horizontal;
+                QImage& destination = pass == 0 ? horizontal : shadow;
+                for (int y = 0; y < shadow.height(); ++y) {
+                    auto* row = reinterpret_cast<QRgb*>(destination.scanLine(y));
+                    for (int x = 0; x < shadow.width(); ++x) {
+                        int alpha = 0;
+                        for (int offset = -radius; offset <= radius; ++offset) {
+                            const int sx = pass == 0 ? x + offset : x;
+                            const int sy = pass == 0 ? y : y + offset;
+                            if (sx >= 0 && sx < source.width() && sy >= 0 && sy < source.height()) {
+                                const auto* pixels =
+                                    reinterpret_cast<const QRgb*>(source.constScanLine(sy));
+                                alpha += qAlpha(pixels[sx]) * (radius + 1 - std::abs(offset));
+                            }
+                        }
+                        row[x] = qRgba(0, 0, 0, alpha / divisor);
+                    }
+                }
+            }
+            shadows.insert(key, new QImage(shadow), int(shadow.sizeInBytes()));
+        }
+        painter->drawImage(rect.topLeft() + QPoint(-4, -3), shadow);
+    }
+    painter->drawText(rect, flags, text);
+}
+
 QColor gradeColor(Grade grade)
 {
     switch (grade) {
     case Grade::Good:
-        return kAccent;
+        return kGoodText;
     case Grade::Warn:
         return kWarn;
     case Grade::Bad:
@@ -96,10 +159,7 @@ OverlayStatsWindow::OverlayStatsWindow(QWindow* parent, OverlayWindowMode window
     fmt.setAlphaBufferSize(8);
     setFormat(fmt);
 
-    const OverlayFonts fonts = overlayFonts();
-    m_LabelFont = fonts.label;
-    m_ValueFont = fonts.value;
-    m_BigFont = fonts.big;
+    setScalePercent(m_ScalePercent);
 
     m_Metrics = defaultCustomMetrics();
 }
@@ -123,6 +183,10 @@ void OverlayStatsWindow::setMetrics(const QVector<Metric>& metrics)
 void OverlayStatsWindow::setScalePercent(int percent)
 {
     m_ScalePercent = clampScalePercent(percent);
+    const OverlayFonts fonts = overlayFonts(m_ScalePercent);
+    m_LabelFont = fonts.label;
+    m_ValueFont = fonts.value;
+    m_BigFont = fonts.big;
 }
 
 void OverlayStatsWindow::setOpacityPercent(int percent)
@@ -467,12 +531,12 @@ QSize OverlayStatsWindow::layoutMinimal(QPainter* painter) const
         if (painter != nullptr) {
             painter->setFont(m_ValueFont);
             painter->setPen(gradeColor(cell.grade));
-            painter->drawText(QRect(x, 0, valueWidth, height), Qt::AlignLeft | Qt::AlignVCenter,
-                              cell.value);
+            drawOverlayText(painter, QRect(x, 0, valueWidth, height),
+                            Qt::AlignLeft | Qt::AlignVCenter, cell.value);
             painter->setFont(m_LabelFont);
             painter->setPen(kTextDim);
-            painter->drawText(QRect(x + valueWidth + kLabelGap, 0, labelWidth, height),
-                              Qt::AlignLeft | Qt::AlignVCenter, cell.label);
+            drawOverlayText(painter, QRect(x + valueWidth + kLabelGap, 0, labelWidth, height),
+                            Qt::AlignLeft | Qt::AlignVCenter, cell.label);
             m_HitRegions.append({ cell.metric,
                                   QRect(x, 0, valueWidth + kLabelGap + labelWidth, height),
                                   cell.value });
@@ -504,13 +568,14 @@ QSize OverlayStatsWindow::layoutCompact(QPainter* painter) const
             }
             painter->setFont(m_LabelFont);
             painter->setPen(kTextFaint);
-            painter->drawText(QRect(x + kCellPadX, kPad, width, labelMetrics.height()),
-                              Qt::AlignLeft | Qt::AlignVCenter, cell.label);
+            drawOverlayText(painter, QRect(x + kCellPadX, kPad, width, labelMetrics.height()),
+                            Qt::AlignLeft | Qt::AlignVCenter, cell.label);
             painter->setFont(m_ValueFont);
             painter->setPen(gradeColor(cell.grade));
-            painter->drawText(QRect(x + kCellPadX, kPad + labelMetrics.height() + kLabelGap, width,
-                                    valueMetrics.height()),
-                              Qt::AlignLeft | Qt::AlignVCenter, cell.value);
+            drawOverlayText(painter,
+                            QRect(x + kCellPadX, kPad + labelMetrics.height() + kLabelGap, width,
+                                  valueMetrics.height()),
+                            Qt::AlignLeft | Qt::AlignVCenter, cell.value);
             m_HitRegions.append({ cell.metric, QRect(x, 0, width, height), cell.value });
         }
         x += width;
@@ -603,7 +668,7 @@ QSize OverlayStatsWindow::panelBodySize() const
 {
     QVector<Cell> cells;
     const PanelContent content = panelContent(cells);
-    const FontTextMeasurer measurer(overlayFonts());
+    const FontTextMeasurer measurer(overlayFonts(m_ScalePercent));
     const QSize minimum = minimumPanelSize(content, measurer);
     QSize maximum(MaxPanelWidth, MaxPanelHeight);
     if (m_MaximumBodySize.isValid()) {
@@ -631,10 +696,10 @@ void OverlayStatsWindow::paintPanel(QPainter* painter, const PanelLayout& layout
         const Cell fps = cellFor(Metric::Fps);
         painter->setFont(m_BigFont);
         painter->setPen(gradeColor(fps.grade));
-        painter->drawText(layout.fpsValueRect, Qt::AlignLeft | Qt::AlignVCenter, fps.value);
+        drawOverlayText(painter, layout.fpsValueRect, Qt::AlignLeft | Qt::AlignVCenter, fps.value);
         painter->setFont(m_LabelFont);
         painter->setPen(kTextDim);
-        painter->drawText(layout.fpsLabelRect, Qt::AlignLeft | Qt::AlignBottom, fps.label);
+        drawOverlayText(painter, layout.fpsLabelRect, Qt::AlignLeft | Qt::AlignBottom, fps.label);
         m_HitRegions.append(
             { Metric::Fps, layout.fpsValueRect.united(layout.fpsLabelRect), fps.value });
 
@@ -644,8 +709,8 @@ void OverlayStatsWindow::paintPanel(QPainter* painter, const PanelLayout& layout
         for (int i = 0; i < layout.headerLineRects.size() && i < content.headerLines.size(); i++) {
             const QRect& rect = layout.headerLineRects[i];
             painter->setPen(colors[std::min(i, 2)]);
-            painter->drawText(
-                rect, Qt::AlignLeft | Qt::AlignVCenter,
+            drawOverlayText(
+                painter, rect, Qt::AlignLeft | Qt::AlignVCenter,
                 labelMetrics.elidedText(content.headerLines[i], Qt::ElideRight, rect.width()));
             if (i < int(std::size(details))) {
                 m_HitRegions.append({ details[i].metric, rect, details[i].value });
@@ -655,39 +720,57 @@ void OverlayStatsWindow::paintPanel(QPainter* painter, const PanelLayout& layout
 
     // Grid
     for (const PlacedCell& placed : layout.cells) {
+        QRect chip;
+        if (m_Preset == Preset::Compact) {
+            // Use stable layout widths, not live glyph widths, to avoid a
+            // wobbling background as the values change.
+            chip = placed.rect.adjusted(-3, -2, 3, 2);
+            if (placed.rect.top() == kPad) {
+                chip.setTop(0);
+            }
+            QColor surface = kSurface;
+            surface.setAlphaF(m_OpacityPercent / 100.0);
+            painter->save();
+            painter->setRenderHint(QPainter::Antialiasing);
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(surface);
+            painter->drawRoundedRect(chip, 3, 3);
+            painter->restore();
+        }
         painter->setFont(m_LabelFont);
-        painter->setPen(kTextFaint);
+        painter->setPen(kText);
         if (placed.index < 0) {
-            painter->drawText(placed.labelRect, Qt::AlignLeft | Qt::AlignVCenter, layout.moreText);
+            drawOverlayText(painter, placed.labelRect, Qt::AlignLeft | Qt::AlignVCenter,
+                            layout.moreText);
             continue;
         }
 
         const Cell& cell = cells[placed.index];
         const QString& label = placed.shortLabel ? cell.shortLabel : cell.label;
-        painter->drawText(placed.labelRect, Qt::AlignLeft | Qt::AlignVCenter,
-                          labelMetrics.elidedText(label, Qt::ElideRight, placed.labelRect.width()));
+        drawOverlayText(painter, placed.labelRect, Qt::AlignLeft | Qt::AlignVCenter,
+                        labelMetrics.elidedText(label, Qt::ElideRight, placed.labelRect.width()));
 
         painter->setFont(m_ValueFont);
         painter->setPen(gradeColor(cell.grade));
         const Qt::Alignment valueAlignment = layout.style == CellStyle::Inline
                                                  ? Qt::AlignRight | Qt::AlignVCenter
                                                  : Qt::AlignLeft | Qt::AlignVCenter;
-        painter->drawText(
-            placed.valueRect, valueAlignment,
+        drawOverlayText(
+            painter, placed.valueRect, valueAlignment,
             valueMetrics.elidedText(cell.value, Qt::ElideRight, placed.valueRect.width()));
-        m_HitRegions.append({ cell.metric, placed.rect, cell.value });
+        m_HitRegions.append({ cell.metric, chip.isValid() ? chip : placed.rect, cell.value });
     }
 
     if (layout.graphShown) {
         painter->setFont(m_LabelFont);
         painter->setPen(kTextFaint);
-        painter->drawText(layout.graphTitleRect, Qt::AlignLeft | Qt::AlignVCenter,
-                          content.graphTitle);
+        drawOverlayText(painter, layout.graphTitleRect, Qt::AlignLeft | Qt::AlignVCenter,
+                        content.graphTitle);
         const bool statsOnOwnLine = layout.graphStatsRect.top() != layout.graphTitleRect.top();
-        painter->drawText(layout.graphStatsRect,
-                          (statsOnOwnLine ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter,
-                          labelMetrics.elidedText(content.graphStats, Qt::ElideRight,
-                                                  layout.graphStatsRect.width()));
+        drawOverlayText(painter, layout.graphStatsRect,
+                        (statsOnOwnLine ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter,
+                        labelMetrics.elidedText(content.graphStats, Qt::ElideRight,
+                                                layout.graphStatsRect.width()));
         paintFrameTimeGraph(painter, layout.graphRect);
         m_HitRegions.append({ Metric::FrameTimeGraph,
                               layout.graphTitleRect.united(layout.graphRect), content.graphStats });
@@ -706,7 +789,8 @@ void OverlayStatsWindow::paintPanel(QPainter* painter, const PanelLayout& layout
     if (layout.emptyRect.isValid()) {
         painter->setFont(m_LabelFont);
         painter->setPen(kTextDim);
-        painter->drawText(layout.emptyRect, Qt::AlignLeft | Qt::AlignVCenter, content.emptyText);
+        drawOverlayText(painter, layout.emptyRect, Qt::AlignLeft | Qt::AlignVCenter,
+                        content.emptyText);
     }
 }
 
@@ -782,13 +866,13 @@ void OverlayStatsWindow::paintLatencyBar(QPainter* painter, const PanelLayout& l
             : Grade::Neutral;
     painter->setFont(m_LabelFont);
     painter->setPen(kTextFaint);
-    painter->drawText(layout.latencyTitleRect, Qt::AlignLeft | Qt::AlignVCenter,
-                      content.latencyTitle);
+    drawOverlayText(painter, layout.latencyTitleRect, Qt::AlignLeft | Qt::AlignVCenter,
+                    content.latencyTitle);
     painter->setPen(gradeColor(totalGrade));
     const bool valueOnOwnLine = layout.latencyValueRect.top() != layout.latencyTitleRect.top();
-    painter->drawText(layout.latencyValueRect,
-                      (valueOnOwnLine ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter,
-                      content.latencyValue);
+    drawOverlayText(painter, layout.latencyValueRect,
+                    (valueOnOwnLine ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter,
+                    content.latencyValue);
 
     const QRect& bar = layout.barRect;
     painter->fillRect(bar, kSurface2);
@@ -809,8 +893,8 @@ void OverlayStatsWindow::paintLatencyBar(QPainter* painter, const PanelLayout& l
         painter->fillRect(layout.legendSwatchRects[i], stages[i].color);
         painter->setPen(kTextDim);
         const QRect& rect = layout.legendTextRects[i];
-        painter->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter,
-                          labelMetrics.elidedText(content.legend[i], Qt::ElideRight, rect.width()));
+        drawOverlayText(painter, rect, Qt::AlignLeft | Qt::AlignVCenter,
+                        labelMetrics.elidedText(content.legend[i], Qt::ElideRight, rect.width()));
     }
 }
 
@@ -837,8 +921,8 @@ void OverlayStatsWindow::paintEditHint(QPainter* painter, int y, int width) cons
     painter->fillRect(QRect(kAccentBar, y, width - kAccentBar, height), kSurface2);
     painter->setFont(m_LabelFont);
     painter->setPen(kAccent);
-    painter->drawText(QRect(kAccentBar + kPad, y, width - kAccentBar - kPad * 2, height),
-                      Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap, editHintText());
+    drawOverlayText(painter, QRect(kAccentBar + kPad, y, width - kAccentBar - kPad * 2, height),
+                    Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap, editHintText());
 }
 
 void OverlayStatsWindow::paintResizeGrip(QPainter* painter, const QSize& body) const
@@ -867,7 +951,7 @@ QSize OverlayStatsWindow::layoutBody(QPainter* painter) const
             QVector<Cell> cells;
             const PanelContent panel = panelContent(cells);
             const PanelLayout layout =
-                layoutPanel(panel, content, FontTextMeasurer(overlayFonts()));
+                layoutPanel(panel, content, FontTextMeasurer(overlayFonts(m_ScalePercent)));
             painter->save();
             painter->setClipRect(QRect(QPoint(), content));
             paintPanel(painter, layout, panel, cells);
@@ -937,17 +1021,25 @@ void OverlayStatsWindow::paintOverlay(QPainter& painter)
     painter.translate(m_BodyOffset);
     const qreal opacity = m_OpacityPercent / 100.0;
 
-    QColor shadow = kShadow;
-    shadow.setAlphaF(shadow.alphaF() * opacity);
-    painter.fillRect(body.translated(kShadowOffset, kShadowOffset), shadow);
-
-    QColor surface = kSurface;
-    surface.setAlphaF(opacity);
-    painter.fillRect(body, surface);
-
-    painter.setPen(QPen(m_Editing ? kAccent : kLine, 1, m_Editing ? Qt::DashLine : Qt::SolidLine));
-    painter.drawRect(body.adjusted(0, 0, -1, -1));
-    painter.fillRect(QRect(0, 0, kAccentBar, body.height()), kAccent);
+    if (m_Preset != Preset::Compact) {
+        QColor shadow = kShadow;
+        shadow.setAlphaF(shadow.alphaF() * opacity);
+        // Keep the shadow outside the body so it cannot darken a transparent bar.
+        painter.fillRect(QRect(body.width(), kShadowOffset, kShadowOffset, body.height()), shadow);
+        painter.fillRect(
+            QRect(kShadowOffset, body.height(), body.width() - kShadowOffset, kShadowOffset),
+            shadow);
+        QColor surface = kSurface;
+        surface.setAlphaF(opacity);
+        painter.fillRect(body, surface);
+        painter.setPen(
+            QPen(m_Editing ? kAccent : kLine, 1, m_Editing ? Qt::DashLine : Qt::SolidLine));
+        painter.drawRect(body.adjusted(0, 0, -1, -1));
+        painter.fillRect(QRect(0, 0, kAccentBar, body.height()), kAccent);
+    } else if (m_Editing) {
+        painter.setPen(QPen(kAccent, 1, Qt::DashLine));
+        painter.drawRect(body.adjusted(0, 0, -1, -1));
+    }
 
     layoutBody(&painter);
 }

@@ -118,10 +118,10 @@ Grade gradePresent(double prePresentMs, double presentMs, int targetFps,
 // Scale and background opacity limits, in percent
 constexpr int MinScalePercent = 75;
 constexpr int MaxScalePercent = 200;
-constexpr int DefaultScalePercent = 100;
+constexpr int DefaultScalePercent = 80;
 constexpr int MinOpacityPercent = 30;
 constexpr int MaxOpacityPercent = 100;
-constexpr int DefaultOpacityPercent = 85;
+constexpr int DefaultOpacityPercent = 55;
 
 int clampScalePercent(int percent);
 int clampOpacityPercent(int percent);
@@ -143,8 +143,8 @@ enum class Anchor
 QString anchorId(Anchor anchor);
 Anchor anchorFromId(const QString& id, Anchor fallback);
 
-// Top-left corner of a window of the given size placed at an anchor of parent,
-// keeping margin from the edges it is anchored to
+// Top-left corner at an anchor of parent. Top anchors sit flush with the top
+// edge; the other anchored edges keep margin.
 QPoint anchoredPosition(Anchor anchor, const QRect& parent, const QSize& size, int margin);
 
 // The anchor whose third of parent contains point (clamped into parent)

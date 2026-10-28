@@ -1644,6 +1644,14 @@
 <context>
     <name>LegacySettingsPage</name>
     <message>
+        <source>in fullscreen or borderless window</source>
+        <translation>全屏或无边框窗口中</translation>
+    </message>
+    <message>
+        <source>Borderless windows must cover their monitor.</source>
+        <translation>无边框窗口必须覆盖整个显示器。</translation>
+    </message>
+    <message>
         <source>Audio Settings</source>
         <translation>音频设置</translation>
     </message>

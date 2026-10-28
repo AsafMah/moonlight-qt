@@ -467,7 +467,9 @@ Column {
         ChoiceRow {
             applicable: SystemProperties.hasDesktopEnvironment
             title: qsTr("Capture mode")
-            description: qsTr("Choose when system keyboard shortcuts are captured.")
+            settingsSearchKeywords: "keyboard hotkeys win alt tab capture fullscreen borderless"
+            description: qsTr("Choose when system keyboard shortcuts are captured.") + " " +
+                         qsTr("Borderless windows must cover their monitor.")
             controlEnabled: captureSysKeysToggle.checked
             selectedValue: settingsPage.captureSysKeysSelection
             onValueActivated: function(value) {
@@ -479,6 +481,7 @@ Column {
 
             model: ListModel {
                 ListElement { text: qsTr("in fullscreen"); val: StreamingPreferences.CSK_FULLSCREEN }
+                ListElement { text: qsTr("in fullscreen or borderless window"); val: StreamingPreferences.CSK_FULLSCREEN_OR_BORDERLESS }
                 ListElement { text: qsTr("always"); val: StreamingPreferences.CSK_ALWAYS }
             }
         }

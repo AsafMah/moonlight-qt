@@ -81,11 +81,27 @@ payload-specific Ctrl+Alt+Del hints, live rebinding and removal, retained gamepa
 and remote-chord details, and the input matcher's held-key release across a rebind.
 The same profile snapshot updates hints and dispatch while the menu is open.
 
-`system_key_capture` compiles the actual input capture methods and keyboard-toggle
-case against fake SDL input. It preserves the existing capture-mode matrix and
-checks that opening the menu does not turn the keyboard-capture toggle into an
-always-enable action. Run `python -m unittest discover -s tests/system_key_capture
--p 'test_*.py'` from a C++ compiler environment; it never grabs desktop input.
+`system_key_capture` compiles the actual input capture, Right Alt gesture and
+Session geometry methods against fake SDL/Qt windows. It preserves the existing
+capture modes, checks the menu-toggle lifecycle, fullscreen/borderless transitions,
+one-pixel gaps, negative monitor origins, separate Qt logical/SDL geometry,
+Right Alt hold/latch/Esc, and failed display queries. Its compatibility gate pins
+all existing `StreamingPreferences` Q_ENUM integers, including nonzero/negative
+starts; reordering a persisted enum fails CI. Run `python -m unittest discover -s
+tests/system_key_capture -p 'test_*.py'` from a C++ compiler environment.
+
+The appended mode (`CSK_FULLSCREEN_OR_BORDERLESS = 3`, CLI
+`--capture-system-keys fullscreen-or-borderless`) adds frameless windows in the
+Borderless Window display mode whose client rectangle covers their whole monitor.
+Ordinary/maximized decorated windows and partial coverage do not qualify. Existing
+Fullscreen mode retains its previous semantics, including SDL desktop fullscreen.
+The mode never overrides temporary or persistent Right Alt release.
+`settings_search` also checks the new long choice label and value-3 selection in
+the real ChoiceRow at narrow/wide widths. Its fixture values are checked against
+the production model. Run the Windows QML tests with
+`QT_QUICK_CONTROLS_STYLE=FluentWinUI3`, matching the app rather than the test runner's
+unsupported native customization style. These tests use offscreen windows/fakes;
+they do not capture desktop input or verify delivery on a real receiving client.
 
 `resolution_match` compiles the production Session resize/report methods with fake
 time, window geometry, transport and decoder-reset events. Run `python -m unittest

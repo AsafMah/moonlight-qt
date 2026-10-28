@@ -175,6 +175,7 @@ public:
     // These route window-state operations through Qt only for the native
     // Wayland stream window. All other platforms retain SDL's behavior.
     bool isStreamingWindowFullscreen() const;
+    bool isStreamingWindowBorderlessOnDisplay() const;
     bool usesQtWaylandStreamWindow() const;
     void minimizeStreamingWindow();
 

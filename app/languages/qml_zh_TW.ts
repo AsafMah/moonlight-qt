@@ -1206,6 +1206,14 @@
 <context>
     <name>LegacySettingsPage</name>
     <message>
+        <source>in fullscreen or borderless window</source>
+        <translation>全螢幕或無邊框視窗中</translation>
+    </message>
+    <message>
+        <source>Borderless windows must cover their monitor.</source>
+        <translation>無邊框視窗必須覆蓋整個顯示器。</translation>
+    </message>
+    <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="38"/>
         <source>Audio Settings</source>
         <translation>音效設定</translation>

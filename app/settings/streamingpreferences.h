@@ -131,6 +131,7 @@ public:
         CSK_OFF,
         CSK_FULLSCREEN,
         CSK_ALWAYS,
+        CSK_FULLSCREEN_OR_BORDERLESS,
     };
     Q_ENUM(CaptureSysKeysMode);
 
@@ -444,4 +445,3 @@ private:
 
     QQmlEngine* m_QmlEngine;
 };
-

@@ -2954,6 +2954,33 @@ bool Session::usesQtWaylandStreamWindow() const
     return m_WaylandStreamWindow != nullptr;
 }
 
+bool Session::isStreamingWindowBorderlessOnDisplay() const
+{
+    if (m_Preferences->windowMode != StreamingPreferences::WM_FULLSCREEN_DESKTOP ||
+        isStreamingWindowMinimized()) {
+        return false;
+    }
+    if (m_WaylandStreamWindow != nullptr) {
+        QScreen* screen = m_WaylandStreamWindow->screen();
+        return screen != nullptr && (m_WaylandStreamWindow->flags() & Qt::FramelessWindowHint) &&
+               m_WaylandStreamWindow->geometry().contains(screen->geometry());
+    }
+    if (m_Window == nullptr || !(SDL_GetWindowFlags(m_Window) & SDL_WINDOW_BORDERLESS)) {
+        return false;
+    }
+    const int display = SDL_GetWindowDisplayIndex(m_Window);
+    SDL_Rect bounds;
+    if (display < 0 || SDL_GetDisplayBounds(display, &bounds) < 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Cannot determine borderless system-key capture bounds: %s", SDL_GetError());
+        return false;
+    }
+    int x, y, width, height;
+    SDL_GetWindowPosition(m_Window, &x, &y);
+    SDL_GetWindowSize(m_Window, &width, &height);
+    return QRect(x, y, width, height).contains(QRect(bounds.x, bounds.y, bounds.w, bounds.h));
+}
+
 void Session::minimizeStreamingWindow()
 {
     if (m_WaylandStreamWindow != nullptr) {
@@ -5945,6 +5972,10 @@ void Session::exec()
             case SDL_WINDOWEVENT_SHOWN:
             case SDL_WINDOWEVENT_MOVED:
             case SDL_WINDOWEVENT_SIZE_CHANGED:
+            case SDL_WINDOWEVENT_MAXIMIZED:
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+            case SDL_WINDOWEVENT_DISPLAY_CHANGED:
+#endif
                 // Cocoa 在全屏切换结束之后才发这个事件，拿它当「窗口已落定」的信号
                 hideGuiWindowWhenSettled(true);
                 syncQtOverlayWindowsWithSdlWindowState();
@@ -5953,6 +5984,7 @@ void Session::exec()
                 // DISPLAY_CHANGED：同一块屏上改系统缩放只会发 SIZE_CHANGED。
                 // 比例没变时这个调用会直接返回，挂宽一点不亏。
                 m_InputHandler->refreshRemoteCursorScale();
+                m_InputHandler->updateKeyboardGrabState();
 
                 // Restoring alone doesn't resize the window, so only retry a match
                 // that was skipped. Re-requesting otherwise would revert

@@ -275,6 +275,7 @@ jobs:
         lrelease app\languages\qml_zh_CN.ts
         if errorlevel 1 exit /b %ERRORLEVEL%
         set QT_QPA_PLATFORM=offscreen
+        set QT_QUICK_CONTROLS_STYLE=FluentWinUI3
         qmltestrunner -input tests\settings_localization -translation app\languages\qml_zh_CN.qm
         if errorlevel 1 exit /b %ERRORLEVEL%
         rem 设置搜索：排序 + 真实设置组件上的导航/滚动/焦点/高亮/Esc。

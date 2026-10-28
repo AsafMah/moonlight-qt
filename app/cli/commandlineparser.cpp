@@ -318,9 +318,10 @@ StreamCommandLineParser::StreamCommandLineParser()
         {"hardware", StreamingPreferences::VDS_FORCE_HARDWARE},
     };
     m_CaptureSysKeysModeMap = {
-        {"never",      StreamingPreferences::CSK_OFF},
-        {"fullscreen", StreamingPreferences::CSK_FULLSCREEN},
-        {"always",     StreamingPreferences::CSK_ALWAYS},
+        { "never", StreamingPreferences::CSK_OFF },
+        { "fullscreen", StreamingPreferences::CSK_FULLSCREEN },
+        { "always", StreamingPreferences::CSK_ALWAYS },
+        { "fullscreen-or-borderless", StreamingPreferences::CSK_FULLSCREEN_OR_BORDERLESS },
     };
 }
 

@@ -895,6 +895,12 @@ bool SdlInputHandler::isCaptureActive()
 
 bool SdlInputHandler::isSystemKeyCaptureEnabledForWindow()
 {
+    if (m_CaptureSystemKeysMode == StreamingPreferences::CSK_FULLSCREEN_OR_BORDERLESS) {
+        Session* session = Session::get();
+        return m_Window != nullptr &&
+               (isStreamWindowFullscreen(m_Window) ||
+                (session != nullptr && session->isStreamingWindowBorderlessOnDisplay()));
+    }
     return m_Window != nullptr && m_CaptureSystemKeysMode != StreamingPreferences::CSK_OFF &&
            (m_CaptureSystemKeysMode != StreamingPreferences::CSK_FULLSCREEN ||
             isStreamWindowFullscreen(m_Window));

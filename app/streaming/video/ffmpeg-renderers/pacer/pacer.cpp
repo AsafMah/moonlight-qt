@@ -18,6 +18,9 @@
 
 #include <SDL_syswm.h>
 
+#include <chrono>
+#include <thread>
+
 // Limit the number of queued frames to prevent excessive memory consumption
 // if the V-Sync source or renderer is blocked for a while. It's important
 // that the sum of all queued frames between both pacing and rendering queues
@@ -33,6 +36,48 @@ static_assert(PACER_MAX_OUTSTANDING_FRAMES == MAX_QUEUED_FRAMES + 2,
 // to do the render itself, so we can't render right before
 // V-sync happens.
 #define TIMER_SLACK_MS 3
+
+#ifdef Q_OS_WIN32
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+#endif
+
+PreciseSleeper::PreciseSleeper()
+{
+    // Supported since Windows 10 1803; older versions fall back to SDL_Delay()
+    m_Timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                     TIMER_ALL_ACCESS);
+}
+
+PreciseSleeper::~PreciseSleeper()
+{
+    if (m_Timer != nullptr) {
+        CloseHandle(m_Timer);
+    }
+}
+
+void PreciseSleeper::sleepUs(uint64_t us)
+{
+    if (m_Timer != nullptr) {
+        LARGE_INTEGER dueTime;
+        // Negative means relative, in 100 ns units
+        dueTime.QuadPart = -static_cast<LONGLONG>(us * 10);
+        if (SetWaitableTimer(m_Timer, &dueTime, 0, nullptr, nullptr, FALSE)) {
+            WaitForSingleObject(m_Timer, INFINITE);
+            return;
+        }
+    }
+    SDL_Delay(static_cast<Uint32>((us + 999) / 1000));
+}
+#else
+PreciseSleeper::PreciseSleeper() = default;
+PreciseSleeper::~PreciseSleeper() = default;
+
+void PreciseSleeper::sleepUs(uint64_t us)
+{
+    std::this_thread::sleep_for(std::chrono::microseconds(us));
+}
+#endif
 
 Pacer::Pacer(IFFmpegRenderer* renderer, PacerStats* stats)
     : m_RenderThread(nullptr), m_VsyncThread(nullptr), m_DeferredFreeFrame(nullptr),
@@ -337,7 +382,8 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, b
         // the refresh rate so presents stay inside the display's VRR range.
         SDL_assert(m_VsyncSource == nullptr);
         if (m_VsyncRenderer->isRenderThreadSupported()) {
-            m_VrrLimiter = VrrPolicy::FrameLimiter(VrrPolicy::frameCapFps(m_DisplayFps));
+            m_VrrLimiter =
+                VrrPolicy::FrameLimiter(VrrPolicy::frameCapFps(m_DisplayFps), m_DisplayFps);
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "VRR mode: presenting on arrival, capped at %d FPS for a %d Hz display",
                         VrrPolicy::frameCapFps(m_DisplayFps), m_DisplayFps);
@@ -547,27 +593,32 @@ void Pacer::updateRenderQueueHistoryLocked()
 }
 
 // Called on the render thread with m_FrameQueueLock held and a frame queued.
-// In VRR mode, holds that frame until the present-rate cap allows it. Frames
-// arriving meanwhile stay queued; renderFrame() drops the excess if the stream
-// stays above the cap.
+// In VRR mode, holds that frame until the present-rate cap allows it, then
+// presents only the newest frame that arrived meanwhile.
 void Pacer::waitForVrrPresentSlot()
 {
     if (!m_VrrLimiter.isEnabled()) {
         return;
     }
 
-    for (;;) {
-        uint64_t waitUs = m_VrrLimiter.waitUs(LiGetMicroseconds());
-        if (waitUs == 0 || m_Stopping) {
-            break;
-        }
-
-        // Round up so the frame is never presented early. The destructor's
-        // wakeAll() ends the wait on shutdown.
-        m_RenderQueueNotEmpty.wait(&m_FrameQueueLock, (unsigned long)((waitUs + 999) / 1000));
+    const uint64_t slotUs = m_VrrLimiter.presentSlotUs(LiGetMicroseconds());
+    uint64_t nowUs;
+    bool waited = false;
+    while ((nowUs = LiGetMicroseconds()) < slotUs && !m_Stopping) {
+        // New frames only supersede the queued one, so they need not wake us
+        m_FrameQueueLock.unlock();
+        m_PresentSleeper.sleepUs(slotUs - nowUs);
+        m_FrameQueueLock.lock();
+        waited = true;
     }
 
-    m_VrrLimiter.onPresented(LiGetMicroseconds());
+    for (int i = VrrPolicy::staleQueuedFrames(m_RenderQueue.count(), waited); i > 0; i--) {
+        AVFrame* frame = m_RenderQueue.dequeue();
+        m_Stats->recordDrop();
+        av_frame_free(&frame);
+    }
+
+    m_VrrLimiter.onPresented(slotUs, nowUs);
 }
 
 void Pacer::dropFrameForEnqueue(QQueue<AVFrame*>& queue)

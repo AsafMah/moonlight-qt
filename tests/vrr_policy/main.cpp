@@ -1,6 +1,7 @@
 #include "streaming/video/vrrpolicy.h"
 
 #include <cstdio>
+#include <deque>
 
 static int s_Failures = 0;
 
@@ -133,7 +134,7 @@ static void testLimiter()
         // Disabled limiter never waits
         FrameLimiter limiter;
         CHECK(!limiter.isEnabled());
-        limiter.onPresented(1000);
+        limiter.onPresented(1000, 1000);
         CHECK(limiter.waitUs(1001) == 0);
     }
 
@@ -143,10 +144,11 @@ static void testLimiter()
 
     // The first frame is presented immediately
     CHECK(limiter.waitUs(5000000) == 0);
-    limiter.onPresented(5000000);
+    limiter.onPresented(5000000, 5000000);
 
     // A frame arriving 2 ms later waits for the rest of the interval
     CHECK(limiter.waitUs(5002000) == 5247);
+    CHECK(limiter.presentSlotUs(5002000) == 5007247);
     // Exactly at the interval it goes now
     CHECK(limiter.waitUs(5007247) == 0);
     // Late frames are never held
@@ -154,29 +156,192 @@ static void testLimiter()
 
     // Steady 120 FPS arrivals (8333 us apart) never wait at a 138 FPS cap
     uint64_t now = 6000000;
-    limiter.onPresented(now);
+    limiter.onPresented(now, now);
     for (int i = 0; i < 1000; i++) {
         now += 8333;
         CHECK(limiter.waitUs(now) == 0);
-        limiter.onPresented(now);
+        limiter.onPresented(now, now);
     }
 
     // A burst of three frames at once is spread out to the cap
     now += 50000;
     CHECK(limiter.waitUs(now) == 0);
-    limiter.onPresented(now);
+    limiter.onPresented(now, now);
     uint64_t clock = now;
     for (int i = 0; i < 2; i++) {
         const uint64_t wait = limiter.waitUs(clock);
         CHECK(wait == 7247);
         clock += wait;
         CHECK(limiter.waitUs(clock) == 0);
-        limiter.onPresented(clock);
+        limiter.onPresented(clock, clock);
     }
     CHECK(clock - now == 2 * 7247);
 
     // A clock that goes backwards never blocks
     CHECK(limiter.waitUs(clock - 1) == 0);
+
+    // A present that wakes late does not delay the schedule: the next slot is
+    // one interval after the previous slot, not after the late wakeup
+    {
+        FrameLimiter l(138);
+        l.onPresented(1000000, 1000000);
+        const uint64_t slot = l.presentSlotUs(1001000);
+        CHECK(slot == 1007247);
+        l.onPresented(slot, slot + 900);
+        CHECK(l.presentSlotUs(slot + 1200) == slot + 7247);
+    }
+
+    // A frame that is ready after its slot restarts the schedule, so a slow
+    // stretch never lets the next two frames out back to back
+    {
+        FrameLimiter l(138);
+        l.onPresented(1000000, 1000000);
+        const uint64_t late = 1000000 + 7247 + 7000;
+        CHECK(l.presentSlotUs(late) == late);
+        l.onPresented(late, late);
+        CHECK(l.presentSlotUs(late + 100) == late + 7247);
+    }
+
+    // A stall of a whole interval or more past the slot restarts the schedule
+    // from the actual present
+    {
+        FrameLimiter l(138);
+        l.onPresented(1000000, 1000000);
+        const uint64_t slot = l.presentSlotUs(1000500);
+        l.onPresented(slot, slot + 20000);
+        CHECK(l.presentSlotUs(slot + 20100) == slot + 20000 + 7247);
+    }
+}
+
+static void testStaleQueuedFrames()
+{
+    using VrrPolicy::staleQueuedFrames;
+
+    // Frames that arrived while the cap held one back are superseded
+    CHECK(staleQueuedFrames(1, true) == 0);
+    CHECK(staleQueuedFrames(2, true) == 1);
+    CHECK(staleQueuedFrames(3, true) == 2);
+    // Without a wait, the regular queue policy decides
+    CHECK(staleQueuedFrames(3, false) == 0);
+    CHECK(staleQueuedFrames(0, true) == 0);
+}
+
+// Mirrors Pacer's VRR render loop against a simulated clock: a 180 FPS stream
+// (a frame every 5556 us) on a 180 Hz display, so a 171 FPS cap. Frames go
+// into a queue of at most 3 (the oldest is dropped on overflow). wakeUs(now,
+// deadline, n) models the n-th sleep: when a sleep until deadline really ends.
+struct VrrLoopResult
+{
+    int presents;
+    uint64_t averageFrameAgeUs;
+    uint64_t minGapUs;
+};
+
+using WakeModel = uint64_t (*)(uint64_t nowUs, uint64_t deadlineUs, int n);
+
+static VrrLoopResult simulateVrrLoop(WakeModel wakeUs)
+{
+    const int displayHz = 180;
+    const uint64_t arrivalUs = 5556;
+    const uint64_t durationUs = 2000000;
+    const uint64_t renderUs = 250;
+    VrrPolicy::FrameLimiter limiter(VrrPolicy::frameCapFps(displayHz), displayHz);
+    std::deque<uint64_t> queue;
+    uint64_t nextArrivalUs = 0;
+    auto receiveUntil = [&](uint64_t nowUs) {
+        while (nextArrivalUs <= nowUs) {
+            if (queue.size() == 3) {
+                queue.pop_front();
+            }
+            queue.push_back(nextArrivalUs);
+            nextArrivalUs += arrivalUs;
+        }
+    };
+
+    VrrLoopResult result = { 0, 0, UINT64_MAX };
+    uint64_t totalAgeUs = 0;
+    uint64_t lastPresentUs = 0;
+    uint64_t now = 0;
+    int sleeps = 0;
+    while (now < durationUs) {
+        receiveUntil(now);
+        if (queue.empty()) {
+            now = nextArrivalUs;
+            continue;
+        }
+
+        bool waited = false;
+        const uint64_t slotUs = limiter.presentSlotUs(now);
+        while (now < slotUs) {
+            now = wakeUs(now, slotUs, sleeps++);
+            receiveUntil(now);
+            waited = true;
+        }
+        for (int i = VrrPolicy::staleQueuedFrames(static_cast<int>(queue.size()), waited); i > 0;
+             i--) {
+            queue.pop_front();
+        }
+
+        totalAgeUs += now - queue.front();
+        queue.pop_front();
+        limiter.onPresented(slotUs, now);
+        if (result.presents > 0 && now - lastPresentUs < result.minGapUs) {
+            result.minGapUs = now - lastPresentUs;
+        }
+        lastPresentUs = now;
+        result.presents++;
+        now += renderUs;
+    }
+    result.averageFrameAgeUs = totalAgeUs / static_cast<uint64_t>(result.presents);
+    return result;
+}
+
+static void printLoop(const char* name, const VrrLoopResult& r)
+{
+    std::printf("180 FPS stream, 171 FPS cap, %s: %d presents in 2 s, average frame age %llu us, "
+                "shortest gap %llu us\n",
+                name, r.presents, static_cast<unsigned long long>(r.averageFrameAgeUs),
+                static_cast<unsigned long long>(r.minGapUs));
+}
+
+// Sleep() on Windows with a 1 ms timer period: the wait is rounded up to whole
+// milliseconds and then ends on the next 1 ms tick
+static uint64_t millisecondSleep(uint64_t nowUs, uint64_t deadlineUs, int)
+{
+    const uint64_t wakeUs = nowUs + (deadlineUs - nowUs + 999) / 1000 * 1000;
+    return (wakeUs + 999) / 1000 * 1000;
+}
+
+// A high-resolution waitable timer. Overshoots cycle through quantiles
+// measured on Windows 11 for 4.3 ms waits: min 35, median 192, p99 540, max 738.
+static uint64_t highResolutionSleep(uint64_t, uint64_t deadlineUs, int n)
+{
+    static const uint64_t overshootUs[] = { 35, 110, 150, 170, 185, 192, 200, 230, 280, 540, 738 };
+    return deadlineUs + overshootUs[n % (sizeof(overshootUs) / sizeof(overshootUs[0]))];
+}
+
+static void testLimiterLoop()
+{
+    const uint64_t displayRefreshUs = VrrPolicy::minPresentIntervalUs(180);
+
+    // The Pacer sleeps on a high-resolution timer. Presents keep up with the
+    // cap despite its overshoot, and only the newest frame is presented, so no
+    // backlog builds up behind the cap.
+    const VrrLoopResult precise = simulateVrrLoop(highResolutionSleep);
+    printLoop("high-resolution sleeps", precise);
+    CHECK(precise.presents >= 2 * 168);
+    CHECK(precise.presents <= 2 * 171 + 1);
+    CHECK(precise.averageFrameAgeUs < 5556);
+    CHECK(precise.minGapUs >= displayRefreshUs);
+
+    // Millisecond sleeps (the fallback without high-resolution timers) can't
+    // hold the cap exactly, but the newest frame is still presented and the
+    // display's refresh rate is never exceeded
+    const VrrLoopResult coarse = simulateVrrLoop(millisecondSleep);
+    printLoop("1 ms sleeps", coarse);
+    CHECK(coarse.presents <= 2 * 171 + 1);
+    CHECK(coarse.averageFrameAgeUs < 5556);
+    CHECK(coarse.minGapUs >= displayRefreshUs);
 }
 
 int main()
@@ -186,6 +351,8 @@ int main()
     testDisplayMode();
     testDecide();
     testLimiter();
+    testStaleQueuedFrames();
+    testLimiterLoop();
 
     if (s_Failures != 0) {
         std::fprintf(stderr, "%d VRR policy check(s) failed\n", s_Failures);

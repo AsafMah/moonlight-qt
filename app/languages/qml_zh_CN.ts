@@ -2977,6 +2977,49 @@
     </message>
 </context>
 <context>
+    <name>ClipboardSettingsPage</name>
+    <message>
+        <source>Clipboard</source>
+        <translation>剪贴板</translation>
+    </message>
+    <message>
+        <source>Share what you copy between this device and the host while streaming. Requires a host with clipboard sync enabled. Changes apply to the next stream.</source>
+        <translation>串流时在本机与主机之间共享复制的内容。需要主机开启剪贴板同步。更改在下次串流时生效。</translation>
+    </message>
+    <message>
+        <source>Sync clipboard with host</source>
+        <translation>与主机同步剪贴板</translation>
+    </message>
+    <message>
+        <source>When off, nothing is copied to or from the host clipboard.</source>
+        <translation>关闭后，不会与主机剪贴板互相复制任何内容。</translation>
+    </message>
+    <message>
+        <source>Text</source>
+        <translation>文本</translation>
+    </message>
+    <message>
+        <source>Sync copied text in both directions.</source>
+        <translation>双向同步复制的文本。</translation>
+    </message>
+    <message>
+        <source>Images</source>
+        <translation>图片</translation>
+    </message>
+    <message>
+        <source>Sync copied images and screenshots in both directions.</source>
+        <translation>双向同步复制的图片和截图。</translation>
+    </message>
+    <message>
+        <source>Receive files from the host</source>
+        <translation>接收主机发送的文件</translation>
+    </message>
+    <message>
+        <source>Files sent from the host are saved to the Sunshine Transfers folder in your Downloads. They are never opened automatically.</source>
+        <translation>主机发送的文件会保存到“下载”中的 Sunshine Transfers 文件夹，不会自动打开。</translation>
+    </message>
+</context>
+<context>
     <name>PeripheralsSettingsPage</name>
     <message>
         <source>USB driver not running. Start VBoxUSBMon as administrator, or restart Windows.</source>
@@ -3470,6 +3513,18 @@
 </context>
 <context>
     <name>Session</name>
+    <message>
+        <source>Receiving %1 from the host…</source>
+        <translation>正在从主机接收 %1…</translation>
+    </message>
+    <message>
+        <source>Saved %1 to %2</source>
+        <translation>已将 %1 保存到 %2</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t receive %1: %2</source>
+        <translation>无法接收 %1：%2</translation>
+    </message>
     <message>
         <source>%1 at %2 FPS</source>
         <translation>%1 @ %2 FPS</translation>
@@ -4065,6 +4120,10 @@
     <message>
         <source>Peripherals Settings</source>
         <translation>外设设置</translation>
+    </message>
+    <message>
+        <source>Clipboard</source>
+        <translation>剪贴板</translation>
     </message>
     <message>
         <source>Software Settings</source>

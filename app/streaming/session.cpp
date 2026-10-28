@@ -3450,6 +3450,24 @@ void Session::restoreCaptureAfterStylusReplayPanel()
 
 #endif
 
+void Session::showFileTransferToast(const ClipboardIpc::TransferEvent& event)
+{
+    switch (event.state) {
+    case ClipboardIpc::TransferState::Started:
+        showStreamingToast(tr("Receiving %1 from the host…").arg(event.name), 2500);
+        break;
+    case ClipboardIpc::TransferState::Finished:
+        showStreamingToast(
+            tr("Saved %1 to %2")
+                .arg(event.name, QDir::toNativeSeparators(QFileInfo(event.path).absolutePath())),
+            5000);
+        break;
+    case ClipboardIpc::TransferState::Failed:
+        showStreamingToast(tr("Couldn't receive %1: %2").arg(event.name, event.error), 5000);
+        break;
+    }
+}
+
 void Session::showStreamingToast(const QString& message, int durationMs)
 {
     if (!m_Toast) return;
@@ -5006,10 +5024,22 @@ void Session::start()
 #ifndef STEAM_LINK
     // Construct the clipboard sync helper process before the control receive
     // thread can possibly invoke clClipboardData(). Host frames are queued by
-    // ClipboardHelperClient and flushed from the SDL loop.
-    if (m_ClipboardHelper == nullptr) {
+    // ClipboardHelperClient and flushed from the SDL loop. With sync disabled
+    // (or nothing selected to sync) no helper runs and host frames are dropped.
+    if (m_ClipboardHelper == nullptr && m_Preferences->clipboardSyncEnabled &&
+        (m_Preferences->clipboardSyncText || m_Preferences->clipboardSyncImages ||
+         m_Preferences->clipboardReceiveFiles)) {
+        ClipboardIpc::SyncPolicy policy;
+        policy.text = m_Preferences->clipboardSyncText;
+        policy.images = m_Preferences->clipboardSyncImages;
+        policy.fileOffers = m_Preferences->clipboardReceiveFiles;
         m_ClipboardHelper = new ClipboardHelperClient(m_Computer, this);
+        m_ClipboardHelper->setSyncPolicy(policy);
+        connect(m_ClipboardHelper, &ClipboardHelperClient::transferEvent, this,
+                [this](const ClipboardIpc::TransferEvent& event) { showFileTransferToast(event); });
         m_ClipboardHelper->start();
+    } else if (m_ClipboardHelper == nullptr) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Clipboard sync disabled in settings");
     }
 #endif
 

@@ -19,9 +19,38 @@ enum class MessageType
     Stop,
     Ping,
     Pong,
+    TransferEvent,
+};
+
+// Which clipboard flavors this client syncs, in both directions. A configure
+// message without a policy (older main process) means everything enabled.
+struct SyncPolicy
+{
+    bool text = true;
+    bool images = true;
+    bool fileOffers = true;
+};
+
+enum class TransferState
+{
+    Started,
+    Finished,
+    Failed,
+};
+
+// Helper -> main: progress of a host file offer, shown as an overlay toast.
+struct TransferEvent
+{
+    TransferState state = TransferState::Started;
+    QString id;
+    QString name;
+    qint64 size = -1;
+    QString path;
+    QString error;
 };
 
 struct HostConfig {
+    SyncPolicy policy;
     QString address;
     quint16 httpsPort = 0;
     QByteArray serverCertPem;
@@ -36,6 +65,7 @@ struct Message {
     QByteArray frame;
     QString code;
     QString text;
+    ClipboardIpc::TransferEvent transfer;
 };
 
 QByteArray encodeConfigure(quint32 sequence, const HostConfig& config);
@@ -46,6 +76,7 @@ QByteArray encodeError(quint32 sequence, const QString& code, const QString& tex
 QByteArray encodeStop(quint32 sequence);
 QByteArray encodePing(quint32 sequence);
 QByteArray encodePong(quint32 sequence);
+QByteArray encodeTransferEvent(quint32 sequence, const TransferEvent& event);
 
 // Extract one complete bounded line. A partial line returns false without an error.
 bool takeLine(QByteArray& buffer, QByteArray& line, QString& error);

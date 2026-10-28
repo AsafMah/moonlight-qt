@@ -1,5 +1,7 @@
 #pragma once
 
+#include "clipboardipc.h"
+
 #include <QByteArray>
 #include <QMutex>
 #include <QObject>
@@ -17,6 +19,9 @@ public:
     explicit ClipboardHelperClient(NvComputer* computer, QObject* parent = nullptr);
     ~ClipboardHelperClient() override;
 
+    // Call before start(); sent to the helper with every configure message.
+    void setSyncPolicy(const ClipboardIpc::SyncPolicy& policy);
+
     void start();
     void stop();
     void updateHostContext();
@@ -28,6 +33,11 @@ public:
     void processPendingMessages();
 
     bool isRunning() const;
+
+signals:
+    // Host file offer progress reported by the helper. Emitted from
+    // processPendingMessages(), i.e. on the session/main thread.
+    void transferEvent(const ClipboardIpc::TransferEvent& event);
 
 private:
     friend class ClipboardHelperClientTest;
@@ -54,6 +64,7 @@ private:
 
     NvComputer* m_Computer;
     QProcess* m_Process;
+    ClipboardIpc::SyncPolicy m_Policy;
     QString m_HelperPath;
     QMutex m_InboundMutex;
     QQueue<QByteArray> m_InboundFrames;

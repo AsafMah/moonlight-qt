@@ -30,6 +30,15 @@ struct ClipboardSyncHostContext
     QSslKey clientPrivateKey;
 };
 
+// User-selected clipboard flavors. A disabled flavor is neither sent to the
+// host nor applied from it, so it can never overwrite the local clipboard.
+struct ClipboardSyncPolicy
+{
+    bool text = true;
+    bool images = true;
+    bool fileOffers = true;
+};
+
 // ClipboardSync owns the local clipboard state inside the clipboard helper
 // process. It implements the v1 wire format (u8 version=1, u8 kind, u32
 // token, u32 length, bytes payload, little-endian) used by the Limelight
@@ -41,7 +50,9 @@ struct ClipboardSyncHostContext
 // pointing to an out-of-band blob transferred over HTTPS via the Sunshine
 // /api/v1/clipboard/blob endpoints) in both directions. Payloads above the
 // 65 KB single-packet cap are switched to KIND_REF transparently.
-// File / other payloads are accepted on the wire but ignored.
+// kind=4 (FILE_OFFER JSON, host -> client) is handed to FileOfferReceiver via
+// fileOfferReceived(); its bytes never travel on the control stream.
+// Other payloads are accepted on the wire but ignored.
 //
 // Compound clipboard (v2, no wire-format change): a clipboard change that
 // carries BOTH text and an image is emitted as two consecutive frames
@@ -73,10 +84,13 @@ class ClipboardSync : public QObject
     Q_OBJECT
 
 public:
-    enum Kind : uint8_t {
+    enum Kind : uint8_t
+    {
         KIND_TEXT = 1,
-        KIND_PNG  = 2,
-        KIND_REF  = 3,
+        KIND_PNG = 2,
+        KIND_REF = 3,
+        // Host -> client JSON file offer; the bytes are fetched by FileOfferReceiver.
+        KIND_FILE_OFFER = 4,
     };
 
     static constexpr uint8_t WIRE_VERSION = 1;
@@ -118,6 +132,7 @@ public:
     ~ClipboardSync() override;
 
     void setHostContext(const ClipboardSyncHostContext& hostContext);
+    void setPolicy(const ClipboardSyncPolicy& policy);
 
     // Start watching the local clipboard and accepting inbound payloads.
     // Must be called on the GUI thread.
@@ -135,6 +150,10 @@ signals:
     // owner decides how to deliver the frame, which lets the clipboard engine
     // run in a helper process without direct access to the Limelight session.
     void outboundFrame(QByteArray frame);
+
+    // A KIND_FILE_OFFER payload arrived and file offers are enabled. It never
+    // touches the clipboard or its echo state.
+    void fileOfferReceived(QByteArray payload);
 
 private slots:
 #ifdef Q_OS_MACOS
@@ -223,6 +242,7 @@ private:
     void applyCompound(const QByteArray& text, const QByteArray& png);
 
     ClipboardSyncHostContext m_HostContext;
+    ClipboardSyncPolicy m_Policy;
     QNetworkAccessManager* m_Nam = nullptr;
 
     bool m_Active = false;

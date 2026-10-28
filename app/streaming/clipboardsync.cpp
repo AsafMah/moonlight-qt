@@ -163,6 +163,11 @@ void ClipboardSync::setHostContext(const ClipboardSyncHostContext& hostContext)
     m_HostContext = hostContext;
 }
 
+void ClipboardSync::setPolicy(const ClipboardSyncPolicy& policy)
+{
+    m_Policy = policy;
+}
+
 void ClipboardSync::start()
 {
     if (m_Active) {
@@ -193,7 +198,8 @@ void ClipboardSync::start()
 #endif
 
     m_Active = true;
-    ClipboardLog::info("ClipboardSync: started (text + PNG, bidirectional)");
+    ClipboardLog::info("ClipboardSync: started (text %s, images %s, bidirectional)",
+                       m_Policy.text ? "on" : "off", m_Policy.images ? "on" : "off");
 }
 
 void ClipboardSync::stop()
@@ -290,7 +296,20 @@ void ClipboardSync::onIncomingFrame(QByteArray frame)
         return;
     }
 
+    if (kind == KIND_FILE_OFFER) {
+        if (m_Policy.fileOffers) {
+            emit fileOfferReceived(payload);
+        } else {
+            ClipboardLog::debug("ClipboardSync: host file offer disabled by policy; ignored");
+        }
+        return;
+    }
     if (kind != KIND_TEXT && kind != KIND_PNG && kind != KIND_REF) {
+        return;
+    }
+    if ((kind == KIND_TEXT && !m_Policy.text) || (kind == KIND_PNG && !m_Policy.images)) {
+        ClipboardLog::debug("ClipboardSync: inbound %s disabled by policy; ignored",
+                            kind == KIND_TEXT ? "text" : "image");
         return;
     }
     QString id, mime;
@@ -318,6 +337,12 @@ void ClipboardSync::onIncomingFrame(QByteArray frame)
             return;
         }
         if (mime != QStringLiteral("image/png") && !mime.startsWith(QStringLiteral("text/"))) {
+            return;
+        }
+        const bool refIsImage = mime == QStringLiteral("image/png");
+        if ((refIsImage && !m_Policy.images) || (!refIsImage && !m_Policy.text)) {
+            ClipboardLog::debug("ClipboardSync: inbound %s REF disabled by policy; not fetched",
+                                refIsImage ? "image" : "text");
             return;
         }
     }
@@ -759,7 +784,7 @@ void ClipboardSync::onLocalClipboardChanged()
     // multiple extraction paths rather than only mime->imageData().
     QByteArray png;
     QString imageSourceDescription;
-    const bool havePng = extractClipboardPng(mime, png, &imageSourceDescription);
+    const bool havePng = m_Policy.images && extractClipboardPng(mime, png, &imageSourceDescription);
     if (hasFileReferences(mime) && !havePng) {
         beginClipboardChange();
         m_HaveClipboardSnapshot = false;
@@ -775,7 +800,7 @@ void ClipboardSync::onLocalClipboardChanged()
     // Note the burst text frame is inline-only: a REF text frame would race
     // the image frame onto the wire (blob upload latency) and flip legacy
     // peers' final state to text, so oversize text is dropped from bursts.
-    QString text = hasFileReferences(mime) ? QString() : cb->text();
+    QString text = (!m_Policy.text || hasFileReferences(mime)) ? QString() : cb->text();
     QByteArray utf8;
     if (!text.isEmpty()) {
         utf8 = text.toUtf8();

@@ -283,6 +283,8 @@ public:
     Q_PROPERTY(bool clipboardSyncText MEMBER clipboardSyncText NOTIFY clipboardSyncTextChanged)
     Q_PROPERTY(
         bool clipboardSyncImages MEMBER clipboardSyncImages NOTIFY clipboardSyncImagesChanged)
+    Q_PROPERTY(
+        bool clipboardReceiveFiles MEMBER clipboardReceiveFiles NOTIFY clipboardReceiveFilesChanged)
     Q_PROPERTY(QStringList usbForwardingBoundDevices READ usbForwardingBoundDevices WRITE setUsbForwardingBoundDevices NOTIFY usbForwardingBoundDevicesChanged)
 
     Q_INVOKABLE bool retranslate();
@@ -367,6 +369,8 @@ public:
     bool clipboardSyncEnabled;
     bool clipboardSyncText;
     bool clipboardSyncImages;
+    // Save files the host sends (Foundation Sunshine file offers).
+    bool clipboardReceiveFiles;
     RendererSelection rendererSelection;
 
 signals:
@@ -440,6 +444,7 @@ signals:
     void clipboardSyncEnabledChanged();
     void clipboardSyncTextChanged();
     void clipboardSyncImagesChanged();
+    void clipboardReceiveFilesChanged();
     void rendererSelectionChanged();
 
 private:

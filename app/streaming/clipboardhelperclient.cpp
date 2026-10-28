@@ -444,6 +444,11 @@ void ClipboardHelperClient::processProtocolLine(const QByteArray& line)
         return;
     }
 
+    if (message.type == ClipboardIpc::MessageType::TransferEvent) {
+        emit transferEvent(message.transfer);
+        return;
+    }
+
     if (message.type == ClipboardIpc::MessageType::Error) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Clipboard helper error [%s]: %s",

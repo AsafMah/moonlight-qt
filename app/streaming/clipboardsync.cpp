@@ -296,6 +296,14 @@ void ClipboardSync::onIncomingFrame(QByteArray frame)
         return;
     }
 
+    if (kind == KIND_FILE_OFFER) {
+        if (m_Policy.fileOffers) {
+            emit fileOfferReceived(payload);
+        } else {
+            ClipboardLog::debug("ClipboardSync: host file offer disabled by policy; ignored");
+        }
+        return;
+    }
     if (kind != KIND_TEXT && kind != KIND_PNG && kind != KIND_REF) {
         return;
     }

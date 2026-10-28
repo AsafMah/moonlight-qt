@@ -26,6 +26,8 @@ QString typeToString(MessageType type)
         return QStringLiteral("ping");
     case MessageType::Pong:
         return QStringLiteral("pong");
+    case MessageType::TransferEvent:
+        return QStringLiteral("transferEvent");
     case MessageType::Unknown:
         break;
     }
@@ -58,7 +60,35 @@ MessageType stringToType(const QString& type)
     if (type == QStringLiteral("pong")) {
         return MessageType::Pong;
     }
+    if (type == QStringLiteral("transferEvent")) {
+        return MessageType::TransferEvent;
+    }
     return MessageType::Unknown;
+}
+
+QString transferStateToString(TransferState state)
+{
+    switch (state) {
+    case TransferState::Started:
+        return QStringLiteral("started");
+    case TransferState::Finished:
+        return QStringLiteral("finished");
+    case TransferState::Failed:
+        return QStringLiteral("failed");
+    }
+    return QString();
+}
+
+bool stringToTransferState(const QString& value, TransferState& out)
+{
+    for (TransferState state :
+         { TransferState::Started, TransferState::Finished, TransferState::Failed }) {
+        if (value == transferStateToString(state)) {
+            out = state;
+            return true;
+        }
+    }
+    return false;
 }
 
 QByteArray encodeObject(QJsonObject obj)
@@ -104,6 +134,7 @@ QByteArray encodeConfigure(quint32 sequence, const HostConfig& config)
     QJsonObject policy;
     policy.insert(QStringLiteral("text"), config.policy.text);
     policy.insert(QStringLiteral("images"), config.policy.images);
+    policy.insert(QStringLiteral("fileOffers"), config.policy.fileOffers);
 
     QJsonObject obj = baseMessage(MessageType::Configure, sequence);
     obj.insert(QStringLiteral("host"), host);
@@ -151,6 +182,18 @@ QByteArray encodePing(quint32 sequence)
 QByteArray encodePong(quint32 sequence)
 {
     return encodeObject(baseMessage(MessageType::Pong, sequence));
+}
+
+QByteArray encodeTransferEvent(quint32 sequence, const TransferEvent& event)
+{
+    QJsonObject obj = baseMessage(MessageType::TransferEvent, sequence);
+    obj.insert(QStringLiteral("state"), transferStateToString(event.state));
+    obj.insert(QStringLiteral("id"), event.id);
+    obj.insert(QStringLiteral("name"), event.name);
+    obj.insert(QStringLiteral("size"), static_cast<double>(event.size));
+    obj.insert(QStringLiteral("path"), event.path);
+    obj.insert(QStringLiteral("error"), event.error);
+    return encodeObject(obj);
 }
 
 bool takeLine(QByteArray& buffer, QByteArray& line, QString& error)
@@ -223,6 +266,8 @@ bool decodeLine(const QByteArray& line, Message& outMessage, QString& outError)
             QJsonObject policy = obj.value(QStringLiteral("policy")).toObject();
             outMessage.config.policy.text = policy.value(QStringLiteral("text")).toBool(true);
             outMessage.config.policy.images = policy.value(QStringLiteral("images")).toBool(true);
+            outMessage.config.policy.fileOffers =
+                policy.value(QStringLiteral("fileOffers")).toBool(true);
             return true;
         }
     case MessageType::HostFrame:
@@ -235,6 +280,19 @@ bool decodeLine(const QByteArray& line, Message& outMessage, QString& outError)
     case MessageType::Error:
         outMessage.code = obj.value(QStringLiteral("code")).toString();
         outMessage.text = obj.value(QStringLiteral("text")).toString();
+        return true;
+    case MessageType::TransferEvent:
+        if (!stringToTransferState(obj.value(QStringLiteral("state")).toString(),
+                                   outMessage.transfer.state)) {
+            outError = QStringLiteral("invalid transfer state");
+            return false;
+        }
+        outMessage.transfer.id = obj.value(QStringLiteral("id")).toString();
+        outMessage.transfer.name = obj.value(QStringLiteral("name")).toString();
+        outMessage.transfer.size =
+            static_cast<qint64>(obj.value(QStringLiteral("size")).toDouble(-1));
+        outMessage.transfer.path = obj.value(QStringLiteral("path")).toString();
+        outMessage.transfer.error = obj.value(QStringLiteral("error")).toString();
         return true;
     case MessageType::Ready:
     case MessageType::Stop:

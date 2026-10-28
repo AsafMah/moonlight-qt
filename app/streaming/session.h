@@ -25,6 +25,7 @@
 #include "video/overlaytoast.h"
 #include "backend/supercmds.h"
 #include "streamquality.h"
+#include "clipboardipc.h"
 #ifndef STEAM_LINK
 #include "micstream.h"
 #endif
@@ -302,6 +303,7 @@ private:
     void requestRuntimeBitrateChange(int bitrateKbps);
     void startRuntimeBitrateWorker();
     void showStreamingToast(const QString& message, int durationMs = 2000);
+    void showFileTransferToast(const ClipboardIpc::TransferEvent& event);
     void processQtOverlayEvents();
     void updateFileMappingMenuState();
     void updateRemoteUsbMenuState();

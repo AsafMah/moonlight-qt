@@ -2994,6 +2994,14 @@
         <source>Sync copied images and screenshots in both directions.</source>
         <translation>双向同步复制的图片和截图。</translation>
     </message>
+    <message>
+        <source>Receive files from the host</source>
+        <translation>接收主机发送的文件</translation>
+    </message>
+    <message>
+        <source>Files sent from the host are saved to the Sunshine Transfers folder in your Downloads. They are never opened automatically.</source>
+        <translation>主机发送的文件会保存到“下载”中的 Sunshine Transfers 文件夹，不会自动打开。</translation>
+    </message>
 </context>
 <context>
     <name>PeripheralsSettingsPage</name>
@@ -3489,6 +3497,18 @@
 </context>
 <context>
     <name>Session</name>
+    <message>
+        <source>Receiving %1 from the host…</source>
+        <translation>正在从主机接收 %1…</translation>
+    </message>
+    <message>
+        <source>Saved %1 to %2</source>
+        <translation>已将 %1 保存到 %2</translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t receive %1: %2</source>
+        <translation>无法接收 %1：%2</translation>
+    </message>
     <message>
         <source>%1 at %2 FPS</source>
         <translation>%1 @ %2 FPS</translation>

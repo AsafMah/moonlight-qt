@@ -1,5 +1,6 @@
 #include "streaming/clipboardsync.h"
 #include "streaming/clipboardipc.h"
+#include "streaming/fileofferreceiver.h"
 
 #include <QByteArray>
 #include <QCoreApplication>
@@ -119,17 +120,36 @@ private:
         ClipboardSyncPolicy policy;
         policy.text = config.policy.text;
         policy.images = config.policy.images;
+        policy.fileOffers = config.policy.fileOffers;
 
         if (m_ClipboardEngine == nullptr) {
             m_ClipboardEngine = new ClipboardSync(context, this);
             m_ClipboardEngine->setPolicy(policy);
             connect(m_ClipboardEngine, &ClipboardSync::outboundFrame,
                     this, &ClipboardHelperController::sendLocalFrame);
+            m_FileOffers = new FileOfferReceiver(context, this);
+            connect(m_ClipboardEngine, &ClipboardSync::fileOfferReceived, m_FileOffers,
+                    &FileOfferReceiver::handleOffer);
+            connect(m_FileOffers, &FileOfferReceiver::transferStarted, this,
+                    [this](QString id, QString name, qint64 size) {
+                        sendTransferEvent(ClipboardIpc::TransferState::Started, id, name, size);
+                    });
+            connect(m_FileOffers, &FileOfferReceiver::transferFinished, this,
+                    [this](QString id, QString name, QString path) {
+                        sendTransferEvent(ClipboardIpc::TransferState::Finished, id, name, -1,
+                                          path);
+                    });
+            connect(m_FileOffers, &FileOfferReceiver::transferFailed, this,
+                    [this](QString id, QString name, QString error) {
+                        sendTransferEvent(ClipboardIpc::TransferState::Failed, id, name, -1,
+                                          QString(), error);
+                    });
             m_ClipboardEngine->start();
         }
         else {
             m_ClipboardEngine->setPolicy(policy);
             m_ClipboardEngine->setHostContext(context);
+            m_FileOffers->setHostContext(context);
         }
 
         writeProtocolLine(ClipboardIpc::encodeReady(sequence));
@@ -138,6 +158,20 @@ private:
     void sendLocalFrame(const QByteArray& frame)
     {
         writeProtocolLine(ClipboardIpc::encodeLocalFrame(m_NextSequence++, frame));
+    }
+
+    void sendTransferEvent(ClipboardIpc::TransferState state, const QString& id,
+                           const QString& name, qint64 size, const QString& path = QString(),
+                           const QString& error = QString())
+    {
+        ClipboardIpc::TransferEvent event;
+        event.state = state;
+        event.id = id;
+        event.name = name;
+        event.size = size;
+        event.path = path;
+        event.error = error;
+        writeProtocolLine(ClipboardIpc::encodeTransferEvent(m_NextSequence++, event));
     }
 
     void writeProtocolLine(const QByteArray& line)
@@ -152,6 +186,7 @@ private:
     }
 
     ClipboardSync* m_ClipboardEngine = nullptr;
+    FileOfferReceiver* m_FileOffers = nullptr;
     quint32 m_NextSequence = 1;
 };
 

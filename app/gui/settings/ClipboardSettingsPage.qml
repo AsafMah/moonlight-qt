@@ -38,5 +38,13 @@ Column {
             controlEnabled: masterToggle.checked
             onToggled: function(value) { StreamingPreferences.clipboardSyncImages = value }
         }
+
+        ToggleRow {
+            title: qsTr("Receive files from the host")
+            description: qsTr("Files sent from the host are saved to the Sunshine Transfers folder in your Downloads. They are never opened automatically.")
+            checked: StreamingPreferences.clipboardReceiveFiles
+            controlEnabled: masterToggle.checked
+            onToggled: function(value) { StreamingPreferences.clipboardReceiveFiles = value }
+        }
     }
 }

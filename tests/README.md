@@ -61,6 +61,24 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 
 ## 约定
 
+`derive_version` round-trips the CI-frozen artifact string (including the r25/r33
+regression fixtures) back to its numeric version. Development EXE, MSI and setup
+versions retain the commit count as `major.minor.patch.count`; exact tags remain
+`.0`. Releases must advance the three-field base (or supply a higher explicit
+four-part `CI_VERSION`) rather than reset the revision below a published build.
+`scripts/verify-windows-package.ps1` checks the built EXE/MSI/setup versions and
+the compiled MSI Upgrade/InstallExecuteSequence tables before packaging succeeds.
+
+MSI compares only the first three version fields, so `AllowSameVersionUpgrades`
+is required even though file replacement and the setup bundle use all four.
+Install through the setup EXE: direct MSI installs can downgrade revisions with
+the same three-field base. The hosted-Windows `test_windows_upgrade.ps1 -Install`
+gate builds predecessor bundles with inert payloads at revision 0 and N-1, then
+upgrades each through the actual new setup. It checks the installed EXE hash,
+old-product removal, obsolete-file removal and preservation of user settings.
+Without `-Install` it only builds fixtures; installation is refused outside
+disposable GitHub-hosted runners. It never launches Moonlight.
+
 `stats_overlay_layout` also exercises the production overlay painter at 75/80/100% and
 1/1.5/2 device-pixel ratios, verifies readable Compact labels, all 13 metrics, flush-top
 placement/editing, 55% metric chips with transparent gaps and soft shadows,

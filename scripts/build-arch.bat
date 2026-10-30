@@ -302,6 +302,10 @@ echo Building MSI
 cmd /c "set VERSION= && msbuild -Restore %SOURCE_ROOT%\wix\Moonlight\Moonlight.wixproj /p:Configuration=%BUILD_CONFIG% /p:Platform=%ARCH% /p:MSBuildProjectExtensionsPath=%BUILD_FOLDER%\"
 if !ERRORLEVEL! NEQ 0 goto Error
 
+echo Verifying EXE and MSI versions and upgrade policy
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SOURCE_ROOT%\scripts\verify-windows-package.ps1" -ExePath "%BUILD_FOLDER%\app\%BUILD_CONFIG%\Moonlight.exe" -MsiPath "%BUILD_FOLDER%\Moonlight.msi"
+if !ERRORLEVEL! NEQ 0 goto Error
+
 echo Copying application binary to deployment directory
 copy %BUILD_FOLDER%\app\%BUILD_CONFIG%\Moonlight.exe %DEPLOY_FOLDER%
 if !ERRORLEVEL! NEQ 0 goto Error

@@ -73,11 +73,17 @@ def derive(source_root: Path) -> dict[str, str]:
         display = normalize_explicit_version(ci_version)
         base = ".".join(str(part) for part in split_numeric_base(display))
         major, minor, patch = split_numeric_base(base)
+        # CI freezes the artifact/display version before the build dirties Git.
+        # Recover its revision rather than collapsing every CI build to x.y.z.0.
+        revision = re.search(r"[+-](\d+)\.g[0-9a-fA-F]+(?:\.dirty)?$", display)
+        if revision is None:
+            revision = re.fullmatch(r"\d+\.\d+\.\d+\.(\d+)", display)
+        count = clamp_u16(int(revision.group(1))) if revision else 0
         return {
             "base": base,
             "display": display,
             "artifact": display.replace("+", "-"),
-            "numeric": f"{major}.{minor}.{patch}.0",
+            "numeric": f"{major}.{minor}.{patch}.{count}",
             "describe": ci_version,
             "commit": run_git(source_root, "rev-parse", "--short=8", "HEAD") or "unknown",
         }

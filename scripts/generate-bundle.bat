@@ -76,6 +76,10 @@ rem Bundles are always x86 binaries
 cmd /c "set VERSION= && msbuild -Restore %SOURCE_ROOT%\wix\MoonlightSetup\MoonlightSetup.wixproj /p:Configuration=%BUILD_CONFIG% /p:Platform=x86 /p:MSBuildProjectExtensionsPath=%BUILD_FOLDER%\"
 if !ERRORLEVEL! NEQ 0 goto Error
 
+echo Verifying setup version matches its MSI and EXE
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SOURCE_ROOT%\scripts\verify-windows-package.ps1" -ExePath "%BUILD_ROOT%\build-x64-%BUILD_CONFIG%\app\%BUILD_CONFIG%\Moonlight.exe" -MsiPath "%BUILD_ROOT%\build-x64-%BUILD_CONFIG%\Moonlight.msi" -BundlePath "%INSTALLER_FOLDER%\MoonlightSetup.exe"
+if !ERRORLEVEL! NEQ 0 goto Error
+
 rem Rename the installer to match the publishing convention
 ren %INSTALLER_FOLDER%\MoonlightSetup.exe Moonlight-VPlus-Setup-%VERSION%.exe
 if !ERRORLEVEL! NEQ 0 goto Error

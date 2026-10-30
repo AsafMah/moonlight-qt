@@ -153,7 +153,7 @@ Column {
         ToggleRow {
             settingsSearchKeywords: "vrr gsync freesync adaptive sync"
             title: qsTr("Variable refresh rate (G-Sync / FreeSync)")
-            description: qsTr("Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). For the smoothest result, stream a few FPS below the display's refresh rate.")
+            description: qsTr("Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). Frames are only dropped when the stream is faster than the display's refresh rate.")
             checked: StreamingPreferences.enableVrr
             onToggled: function(value) { StreamingPreferences.enableVrr = value }
         }
@@ -162,13 +162,13 @@ Column {
         ChoiceRow {
             settingsSearchKeywords: "vrr gsync freesync pacer pacing nonary timestamp cap limiter"
             title: qsTr("Variable refresh rate pacer")
-            description: qsTr("How VRR frames are timed. Present-rate cap shows each frame as it arrives, capped just below the refresh rate. Host-timestamp scheduling (ported from Nonary's Moonlight fork) spaces frames by their capture time on the host, behind a small adaptive delay; it needs the D3D11 renderer and the Borderless windowed display mode, and uses the present-rate cap otherwise. Changes apply to the next stream.")
+            description: qsTr("How VRR frames are timed. Present on arrival shows each frame as soon as it arrives, at most one per display refresh. Host-timestamp scheduling (ported from Nonary's Moonlight fork) spaces frames by their capture time on the host, behind a small adaptive delay; it needs the D3D11 renderer and the Borderless windowed display mode, and presents on arrival otherwise. Changes apply to the next stream.")
             controlEnabled: StreamingPreferences.enableVrr
             selectedValue: StreamingPreferences.vrrImplementation
             onValueActivated: function(value) { StreamingPreferences.vrrImplementation = value }
 
             model: ListModel {
-                ListElement { text: qsTr("Present-rate cap (default)"); val: StreamingPreferences.VRR_IMPL_FORK }
+                ListElement { text: qsTr("Present on arrival (default)"); val: StreamingPreferences.VRR_IMPL_FORK }
                 ListElement { text: qsTr("Host-timestamp scheduling (Nonary)"); val: StreamingPreferences.VRR_IMPL_NONARY }
             }
         }
@@ -197,7 +197,7 @@ Column {
             description: !StreamingPreferences.enableVrr
                          ? qsTr("Turn on variable refresh rate to use Smooth VRR.")
                          : StreamingPreferences.vrrImplementation === StreamingPreferences.VRR_IMPL_NONARY
-                           ? qsTr("Only available with the Present-rate cap pacer. Host-timestamp scheduling has its own latency controls.")
+                           ? qsTr("Only available with the Present on arrival pacer. Host-timestamp scheduling has its own latency controls.")
                            : qsTr("Shows each frame at the pace the host captured it instead of as soon as it arrives, hiding network jitter. Adds a few milliseconds of latency, more on unstable connections.")
             controlEnabled: StreamingPreferences.enableVrr &&
                             StreamingPreferences.vrrImplementation === StreamingPreferences.VRR_IMPL_FORK

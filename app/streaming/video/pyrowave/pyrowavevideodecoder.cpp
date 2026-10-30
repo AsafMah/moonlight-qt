@@ -354,13 +354,14 @@ bool PyrowaveVideoDecoder::initialize(PDECODER_PARAMETERS params)
     m_PacerDisplayFps = m_DisplayFps;
     m_FramePacer.configure(m_EnableFramePacing, m_StreamFps, m_PacerDisplayFps);
     // VRR turns V-Sync and frame pacing off (see VrrPolicy::decide()), so the
-    // swapchain presents without waiting; only the cap is left to apply here
-    m_VrrLimiter =
-        VrrPolicy::FrameLimiter(params->enableVrr ? VrrPolicy::frameCapFps(m_DisplayFps) : 0);
+    // swapchain presents without waiting; only one refresh between presents
+    // is left to enforce here
+    m_VrrLimiter = VrrPolicy::FrameLimiter::forDisplay(params->enableVrr ? m_DisplayFps.load() : 0);
     if (params->enableVrr) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "PyroWave VRR mode: presenting on arrival, capped at %d FPS",
-                    VrrPolicy::frameCapFps(m_DisplayFps));
+                    "PyroWave VRR mode: presenting on arrival, at least one refresh apart "
+                    "(%d Hz display)",
+                    m_DisplayFps.load());
     }
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave pacing: %d FPS stream, %d Hz display, %s",
                 m_StreamFps, m_PacerDisplayFps,

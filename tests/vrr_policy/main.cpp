@@ -16,33 +16,6 @@ static int s_Failures = 0;
         }                                                                                          \
     } while (0)
 
-static void testFrameCap()
-{
-    using VrrPolicy::frameCapFps;
-
-    // Unknown refresh rates never cap
-    CHECK(frameCapFps(0) == 0);
-    CHECK(frameCapFps(-60) == 0);
-    CHECK(frameCapFps(3) == 0);
-
-    // At least 3 below the refresh rate, more for fast panels
-    CHECK(frameCapFps(60) == 57);
-    CHECK(frameCapFps(75) == 72);
-    CHECK(frameCapFps(120) == 116);
-    CHECK(frameCapFps(144) == 138);
-    CHECK(frameCapFps(165) == 157);
-    CHECK(frameCapFps(240) == 224);
-    CHECK(frameCapFps(360) == 324);
-
-    // Always inside the range, and never more than ~10% below it
-    for (int hz = 24; hz <= 500; hz++) {
-        const int cap = frameCapFps(hz);
-        CHECK(cap > 0);
-        CHECK(cap <= hz - 3);
-        CHECK(cap * 10 >= hz * 8);
-    }
-}
-
 static void testMinInterval()
 {
     using VrrPolicy::minPresentIntervalUs;
@@ -56,6 +29,20 @@ static void testMinInterval()
     // Rounding up means the cap is never exceeded
     for (int fps = 1; fps <= 1000; fps++) {
         CHECK(minPresentIntervalUs(fps) * static_cast<uint64_t>(fps) >= 1000000u);
+    }
+}
+
+static void testRefreshInterval()
+{
+    using VrrPolicy::refreshIntervalUs;
+
+    CHECK(refreshIntervalUs(0) == 0);
+    CHECK(refreshIntervalUs(-1) == 0);
+    // A reported 180 Hz may really be 179.96 Hz (5556.8 us): allow 0.1% slower
+    CHECK(refreshIntervalUs(180) == 5562);
+    CHECK(refreshIntervalUs(60) == 16684); // covers 59.94 Hz (16683.4 us)
+    for (int hz = 1; hz <= 1000; hz++) {
+        CHECK(refreshIntervalUs(hz) * static_cast<uint64_t>(hz) * 1000 >= 1001000000u);
     }
 }
 
@@ -110,17 +97,18 @@ static void testDecide()
         for (int pacing = 0; pacing < 2; pacing++) {
             auto d = decide({ vsync != 0, pacing != 0, true, 120, 144 });
             CHECK(!d.enableVsync && !d.enableFramePacing && d.enableVrr);
-            CHECK(d.presentCapFps == 138);
+            // Presents are limited to the refresh rate, never below it
+            CHECK(d.presentCapFps == 144);
             CHECK(!d.streamAboveVrrRange);
         }
     }
     {
-        // A stream at or above the cap leaves the VRR range
-        CHECK(decide({ true, false, true, 144, 144 }).streamAboveVrrRange);
-        CHECK(decide({ true, false, true, 139, 144 }).streamAboveVrrRange);
-        CHECK(!decide({ true, false, true, 138, 144 }).streamAboveVrrRange);
-        CHECK(decide({ true, false, true, 60, 60 }).streamAboveVrrRange);
-        CHECK(!decide({ true, false, true, 57, 60 }).streamAboveVrrRange);
+        // Only a stream faster than the refresh rate leaves the VRR range
+        CHECK(decide({ true, false, true, 145, 144 }).streamAboveVrrRange);
+        CHECK(!decide({ true, false, true, 144, 144 }).streamAboveVrrRange);
+        CHECK(!decide({ true, false, true, 139, 144 }).streamAboveVrrRange);
+        CHECK(!decide({ true, false, true, 60, 60 }).streamAboveVrrRange);
+        CHECK(decide({ true, false, true, 61, 60 }).streamAboveVrrRange);
     }
     {
         // Unknown refresh rate: no cap and no warning
@@ -136,7 +124,7 @@ static void testDecide()
             auto d = decide({ vsync != 0, pacing != 0, true, 120, 144, true });
             CHECK(d.enableVsync && !d.enableFramePacing && d.enableVrr && d.nonaryVrr);
             // Kept for the fork-limiter fallback
-            CHECK(d.presentCapFps == 138);
+            CHECK(d.presentCapFps == 144);
         }
     }
     {
@@ -366,7 +354,8 @@ static std::vector<Arrival> generateArrivals(const ArrivalModel& m, uint64_t dur
     return out;
 }
 
-// Mirrors Pacer's VRR render loop on a 180 Hz display (171 FPS cap) against a
+// Mirrors Pacer's VRR render loop on a 180 Hz display (presents at least one
+// refresh apart) against a
 // simulated clock: the bounded queue (3 frames, oldest dropped on overflow),
 // the cap wait, the stale-frame rule before presenting and renderFrame()'s
 // catch-up drops after it. wakeUs(now, deadline, n) models when the n-th
@@ -390,7 +379,9 @@ static VrrLoopResult simulateVrrLoop(const std::vector<Arrival>& arrivals, WakeM
 {
     const int displayHz = 180;
     const uint64_t renderUs = 250;
-    VrrPolicy::FrameLimiter limiter(VrrPolicy::frameCapFps(displayHz), displayHz);
+    // The Pacer's limiter for a 180 FPS stream on this display
+    const VrrPolicy::SyncDecision sync = VrrPolicy::decide({ false, false, true, 180, displayHz });
+    VrrPolicy::FrameLimiter limiter = VrrPolicy::FrameLimiter::forDisplay(sync.presentCapFps);
     VrrPolicy::SourceCadence cadence;
     VrrPolicy::PlayoutClock playout;
     std::deque<size_t> queue;
@@ -529,6 +520,43 @@ static uint64_t highResolutionSleep(uint64_t, uint64_t deadlineUs, int n)
     return deadlineUs + overshootUs[n % (sizeof(overshootUs) / sizeof(overshootUs[0]))];
 }
 
+// The Pacer's sleeper: a high-resolution timer to just before the deadline,
+// then a short spin, so it wakes within a few microseconds
+static uint64_t spinSleep(uint64_t, uint64_t deadlineUs, int n)
+{
+    static const uint64_t overshootUs[] = { 1, 2, 3, 2, 5, 1, 8, 2, 3, 15 };
+    return deadlineUs + overshootUs[n % (sizeof(overshootUs) / sizeof(overshootUs[0]))];
+}
+
+// The host sets the frame rate, so a stream at the display's refresh rate
+// must not lose frames to a cap below it: every frame is presented, at least
+// one refresh after the previous one
+static void testRefreshRateLoop()
+{
+    const uint64_t displayRefreshUs = VrrPolicy::minPresentIntervalUs(180);
+    const uint64_t durationUs = 10000000;
+
+    const auto atRefresh = generateArrivals({ 180, 180, 0, false }, durationUs);
+    const VrrLoopResult refreshResult = simulateVrrLoop(atRefresh, spinSleep);
+    printLoop("180 Hz host, 180 FPS game", refreshResult);
+    const auto above = generateArrivals({ 180, 200, 0, false }, durationUs);
+    const VrrLoopResult aboveResult = simulateVrrLoop(above, spinSleep);
+    printLoop("180 Hz host, 200 FPS game", aboveResult);
+    for (const VrrLoopResult& r : { refreshResult, aboveResult }) {
+        CHECK(r.dropPercent < 1.0);
+        CHECK(r.minGapUs >= VrrPolicy::refreshIntervalUs(180));
+    }
+    CHECK(aboveResult.presentedFps >= 178);
+    // Mean frame age before this change: 2.7 ms at 200 FPS
+    CHECK(aboveResult.averageAgeUs < 3700);
+    CHECK(refreshResult.averageAgeUs < 3700);
+
+    // With the timer alone (no spin) presents still never come too close
+    const VrrLoopResult timerOnly = simulateVrrLoop(above, highResolutionSleep);
+    printLoop("180 Hz host, 200 FPS game, timer only", timerOnly);
+    CHECK(timerOnly.minGapUs >= displayRefreshUs);
+}
+
 static void testLimiterLoop()
 {
     const uint64_t displayRefreshUs = VrrPolicy::minPresentIntervalUs(180);
@@ -537,9 +565,10 @@ static void testLimiterLoop()
     // Content above the cap on a 180 Hz host: presents keep up with the cap
     // and only the newest frame is presented, so no backlog builds up
     const auto atCap = generateArrivals({ 180, 200, 0, false }, durationUs);
-    const VrrLoopResult precise = simulateVrrLoop(atCap, highResolutionSleep);
+    const VrrLoopResult precise = simulateVrrLoop(atCap, spinSleep);
     printLoop("180 FPS content", precise);
-    CHECK(precise.presentedFps >= 167 && precise.presentedFps <= 171.5);
+    CHECK(precise.presentedFps >= 178 && precise.presentedFps <= 180.5);
+    CHECK(precise.dropPercent < 1.0);
     CHECK(precise.averageAgeUs < 3500);
     CHECK(precise.minGapUs >= displayRefreshUs);
 
@@ -548,14 +577,14 @@ static void testLimiterLoop()
     // display's refresh rate is never exceeded
     const VrrLoopResult coarse = simulateVrrLoop(atCap, millisecondSleep);
     printLoop("180 FPS content, 1 ms sleeps", coarse);
-    CHECK(coarse.presentedFps <= 171.5);
+    CHECK(coarse.presentedFps <= 180.5);
     CHECK(coarse.averageAgeUs < 5556);
     CHECK(coarse.minGapUs >= displayRefreshUs);
 
     // Content below the cap is never dropped, even when the network delivers
     // frames in pairs and the cap has to space them out
     const auto paired = generateArrivals({ 180, 130, 0.3, false }, durationUs);
-    const VrrLoopResult pairedResult = simulateVrrLoop(paired, highResolutionSleep);
+    const VrrLoopResult pairedResult = simulateVrrLoop(paired, spinSleep);
     printLoop("130 FPS content, 30% paired", pairedResult);
     CHECK(pairedResult.dropPercent < 0.5);
     CHECK(pairedResult.averageAgeUs < 3000);
@@ -565,16 +594,16 @@ static void testLimiterLoop()
     // backlog. A frame kept instead of dropped waits at most one cap interval
     // (plus timer overshoot), which bounds the tail.
     const auto stalls = generateArrivals({ 180, 130, 0, true }, durationUs);
-    const VrrLoopResult stallResult = simulateVrrLoop(stalls, highResolutionSleep);
+    const VrrLoopResult stallResult = simulateVrrLoop(stalls, spinSleep);
     printLoop("130 FPS content, network stalls", stallResult);
     CHECK(stallResult.dropPercent < 1.0);
     CHECK(stallResult.averageAgeUs < 1500);
-    CHECK(stallResult.p99AgeUs < VrrPolicy::minPresentIntervalUs(171) + 1000);
+    CHECK(stallResult.p99AgeUs < displayRefreshUs + 1000);
     CHECK(stallResult.minGapUs >= displayRefreshUs);
 
     // Content just under the cap must not build a standing queue
     const auto nearCap = generateArrivals({ 1000, 165, 0, false }, durationUs);
-    const VrrLoopResult nearCapResult = simulateVrrLoop(nearCap, highResolutionSleep);
+    const VrrLoopResult nearCapResult = simulateVrrLoop(nearCap, spinSleep);
     printLoop("165 FPS content, 1000 Hz host", nearCapResult);
     CHECK(nearCapResult.dropPercent < 2.0);
     CHECK(nearCapResult.averageAgeUs < 3000);
@@ -584,7 +613,7 @@ static void testLimiterLoop()
     // up after a pair, so a kept frame would leave a standing queue. There the
     // newest frame still wins, exactly as without the burst rule.
     const auto gridNearCap = generateArrivals({ 180, 170, 0.3, false }, durationUs);
-    const VrrLoopResult gridNearCapResult = simulateVrrLoop(gridNearCap, highResolutionSleep);
+    const VrrLoopResult gridNearCapResult = simulateVrrLoop(gridNearCap, spinSleep);
     printLoop("170 FPS content, 30% paired", gridNearCapResult);
     CHECK(gridNearCapResult.dropPercent < 16.5);
     CHECK(gridNearCapResult.averageAgeUs < 2000);
@@ -621,8 +650,8 @@ static void testSmoothLoop()
     // network jitter to the screen; Smooth replays the host's timing for a
     // couple of milliseconds more latency
     const auto jittery = generateArrivals({ 1000, 130, 0, false }, durationUs);
-    const VrrLoopResult onArrival = simulateVrrLoop(jittery, highResolutionSleep);
-    const VrrLoopResult smooth = simulateVrrLoop(jittery, highResolutionSleep, true);
+    const VrrLoopResult onArrival = simulateVrrLoop(jittery, spinSleep);
+    const VrrLoopResult smooth = simulateVrrLoop(jittery, spinSleep, true);
     printLoop("130 FPS, 1000 Hz host", onArrival);
     printLoop("130 FPS, 1000 Hz host, Smooth", smooth);
     CHECK(smooth.addedJerkPercent * 4 < onArrival.addedJerkPercent);
@@ -633,7 +662,7 @@ static void testSmoothLoop()
     // Network stalls: late frames are shown on arrival and the schedule
     // catches up by dropping frames whose successor is already due
     const auto stalls = generateArrivals({ 1000, 130, 0, true }, durationUs);
-    const VrrLoopResult stallSmooth = simulateVrrLoop(stalls, highResolutionSleep, true);
+    const VrrLoopResult stallSmooth = simulateVrrLoop(stalls, spinSleep, true);
     printLoop("130 FPS, 1000 Hz host, stalls, Smooth", stallSmooth);
     CHECK(stallSmooth.dropPercent < 2.0);
     CHECK(stallSmooth.averageAgeUs < 4000);
@@ -641,14 +670,14 @@ static void testSmoothLoop()
 
     // Paired delivery: Smooth spaces the pair out by sender time
     const auto paired = generateArrivals({ 180, 130, 0.3, false }, durationUs);
-    const VrrLoopResult pairedSmooth = simulateVrrLoop(paired, highResolutionSleep, true);
+    const VrrLoopResult pairedSmooth = simulateVrrLoop(paired, spinSleep, true);
     printLoop("130 FPS, 30% paired, Smooth", pairedSmooth);
     CHECK(pairedSmooth.dropPercent < 0.5);
     CHECK(pairedSmooth.minGapUs >= displayRefreshUs);
 
     // Content above the cap: the cap still decides and the delay stays small
     const auto atCap = generateArrivals({ 180, 200, 0, false }, durationUs);
-    const VrrLoopResult atCapSmooth = simulateVrrLoop(atCap, highResolutionSleep, true);
+    const VrrLoopResult atCapSmooth = simulateVrrLoop(atCap, spinSleep, true);
     printLoop("180 FPS content, Smooth", atCapSmooth);
     CHECK(atCapSmooth.presentedFps >= 165);
     CHECK(atCapSmooth.averageAgeUs < 5000);
@@ -657,13 +686,14 @@ static void testSmoothLoop()
 
 int main()
 {
-    testFrameCap();
     testMinInterval();
+    testRefreshInterval();
     testDisplayMode();
     testDecide();
     testLimiter();
     testSourceCadence();
     testFrameStale();
+    testRefreshRateLoop();
     testLimiterLoop();
     testPlayoutClock();
     testSmoothLoop();

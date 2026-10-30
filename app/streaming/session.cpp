@@ -6283,10 +6283,10 @@ void Session::exec()
                                 static_cast<int>(m_Preferences->vrrLatencyMode), m_StreamConfig.fps,
                                 displayHz);
                 } else if (sync.enableVrr) {
-                    SDL_LogInfo(
-                        SDL_LOG_CATEGORY_APPLICATION,
-                        "VRR mode: %d FPS stream on a %d Hz display, presents capped at %d FPS",
-                        m_StreamConfig.fps, displayHz, sync.presentCapFps);
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                "VRR mode: %d FPS stream on a %d Hz display, presents at least one "
+                                "refresh apart, dropping a frame only when a newer one is ready",
+                                m_StreamConfig.fps, displayHz);
                     if (sync.streamAboveVrrRange && !m_VrrRangeWarningShown) {
                         m_VrrRangeWarningShown = true;
                         SDL_LogWarn(
@@ -6297,7 +6297,7 @@ void Session::exec()
                                               "Stream at %3 FPS or lower for the smoothest VRR.")
                                                .arg(m_StreamConfig.fps)
                                                .arg(displayHz)
-                                               .arg(sync.presentCapFps),
+                                               .arg(displayHz),
                                            8000);
                     }
                 }

@@ -1219,20 +1219,20 @@
         <translation>可变刷新率（G-Sync / FreeSync）</translation>
     </message>
     <message>
-        <source>Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). For the smoothest result, stream a few FPS below the display&apos;s refresh rate.</source>
-        <translation>每一帧到达后立即显示，让支持 VRR 的显示器跟着串流的节奏刷新：延迟低且不撕裂。开启后取代垂直同步和帧平滑。需要 G-Sync 或 FreeSync 显示器、在显卡驱动中开启 VRR，并使用“全屏”或“无边框窗口”显示模式（只有驱动为窗口化程序开启了 VRR 时，“窗口”模式才有效）。想要最流畅的效果，请把串流帧率设得比显示器刷新率低几帧。</translation>
+        <source>Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). Frames are only dropped when the stream is faster than the display&apos;s refresh rate.</source>
+        <translation>每一帧到达后立即显示，让支持 VRR 的显示器跟着串流的节奏刷新：延迟低且不撕裂。开启后取代垂直同步和帧平滑。需要 G-Sync 或 FreeSync 显示器、在显卡驱动中开启 VRR，并使用“全屏”或“无边框窗口”显示模式（只有驱动为窗口化程序开启了 VRR 时，“窗口”模式才有效）。只有串流帧率高于显示器刷新率时才会丢帧。</translation>
     </message>
     <message>
         <source>Variable refresh rate pacer</source>
         <translation>可变刷新率节奏器</translation>
     </message>
     <message>
-        <source>How VRR frames are timed. Present-rate cap shows each frame as it arrives, capped just below the refresh rate. Host-timestamp scheduling (ported from Nonary&apos;s Moonlight fork) spaces frames by their capture time on the host, behind a small adaptive delay; it needs the D3D11 renderer and the Borderless windowed display mode, and uses the present-rate cap otherwise. Changes apply to the next stream.</source>
-        <translation>决定 VRR 下每一帧何时显示。“呈现速率上限”在帧到达后立即显示，只把速率限制在刷新率之下。“按主机时间戳排程”（移植自 Nonary 的 Moonlight 分支）按主机上的采集时间排列各帧，并加入一小段自适应延迟；它需要 D3D11 渲染器和“无边框窗口”显示模式，否则改用呈现速率上限。更改在下次串流时生效。</translation>
+        <source>How VRR frames are timed. Present on arrival shows each frame as soon as it arrives, at most one per display refresh. Host-timestamp scheduling (ported from Nonary&apos;s Moonlight fork) spaces frames by their capture time on the host, behind a small adaptive delay; it needs the D3D11 renderer and the Borderless windowed display mode, and presents on arrival otherwise. Changes apply to the next stream.</source>
+        <translation>决定 VRR 下每一帧何时显示。“到达即显示”在帧到达后立即显示，每次显示器刷新最多显示一帧。“按主机时间戳排程”（移植自 Nonary 的 Moonlight 分支）按主机上的采集时间排列各帧，并加入一小段自适应延迟；它需要 D3D11 渲染器和“无边框窗口”显示模式，否则改为到达即显示。更改在下次串流时生效。</translation>
     </message>
     <message>
-        <source>Present-rate cap (default)</source>
-        <translation>呈现速率上限（默认）</translation>
+        <source>Present on arrival (default)</source>
+        <translation>到达即显示（默认）</translation>
     </message>
     <message>
         <source>Host-timestamp scheduling (Nonary)</source>
@@ -1263,8 +1263,8 @@
         <translation>平滑 VRR</translation>
     </message>
     <message>
-        <source>Only available with the Present-rate cap pacer. Host-timestamp scheduling has its own latency controls.</source>
-        <translation>仅适用于“呈现速率上限”节奏器。“按主机时间戳排程”有独立的延迟控制选项。</translation>
+        <source>Only available with the Present on arrival pacer. Host-timestamp scheduling has its own latency controls.</source>
+        <translation>仅在使用“到达即显示”时可用。“按主机时间戳排程”有自己的延迟设置。</translation>
     </message>
     <message>
         <source>Shows each frame at the pace the host captured it instead of as soon as it arrives, hiding network jitter. Adds a few milliseconds of latency, more on unstable connections.</source>

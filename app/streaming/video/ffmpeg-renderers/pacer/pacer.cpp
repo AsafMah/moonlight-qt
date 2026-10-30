@@ -61,16 +61,26 @@ PreciseSleeper::~PreciseSleeper()
 
 void PreciseSleeper::sleepUs(uint64_t us)
 {
-    if (m_Timer != nullptr) {
+    // The timer wakes up to ~0.75 ms late, so it sleeps to just before the
+    // deadline and a short spin finishes the wait. Presents held to one
+    // refresh apart then go out on time instead of drifting later.
+    const uint64_t deadlineUs = LiGetMicroseconds() + us;
+    if (m_Timer != nullptr && us > SpinUs) {
         LARGE_INTEGER dueTime;
         // Negative means relative, in 100 ns units
-        dueTime.QuadPart = -static_cast<LONGLONG>(us * 10);
-        if (SetWaitableTimer(m_Timer, &dueTime, 0, nullptr, nullptr, FALSE)) {
-            WaitForSingleObject(m_Timer, INFINITE);
-            return;
+        dueTime.QuadPart = -static_cast<LONGLONG>((us - SpinUs) * 10);
+        if (!SetWaitableTimer(m_Timer, &dueTime, 0, nullptr, nullptr, FALSE) ||
+            WaitForSingleObject(m_Timer, INFINITE) != WAIT_OBJECT_0) {
+            // Never spin for a whole frame if the timer fails
+            SDL_Delay(static_cast<Uint32>((us - SpinUs) / 1000));
         }
+    } else if (m_Timer == nullptr) {
+        SDL_Delay(static_cast<Uint32>((us + 999) / 1000));
+        return;
     }
-    SDL_Delay(static_cast<Uint32>((us + 999) / 1000));
+    while (LiGetMicroseconds() < deadlineUs) {
+        YieldProcessor();
+    }
 }
 #else
 PreciseSleeper::PreciseSleeper() = default;
@@ -477,18 +487,18 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, b
     }
 
     if (enableVrr) {
-        // VRR presents each frame on arrival. The only wait is a cap just below
-        // the refresh rate so presents stay inside the display's VRR range.
+        // VRR presents each frame on arrival. The only wait keeps presents at
+        // least one refresh apart so they stay inside the display's VRR range.
         // (A Nonary VRR fallback on a force-pacing renderer keeps its V-sync source.)
         if (m_VsyncSource == nullptr && m_VsyncRenderer->isRenderThreadSupported()) {
-            m_VrrLimiter =
-                VrrPolicy::FrameLimiter(VrrPolicy::frameCapFps(m_DisplayFps), m_DisplayFps);
+            m_VrrLimiter = VrrPolicy::FrameLimiter::forDisplay(m_DisplayFps);
             m_SmoothVrr = VrrPolicy::smoothEnabled(
                 enableVrr, smoothVrr, vrrImplementation == StreamingPreferences::VRR_IMPL_NONARY);
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "VRR mode: presenting %s, capped at %d FPS for a %d Hz display",
+                        "VRR mode: presenting %s, at least one refresh apart (%d Hz display); "
+                        "frames are dropped only when a newer one is ready",
                         m_SmoothVrr ? "on the sender's schedule (Smooth)" : "on arrival",
-                        VrrPolicy::frameCapFps(m_DisplayFps), m_DisplayFps);
+                        m_DisplayFps);
         } else {
             // Never block the main thread to space out presents
             SDL_LogInfo(
@@ -502,7 +512,7 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, b
         m_VsyncRenderer->isRenderThreadSupported()) {
         const bool vrrLimiterActive = enableVrr && m_VrrLimiter.isEnabled();
         const unsigned int vrrCapFps =
-            vrrLimiterActive ? static_cast<unsigned int>(VrrPolicy::frameCapFps(m_DisplayFps)) : 0;
+            vrrLimiterActive ? static_cast<unsigned int>(SDL_max(m_DisplayFps, 0)) : 0;
         m_PresentStallDetector = std::make_unique<PresentStallDetector>(
             static_cast<unsigned int>(SDL_max(maxVideoFps, 0)),
             static_cast<unsigned int>(SDL_max(m_DisplayFps, 0)), m_VsyncSource != nullptr,

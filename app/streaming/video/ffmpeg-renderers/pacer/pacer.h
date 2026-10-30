@@ -52,6 +52,10 @@ public:
 
     void sleepUs(uint64_t us);
 
+    // How much of each wait is spun rather than slept: above the timer's
+    // measured p99 overshoot (540 us) on Windows 11
+    static constexpr uint64_t SpinUs = 600;
+
 private:
     // High-resolution waitable timer HANDLE on Windows, null elsewhere or
     // when the OS doesn't support one
@@ -127,7 +131,7 @@ private:
     PacerStats* m_Stats;
     int m_RendererAttributes;
 
-    // Present-rate cap for VRR mode (disabled otherwise)
+    // Keeps VRR presents at least one refresh apart (disabled otherwise)
     VrrPolicy::FrameLimiter m_VrrLimiter;
     VrrPolicy::SourceCadence m_SourceCadence;
     // VRR Smooth mode: frames are presented on the sender's schedule

@@ -31,7 +31,7 @@
 
 ## 约定
 
-The default VRR pacer remains **Present-rate cap**, presenting on arrival.
+The default VRR pacer remains **Present on arrival**: each frame is presented as it arrives, at least one display refresh after the previous one, and is dropped only when a newer frame is already ready.
 **Smooth VRR** is a separate opt-in for that pacer only; selecting
 **Host-timestamp scheduling (Nonary)** disables it without changing its saved
 value. Nonary uses its own latency controls, including its independent Smooth

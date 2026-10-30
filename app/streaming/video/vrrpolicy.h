@@ -7,9 +7,10 @@
 //
 // In VRR mode every frame is presented as soon as it is decoded, without
 // V-Sync waits or frame pacing, so a VRR display refreshes when each frame
-// arrives. The only wait is a present-rate cap a little below the display's
-// refresh rate: frames presented faster than the panel's maximum leave the VRR
-// range and tear (or get held for V-Sync by the driver).
+// arrives. The only wait keeps presents at least one refresh apart: a frame
+// presented sooner than the panel's maximum rate allows would leave the VRR
+// range and tear (or be held for V-Sync by the driver). The host sets the
+// frame rate, so there is no cap below the refresh rate.
 //
 // Everything here is pure so it can be unit tested.
 namespace VrrPolicy {
@@ -19,20 +20,6 @@ constexpr bool smoothEnabled(bool enableVrr, bool savedSmooth, bool nonarySelect
     return enableVrr && savedSmooth && !nonarySelected;
 }
 
-// The highest present rate that stays safely inside the VRR range of a
-// display running at displayHz: refresh - refresh^2 / 3600, rounded away from
-// the maximum, and at least 3 below it (60 -> 57, 120 -> 116, 144 -> 138,
-// 240 -> 224). Returns 0 (no cap) for an unknown refresh rate.
-constexpr int frameCapFps(int displayHz)
-{
-    if (displayHz <= 3) {
-        return 0;
-    }
-    const int squaredMargin = (displayHz * displayHz + 3599) / 3600;
-    const int margin = squaredMargin > 3 ? squaredMargin : 3;
-    return displayHz - margin;
-}
-
 // The shortest time between two presents for a cap, rounded up so the cap is
 // never exceeded. 0 means no cap.
 constexpr uint64_t minPresentIntervalUs(int capFps)
@@ -40,6 +27,17 @@ constexpr uint64_t minPresentIntervalUs(int capFps)
     return capFps > 0
                ? (1000000u + static_cast<uint64_t>(capFps) - 1u) / static_cast<uint64_t>(capFps)
                : 0;
+}
+
+// The shortest time between two presents that a displayHz display can follow.
+// Refresh rates are reported as whole numbers, rounded from rates such as
+// 59.94, 143.98 or 179.96 Hz, so this allows for a refresh up to 0.1%
+// (1000/1001) slower than reported. 0 for an unknown refresh rate.
+constexpr uint64_t refreshIntervalUs(int displayHz)
+{
+    return displayHz > 0 ? (1001000000u + 1000u * static_cast<uint64_t>(displayHz) - 1u) /
+                               (1000u * static_cast<uint64_t>(displayHz))
+                         : 0;
 }
 
 // Whether a full-screen display mode suits the stream. Without VRR the stream
@@ -69,11 +67,12 @@ struct SyncDecision
     bool enableVsync;
     bool enableFramePacing;
     bool enableVrr;
-    // Present-rate cap in VRR mode, 0 when there is none. With the Nonary
-    // pacer this only applies if it falls back to the fork limiter.
+    // Highest present rate in VRR mode (the refresh rate), 0 when unknown.
+    // With the Nonary pacer this only applies if it falls back to the fork
+    // limiter.
     int presentCapFps;
-    // True when the stream's frame rate is above the cap, so some frames will
-    // be dropped to stay inside the VRR range
+    // True when the stream's frame rate is above the refresh rate, so some
+    // frames will be dropped to stay inside the VRR range
     bool streamAboveVrrRange;
     // The Nonary pacer runs this decoder: V-Sync stays on (it presents
     // tearing or synchronized per frame) and frame pacing stays off
@@ -87,9 +86,8 @@ struct SyncDecision
 constexpr SyncDecision decide(const SyncInput& in)
 {
     if (in.enableVrr) {
-        const int cap = frameCapFps(in.displayHz);
+        const int cap = in.displayHz > 0 ? in.displayHz : 0;
         if (in.nonaryVrr) {
-            // Nonary drops only above the native refresh rate
             return SyncDecision{
                 true, false, true, cap, in.displayHz > 0 && in.streamFps > in.displayHz, true
             };
@@ -140,8 +138,10 @@ private:
 };
 
 // Whether to drop the oldest queued frame, ageUs old, for a newer one that is
-// already queued (queuedFrames > 1), after the present-rate cap held it back
-// for waitedUs.
+// already queued (queuedFrames > 1), after the present-rate limit (at most one
+// present per display refresh, minIntervalUs; "the cap" below) held it back
+// for waitedUs. Frames are never dropped just to stay under the limit: only a
+// newer frame that is already ready replaces one.
 //
 // When the content runs faster than the cap, frames held back by it are
 // always superseded, so only the newest is presented. Below the cap a frame
@@ -236,13 +236,12 @@ private:
     uint64_t m_DelayUs = 0;
 };
 
-// Spaces presents to at most capFps per second, and never closer together
-// than one refresh of a displayHz display. Each present gets a slot on a fixed
-// schedule one interval apart, so a present that goes out a little late does
-// not push back the ones after it, as long as the next one still comes a full
-// refresh after it. A frame that is ready after its slot is presented at once
-// and the schedule restarts from it, so slow periods never build up credit
-// for a later burst.
+// Spaces presents to at most capFps per second (the VRR pacer uses the refresh
+// rate), and never closer together than one refresh of a displayHz display. Each present gets a
+// slot on a fixed schedule one interval apart, so a present that goes out a little late does not
+// push back the ones after it, as long as the next one still comes a full refresh after it. A frame
+// that is ready after its slot is presented at once and the schedule restarts from it, so slow
+// periods never build up credit for a later burst.
 class FrameLimiter
 {
 public:
@@ -252,6 +251,16 @@ public:
                          ? minPresentIntervalUs(displayHz)
                          : m_MinIntervalUs)
     {
+    }
+
+    // The VRR pacer's limiter: presents at the display's full rate, never
+    // closer together than one refresh
+    static FrameLimiter forDisplay(int displayHz)
+    {
+        FrameLimiter limiter;
+        limiter.m_MinIntervalUs = refreshIntervalUs(displayHz);
+        limiter.m_MinGapUs = limiter.m_MinIntervalUs;
+        return limiter;
     }
 
     bool isEnabled() const { return m_MinIntervalUs != 0; }

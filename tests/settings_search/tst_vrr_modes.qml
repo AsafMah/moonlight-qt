@@ -58,7 +58,7 @@ TestCase {
         tryCompare(row, "controlEnabled", false)
         compare(row.checked, false)
         compare(preferences.vrrSmooth, true)
-        verify(row.description.indexOf("Present-rate cap") >= 0)
+        verify(row.description.indexOf("Present on arrival") >= 0)
         verify(row.settingsSearchKeywords.indexOf("nonary") >= 0)
         var control = row.controlContent[0]
         mouseClick(control, control.width / 2, control.height / 2)

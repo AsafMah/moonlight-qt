@@ -138,6 +138,8 @@ private:
 #define RENDERER_ATTRIBUTE_NO_BUFFERING 0x08
 #define RENDERER_ATTRIBUTE_FORCE_PACING 0x10
 
+class IVrrFramePresenter;
+
 class IFFmpegRenderer : public Overlay::IOverlayRenderer {
 public:
     enum class RendererType {
@@ -299,6 +301,10 @@ public:
         // Render thread is supported by default
         return true;
     }
+
+    // Renderers opt into the Nonary VRR pacer (ported from Nonary/moonlight-qt)
+    // through a separate presenter rather than changing renderFrame()
+    virtual IVrrFramePresenter *getVrrFramePresenter() { return nullptr; }
 
     virtual bool isDirectRenderingSupported() {
         // The renderer can render directly to the display

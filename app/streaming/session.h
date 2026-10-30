@@ -368,7 +368,11 @@ private:
                               int videoFormat, int width, int height, int frameRate,
                               bool enableVsync, bool enableVrr, bool enableFramePacing,
                               bool enableVideoEnhancement, bool ignoreAspectRatio, bool testOnly,
-                              IVideoDecoder*& chosenDecoder);
+                              IVideoDecoder*& chosenDecoder,
+                              StreamingPreferences::VrrImplementation vrrImplementation =
+                                  StreamingPreferences::VRR_IMPL_FORK,
+                              int vrrLatencyMode = StreamingPreferences::VRR_LATENCY_BALANCED,
+                              int vrrDisplayRefreshHz = 0);
 
     static
     void clStageStarting(int stage);

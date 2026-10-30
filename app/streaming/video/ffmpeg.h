@@ -30,6 +30,10 @@ public:
     virtual void renderFrameOnMainThread() override;
     virtual void setHdrMode(bool enabled) override;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info) override;
+    virtual bool isNonaryVrrActive() override
+    {
+        return m_Pacer != nullptr && m_Pacer->isVrrActive();
+    }
 
     virtual IFFmpegRenderer* getBackendRenderer();
 
@@ -118,6 +122,7 @@ private:
     int m_ConsecutiveFailedDecodes;
     Pacer* m_Pacer;
     PacerStats m_PacerStats;
+    PacerTelemetrySnapshot m_LastNonaryVrrTelemetry;
     BandwidthMeter m_BandwidthMeter;
     VIDEO_STATS m_ActiveWndVideoStats;
     VIDEO_STATS m_LastWndVideoStats;

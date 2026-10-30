@@ -1045,7 +1045,9 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                             StreamingPreferences::RendererSelection renderer, SDL_Window* window,
                             int videoFormat, int width, int height, int frameRate, bool enableVsync,
                             bool enableVrr, bool enableFramePacing, bool enableVideoEnhancement,
-                            bool ignoreAspectRatio, bool testOnly, IVideoDecoder*& chosenDecoder)
+                            bool ignoreAspectRatio, bool testOnly, IVideoDecoder*& chosenDecoder,
+                            StreamingPreferences::VrrImplementation vrrImplementation,
+                            int vrrLatencyMode, int vrrDisplayRefreshHz)
 {
     DECODER_PARAMETERS params;
 
@@ -1054,8 +1056,11 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     // block while waiting for a backbuffer swap.
     SDL_assert(!enableVsync || !testOnly);
 
-    // VRR presents on arrival, so it never combines with V-Sync waits
-    SDL_assert(!enableVrr || (!enableVsync && !enableFramePacing));
+    // The fork's VRR mode presents on arrival, so it never combines with
+    // V-Sync waits. The Nonary pacer keeps V-Sync on but never frame pacing.
+    SDL_assert(!enableVrr || !enableFramePacing);
+    SDL_assert(!enableVrr || !enableVsync ||
+               vrrImplementation == StreamingPreferences::VRR_IMPL_NONARY);
 
     params.width = width;
     params.height = height;
@@ -1064,6 +1069,9 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     params.window = window;
     params.enableVsync = enableVsync;
     params.enableVrr = enableVrr && !testOnly;
+    params.vrrImplementation = vrrImplementation;
+    params.vrrLatencyMode = vrrLatencyMode;
+    params.vrrDisplayRefreshHz = vrrDisplayRefreshHz;
     params.enableFramePacing = enableFramePacing;
     // Preserve the saved preference while making the effective decoder state
     // match the UI: video enhancement is unavailable with software decoding.
@@ -6066,6 +6074,30 @@ void Session::exec()
 
             presence.runCallbacks();
 
+            // Advisory window-state notifications for the Nonary VRR pacer, ported
+            // from Nonary/moonlight-qt@c822745 (GPLv3): it discards queued work
+            // while minimized/hidden. Other pacers never see these flags.
+            if (m_VideoDecoder != nullptr && m_Preferences->enableVrr &&
+                m_Preferences->vrrImplementation == StreamingPreferences::VRR_IMPL_NONARY) {
+                uint32_t advisoryFlags = 0;
+                switch (event.window.event) {
+                case SDL_WINDOWEVENT_MINIMIZED:
+                case SDL_WINDOWEVENT_HIDDEN:
+                    advisoryFlags = WINDOW_STATE_CHANGE_MINIMIZED;
+                    break;
+                case SDL_WINDOWEVENT_RESTORED:
+                case SDL_WINDOWEVENT_SHOWN:
+                    advisoryFlags = WINDOW_STATE_CHANGE_RESTORED;
+                    break;
+                }
+                if (advisoryFlags != 0) {
+                    WINDOW_STATE_CHANGE_INFO advisoryInfo = {};
+                    advisoryInfo.window = m_Window;
+                    advisoryInfo.stateChangeFlags = advisoryFlags;
+                    m_VideoDecoder->notifyWindowChanged(&advisoryInfo);
+                }
+            }
+
             // Capture the mouse on SDL_WINDOWEVENT_ENTER if needed
             if (needsFirstEnterCapture && event.window.event == SDL_WINDOWEVENT_ENTER) {
                 m_InputHandler->setCaptureActive(true);
@@ -6208,15 +6240,24 @@ void Session::exec()
                 // VRR mode turns off V-Sync and frame pacing and presents
                 // each frame on arrival instead.
                 int displayHz = StreamUtils::getDisplayRefreshRate(m_Window);
-                const VrrPolicy::SyncDecision sync =
-                    VrrPolicy::decide({ m_Preferences->enableVsync, m_Preferences->framePacing,
-                                        m_Preferences->enableVrr, m_StreamConfig.fps, displayHz });
+                const bool tryNonaryVrr =
+                    m_Preferences->vrrImplementation == StreamingPreferences::VRR_IMPL_NONARY;
+                const VrrPolicy::SyncDecision sync = VrrPolicy::decide(
+                    { m_Preferences->enableVsync, m_Preferences->framePacing,
+                      m_Preferences->enableVrr, m_StreamConfig.fps, displayHz, tryNonaryVrr });
                 if (m_Preferences->enableVsync && !sync.enableVsync && !sync.enableVrr) {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                                 "Disabling V-sync because refresh rate limit exceeded");
                 }
-                m_VrrPresentCapFps = sync.enableVrr ? sync.presentCapFps : -1;
-                if (sync.enableVrr) {
+                // The Nonary pacer has no present cap (0); it drops only above refresh
+                m_VrrPresentCapFps = !sync.enableVrr ? -1 : sync.nonaryVrr ? 0 : sync.presentCapFps;
+                if (sync.enableVrr && sync.nonaryVrr) {
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                "VRR mode (Nonary pacer, latency mode %d): %d FPS stream on a "
+                                "%d Hz display",
+                                static_cast<int>(m_Preferences->vrrLatencyMode), m_StreamConfig.fps,
+                                displayHz);
+                } else if (sync.enableVrr) {
                     SDL_LogInfo(
                         SDL_LOG_CATEGORY_APPLICATION,
                         "VRR mode: %d FPS stream on a %d Hz display, presents capped at %d FPS",
@@ -6243,12 +6284,43 @@ void Session::exec()
                         m_Window, m_ActiveVideoFormat, m_ActiveVideoWidth, m_ActiveVideoHeight,
                         m_ActiveVideoFrameRate, sync.enableVsync, sync.enableVrr,
                         sync.enableFramePacing, m_Preferences->videoEnhancement,
-                        m_Preferences->ignoreAspectRatio, false, s_ActiveSession->m_VideoDecoder)) {
+                        m_Preferences->ignoreAspectRatio, false, s_ActiveSession->m_VideoDecoder,
+                        sync.nonaryVrr ? StreamingPreferences::VRR_IMPL_NONARY
+                                       : StreamingPreferences::VRR_IMPL_FORK,
+                        m_Preferences->vrrLatencyMode, displayHz)) {
                     SDL_UnlockMutex(m_DecoderLock);
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                                  "Failed to recreate decoder after reset");
                     emit displayLaunchError(tr("Unable to initialize video decoder. Please check your streaming settings and try again."));
                     goto DispatchDeferredCleanup;
+                }
+
+                if (sync.nonaryVrr && !m_VideoDecoder->isNonaryVrrActive()) {
+                    // Recreate the decoder with the fork's VRR policy (V-Sync off,
+                    // tearing allowed) before anything can render with it
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                "Nonary VRR pacer unavailable for this renderer/window; "
+                                "recreating the decoder with the fork VRR limiter");
+                    delete s_ActiveSession->m_VideoDecoder;
+                    s_ActiveSession->m_VideoDecoder = nullptr;
+                    const VrrPolicy::SyncDecision forkSync = VrrPolicy::decide(
+                        { m_Preferences->enableVsync, m_Preferences->framePacing,
+                          m_Preferences->enableVrr, m_StreamConfig.fps, displayHz, false });
+                    m_VrrPresentCapFps = forkSync.presentCapFps;
+                    if (!chooseDecoder(
+                            m_Preferences->videoDecoderSelection, m_Preferences->rendererSelection,
+                            m_Window, m_ActiveVideoFormat, m_ActiveVideoWidth, m_ActiveVideoHeight,
+                            m_ActiveVideoFrameRate, forkSync.enableVsync, forkSync.enableVrr,
+                            forkSync.enableFramePacing, m_Preferences->videoEnhancement,
+                            m_Preferences->ignoreAspectRatio, false,
+                            s_ActiveSession->m_VideoDecoder)) {
+                        SDL_UnlockMutex(m_DecoderLock);
+                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                                     "Failed to recreate decoder after reset");
+                        emit displayLaunchError(tr("Unable to initialize video decoder. Please "
+                                                   "check your streaming settings and try again."));
+                        goto DispatchDeferredCleanup;
+                    }
                 }
 
                 // SDL_CreateRenderer() may recreate the platform window while

@@ -4,6 +4,8 @@
 #include "../renderer.h"
 #include "pacerstats.h"
 #include "presentstalldetector.h"
+#include "pacertelemetry.h"
+#include "vrr/vrrtypes.h"
 #include "../../vrrpolicy.h"
 
 #include <QQueue>
@@ -11,6 +13,8 @@
 #include <QWaitCondition>
 
 #include <memory>
+
+class VrrPacingWorker;
 
 // The maximum number of frames pacer will ever hold is:
 // - 3 frames in the pacing queue
@@ -63,7 +67,21 @@ public:
 
     void submitFrame(AVFrame* frame);
 
-    bool initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, bool enableVrr = false);
+    // Only the Nonary VRR worker consumes the decoder-facing pacing metadata
+    void submitFrame(PacedFrame&& frame);
+
+    // True while the Nonary VRR worker (ported from Nonary/moonlight-qt) owns presentation
+    bool isVrrActive() const;
+
+    PacerTelemetrySnapshot telemetrySnapshot() const;
+
+    void notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info);
+
+    bool initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, bool enableVrr = false,
+                    StreamingPreferences::VrrImplementation vrrImplementation =
+                        StreamingPreferences::VRR_IMPL_FORK,
+                    int vrrLatencyMode = StreamingPreferences::VRR_LATENCY_BALANCED,
+                    int vrrDisplayRefreshHz = 0);
 
     void signalVsync();
 
@@ -122,4 +140,10 @@ private:
     uint64_t m_PostDrainTimedFrames = 0;
     uint64_t m_PostDrainTotalPrePresentUs = 0;
     uint64_t m_PostDrainTotalPresentUs = 0;
+
+    // Nonary VRR pacer; when set, it owns presentation and no other thread runs
+    PacerTelemetry m_Telemetry;
+    std::unique_ptr<VrrPacingWorker> m_VrrWorker;
+
+    bool tryStartNonaryVrr(SDL_Window* window, int vrrLatencyMode, int vrrDisplayRefreshHz);
 };

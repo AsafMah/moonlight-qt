@@ -323,6 +323,15 @@ StreamCommandLineParser::StreamCommandLineParser()
         { "always", StreamingPreferences::CSK_ALWAYS },
         { "fullscreen-or-borderless", StreamingPreferences::CSK_FULLSCREEN_OR_BORDERLESS },
     };
+    m_VrrImplementationMap = {
+        { "fork", StreamingPreferences::VRR_IMPL_FORK },
+        { "nonary", StreamingPreferences::VRR_IMPL_NONARY },
+    };
+    m_VrrLatencyModeMap = {
+        { "smooth", StreamingPreferences::VRR_LATENCY_SMOOTH },
+        { "balanced", StreamingPreferences::VRR_LATENCY_BALANCED },
+        { "low-latency", StreamingPreferences::VRR_LATENCY_LOW },
+    };
 }
 
 StreamCommandLineParser::~StreamCommandLineParser()
@@ -365,6 +374,10 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     parser.addToggleOption("audio-on-host", "audio on host PC");
     parser.addToggleOption("frame-pacing", "frame pacing");
     parser.addToggleOption("vrr", "VRR (G-Sync / FreeSync) mode");
+    parser.addChoiceOption("vrr-pacer", "VRR pacer (fork limiter or Nonary timestamp pacer)",
+                           m_VrrImplementationMap.keys());
+    parser.addChoiceOption("vrr-latency", "Nonary VRR pacer latency mode",
+                           m_VrrLatencyModeMap.keys());
     parser.addToggleOption("video-enhancement", "Enhance video with AI");
     parser.addToggleOption("mute-on-focus-loss", "mute audio when Moonlight window loses focus");
     parser.addToggleOption("background-gamepad", "background gamepad input");
@@ -484,6 +497,16 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
 
     // Resolve --vrr and --no-vrr options
     preferences->enableVrr = parser.getToggleOptionValue("vrr", preferences->enableVrr);
+
+    // Resolve --vrr-pacer and --vrr-latency options
+    if (parser.isSet("vrr-pacer")) {
+        preferences->vrrImplementation =
+            mapValue(m_VrrImplementationMap, parser.getChoiceOptionValue("vrr-pacer"));
+    }
+    if (parser.isSet("vrr-latency")) {
+        preferences->vrrLatencyMode =
+            mapValue(m_VrrLatencyModeMap, parser.getChoiceOptionValue("vrr-latency"));
+    }
 
     // Resolve --video-enhancement and --no-video-enhancement options
     preferences->videoEnhancement = parser.getToggleOptionValue("video-enhancement", preferences->videoEnhancement);

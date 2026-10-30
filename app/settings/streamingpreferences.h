@@ -205,6 +205,25 @@ public:
     };
     Q_ENUM(ScreenCombinationMode);
 
+    // VRR pacer selection. The fork limiter caps presents just below the
+    // refresh rate; the Nonary pacer (ported from Nonary/moonlight-qt)
+    // schedules frames from host timestamps with an adaptive playout delay.
+    enum VrrImplementation
+    {
+        VRR_IMPL_FORK = 0,
+        VRR_IMPL_NONARY = 1,
+    };
+    Q_ENUM(VrrImplementation);
+
+    // Nonary pacer latency modes; persisted IDs match Nonary's
+    enum VrrLatencyMode
+    {
+        VRR_LATENCY_SMOOTH = 0,
+        VRR_LATENCY_BALANCED = 1,
+        VRR_LATENCY_LOW = 2,
+    };
+    Q_ENUM(VrrLatencyMode);
+
     Q_PROPERTY(int width MEMBER width NOTIFY displayModeChanged)
     Q_PROPERTY(int height MEMBER height NOTIFY displayModeChanged)
     Q_PROPERTY(int fps MEMBER fps NOTIFY displayModeChanged)
@@ -229,6 +248,9 @@ public:
     Q_PROPERTY(DualSenseHapticsMode dualSenseHapticsMode MEMBER dualSenseHapticsMode NOTIFY dualSenseHapticsModeChanged)
     Q_PROPERTY(bool framePacing MEMBER framePacing NOTIFY framePacingChanged)
     Q_PROPERTY(bool enableVrr MEMBER enableVrr NOTIFY enableVrrChanged)
+    Q_PROPERTY(VrrImplementation vrrImplementation MEMBER vrrImplementation NOTIFY
+                   vrrImplementationChanged)
+    Q_PROPERTY(VrrLatencyMode vrrLatencyMode MEMBER vrrLatencyMode NOTIFY vrrLatencyModeChanged)
     Q_PROPERTY(bool videoEnhancement MEMBER videoEnhancement NOTIFY videoEnhancementChanged)
     Q_PROPERTY(bool streamResolutionScale MEMBER streamResolutionScale NOTIFY streamResolutionScaleChanged)
     Q_PROPERTY(int streamResolutionScaleRatio MEMBER streamResolutionScaleRatio NOTIFY streamResolutionScaleRatioChanged)
@@ -318,6 +340,8 @@ public:
     bool framePacing;
     // VRR (G-Sync / FreeSync): present each frame on arrival; overrides V-Sync and frame pacing
     bool enableVrr;
+    VrrImplementation vrrImplementation;
+    VrrLatencyMode vrrLatencyMode;
     bool videoEnhancement;
     bool streamResolutionScale;
     int streamResolutionScaleRatio;
@@ -411,6 +435,8 @@ signals:
     void windowModeChanged();
     void framePacingChanged();
     void enableVrrChanged();
+    void vrrImplementationChanged();
+    void vrrLatencyModeChanged();
     void videoEnhancementChanged();
     void streamResolutionScaleChanged();
     void streamResolutionScaleRatioChanged();

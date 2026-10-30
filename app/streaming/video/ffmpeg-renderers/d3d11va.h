@@ -1,8 +1,13 @@
 #pragma once
 
 #include "renderer.h"
+#include "dxgipresent.h"
+#include "dxgiwaitable.h"
+#include "d3d11presentpolicy.h"
+#include "ivrrframepresenter.h"
 
 #include <d3d11_4.h>
+#include <d3dkmthk.h>
 #include <dxgi1_6.h>
 #include <CGuid.h>
 #include "streaming/video/videoenhancement.h"
@@ -15,7 +20,11 @@ extern "C" {
 #include <wrl/client.h>
 #include <wrl/wrappers/corewrappers.h>
 
-class D3D11VARenderer : public IFFmpegRenderer
+// IVrrFramePresenter is the Nonary VRR pacer's renderer contract (ported from
+// Nonary/moonlight-qt@c822745). It is only active when the session selects
+// the Nonary VRR implementation; the fork's VRR mode and the fixed/unpaced
+// paths keep using renderFrame().
+class D3D11VARenderer : public IFFmpegRenderer, public IVrrFramePresenter
 {
 public:
     D3D11VARenderer(int decoderSelectionPass);
@@ -34,6 +43,20 @@ public:
     virtual bool needsTestFrame();
     virtual void setHdrMode(bool enabled) override;
     virtual InitFailureReason getInitFailureReason() override;
+
+    // IVrrFramePresenter (Nonary VRR pacer, DXGI path)
+    virtual IVrrFramePresenter* getVrrFramePresenter() override;
+    virtual bool canLatchAdaptivePresent() const override { return true; }
+    void interruptFrameWait(bool stopping) override { m_DxgiAdmission.interrupt(stopping); }
+    virtual VrrFallbackReason checkSupport() const override;
+    virtual uint64_t captureDecodeBoundary() override;
+    uint64_t waitForDecode(AVFrame* frame, uint64_t decodeBoundary) override;
+    VrrDecodeReadiness observeDecodeReadiness(AVFrame* frame, uint64_t decodeBoundary) override;
+    virtual VrrPrepareResult prepareFrame(AVFrame* frame, uint64_t decodeBoundary) override;
+    virtual VrrPresentFeedback presentAdaptive(const VrrPresentRequest& request) override;
+    virtual VrrPresentFeedback cancelFrame() override;
+    virtual void setSuspended(bool suspended) override;
+    virtual bool restoreFixedPresentation(VrrFallbackReason reason) override;
 
     enum PixelShaders {
         GENERIC_YUV_420,
@@ -56,7 +79,11 @@ private:
     bool createOverlayVertexBuffer(Overlay::OverlayType type, int width, int height, Microsoft::WRL::ComPtr<ID3D11Buffer>& newVertexBuffer);
     void bindColorConversion(bool frameChanged, AVFrame* frame);
     void bindVideoVertexBuffer(bool frameChanged, AVFrame* frame);
-    void renderVideo(AVFrame* frame);
+    // Returns false only if the frame must not be presented (Nonary VRR fence failure)
+    bool renderVideo(AVFrame* frame, uint64_t decodeBoundary = 0);
+    // Everything renderFrame() does before Present(); returns false if the
+    // frame must not be presented. Caller holds the render locks.
+    bool prepareFrameForPresent(AVFrame* frame, uint64_t decodeBoundary = 0);
     bool createVideoProcessor(ID3D11Device* device = nullptr, ID3D11DeviceContext* context = nullptr);
     bool initializeVideoProcessor();
     bool enableAMDVideoSuperResolution(bool activate = true, bool logInfo = true, ID3D11Device* device = nullptr);
@@ -170,4 +197,132 @@ private:
     // AMD (AMF)
     AmfSession m_Amf;
     bool m_AmfUpScalerSharpness = false;
+
+    // --- Nonary VRR presenter (d3d11vrr.cpp, ported from Nonary/moonlight-qt@c822745) ---
+    void lockPresentation();
+    void unlockPresentation();
+    bool initializeVrrPresentReadyFence();
+    bool beginVrrPresentReady();
+    bool finishVrrPresentReady(bool releasePresentationWhileWaiting);
+    HRESULT presentPreparedFrame(const DxgiPresentParameters& parameters);
+    void initializeVrrPresentationState(SDL_Window* window, DXGI_SWAP_CHAIN_DESC1* swapChainDesc);
+    void refreshVrrDisplayState();
+    void refreshVrrDisplayTiming();
+    void closeVrrRasterSource();
+    VrrNativeRasterSample sampleVrrRaster() const;
+    VrrNativeRasterSample queryVrrRaster() const;
+    void populateVrrGpuReadyFeedback(VrrPresentFeedback& feedback) const;
+    VrrFallbackReason evaluateVrrEligibility(bool prioritizeOutputCompatibility);
+    bool retirePreparedVrrFrameForMutation();
+    void releasePreparedVrrFrame();
+    void queueRenderDeviceReset();
+
+    struct VrrDisplayTimingSnapshot
+    {
+        bool queryResultValid = false;
+        uint32_t queryResult = 0;
+        bool pathValid = false;
+        uint32_t pathFlags = 0;
+        bool targetAvailable = false;
+        uint64_t sourceAdapterLuid = 0;
+        uint32_t sourceId = 0;
+        uint64_t targetAdapterLuid = 0;
+        uint32_t targetId = 0;
+        uint32_t outputTechnology = 0;
+        uint32_t rotation = 0;
+        uint32_t scaling = 0;
+        uint32_t pathRefreshNumerator = 0;
+        uint32_t pathRefreshDenominator = 0;
+        bool signalValid = false;
+        uint64_t signalPixelRateHz = 0;
+        uint32_t signalHSyncNumerator = 0;
+        uint32_t signalHSyncDenominator = 0;
+        uint32_t signalVSyncNumerator = 0;
+        uint32_t signalVSyncDenominator = 0;
+        uint32_t signalActiveWidth = 0;
+        uint32_t signalActiveHeight = 0;
+        uint32_t signalTotalWidth = 0;
+        uint32_t signalTotalHeight = 0;
+        uint32_t signalAdditionalInfoRaw = 0;
+        uint32_t signalScanLineOrdering = 0;
+    };
+
+    // enableVrr && vrrImplementation == Nonary; cleared by restoreFixedPresentation()
+    bool m_NonaryVrrRequested = false;
+    int m_RenderAdapterIndex = -1;
+    // Lock order: m_PresentationLock, then m_ContextLock
+    SDL_mutex* m_PresentationLock = nullptr;
+    Microsoft::WRL::Wrappers::HandleT<Microsoft::WRL::Wrappers::HandleTraits::HANDLENullTraits>
+        m_DxgiFrameLatencyHandle;
+    DxgiWaitable::Admission m_DxgiAdmission;
+    bool m_DxgiWaitableActive = false;
+    uint64_t m_DxgiWaitWarningUs = 0;
+    bool m_VrrRenderAdapterLuidValid = false;
+    uint64_t m_VrrRenderAdapterLuid = 0;
+    bool m_VrrTearingSupported = false;
+    bool m_VrrBorderlessFlipModel = false;
+    bool m_VrrSameGpuOutput = false;
+    bool m_VrrSwapChainAllowsTearing = false;
+    bool m_VrrTearingFeatureQueryResultValid = false;
+    int64_t m_VrrTearingFeatureQueryResult = 0;
+    bool m_VrrTearingFeatureAllowsTearing = false;
+    bool m_VrrSwapChainDescQueryResultValid = false;
+    int64_t m_VrrSwapChainDescQueryResult = 0;
+    uint32_t m_VrrSwapChainFlags = 0;
+    uint32_t m_VrrSwapChainSwapEffect = 0;
+    bool m_VrrFullscreenStateQueryResultValid = false;
+    int64_t m_VrrFullscreenStateQueryResult = 0;
+    bool m_VrrFullscreenExclusive = false;
+    uint32_t m_VrrWindowFlags = 0;
+    UINT m_VrrDesktopMonitorCount = 0;
+    HWND m_VrrWindowHandle = nullptr;
+    VrrDisplayTimingSnapshot m_VrrDisplayTiming;
+    bool m_VrrRasterSamplingRequested = false;
+    // MOONLIGHT_VRR_SYNC_FLIPS=1 synchronizes every VRR flip
+    bool m_VrrSyncFlips = false;
+    bool m_VrrRasterOpenResultValid = false;
+    int64_t m_VrrRasterOpenResult = 0;
+    bool m_VrrRasterSourceValid = false;
+    HMONITOR m_VrrRasterMonitor = nullptr;
+    D3DKMT_HANDLE m_VrrRasterAdapter = 0;
+    D3DDDI_VIDEO_PRESENT_SOURCE_ID m_VrrRasterVidPnSourceId = 0;
+    bool m_VrrSuspended = false;
+    VrrFallbackReason m_VrrFallbackReason = VrrFallbackReason::InitializationFailed;
+    bool m_VrrFramePrepared = false;
+    D3D11PresentPolicy::PreparedCompletion m_VrrPreparedCompletion;
+    uint64_t m_VrrPreparedDecodeBoundary = 0;
+    bool m_VrrPresentationLocked = false;
+    Microsoft::WRL::ComPtr<ID3D11Fence> m_VrrPresentReadyFence;
+    UINT64 m_VrrPresentReadyFenceValue = 0;
+    HANDLE m_VrrPresentReadyFenceEvent = nullptr;
+    HANDLE m_VrrDecodeReadyEvent = nullptr;
+    bool m_VrrPresentReadyAvailable = false;
+    bool m_VrrGpuReadyAttempted = false;
+    bool m_VrrGpuReadySignalResultValid = false;
+    int64_t m_VrrGpuReadySignalResult = 0;
+    bool m_VrrGpuReadySetEventResultValid = false;
+    int64_t m_VrrGpuReadySetEventResult = 0;
+    bool m_VrrGpuReadyWaitResultValid = false;
+    uint32_t m_VrrGpuReadyWaitResult = 0;
+    bool m_VrrGpuReadyTimingValid = false;
+    uint64_t m_VrrGpuReadySignalStartUs = 0;
+    uint64_t m_VrrGpuReadySignalEndUs = 0;
+    uint64_t m_VrrGpuReadyFlushStartUs = 0;
+    uint64_t m_VrrGpuReadyFlushEndUs = 0;
+    uint64_t m_VrrGpuReadySetEventStartUs = 0;
+    uint64_t m_VrrGpuReadySetEventEndUs = 0;
+    uint64_t m_VrrGpuReadyPollStartUs = 0;
+    uint64_t m_VrrGpuReadyPollEndUs = 0;
+    uint64_t m_VrrGpuReadyFenceValue = 0;
+    uint64_t m_VrrGpuReadyPollCompletedValue = 0;
+    bool m_VrrGpuReadyCompletedBeforeWait = false;
+    uint64_t m_VrrGpuReadyWaitStartUs = 0;
+    uint64_t m_VrrGpuReadyTimeUs = 0;
+    bool m_VrrPriorPresentCountValid = false;
+    uint64_t m_VrrPriorPresentCount = 0;
+    bool m_VrrPriorFrameStatsValid = false;
+    uint64_t m_VrrPriorFrameStatsPresentCount = 0;
+    uint64_t m_VrrPriorFrameStatsTimeUs = 0;
+    uint64_t m_VrrPriorFrameStatsPresentRefreshSequence = 0;
+    uint64_t m_VrrPriorFrameStatsRefreshSequence = 0;
 };

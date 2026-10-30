@@ -27,6 +27,7 @@
 | `docs/` | 设计文档与流程 SOP(upstream-sync、architecture 等) |
 | `projects/` | 业务项目材料(**仅本地,不入库**,见 CONTRIBUTING.md) |
 | `scripts/run-test.bat` | 测试统一入口(CI 与本地共用) |
+| `app/streaming/video/ffmpeg-renderers/pacer/vrr/` 等 | Nonary VRR 节奏器,移植自 Nonary/moonlight-qt@c822745(GPLv3,每个文件带出处与修改说明)。移植文件列在根目录 `.clang-format-ignore` 中,保持原格式以便与 Nonary 上游对比;只接入了 D3D11VA 渲染器(`d3d11vrr.cpp`),在 VRR 设置里与分叉自带的上限节奏器二选一 |
 
 ## 约定
 

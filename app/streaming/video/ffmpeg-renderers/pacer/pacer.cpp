@@ -1,6 +1,9 @@
 #include "pacer.h"
+#include "vrrpacingworker.h"
+#include "../ivrrframepresenter.h"
 #include "streaming/streamutils.h"
 #include "streaming/session.h"
+#include "streaming/vrrratepolicy.h"
 
 #ifdef HAS_QT_SDL_WAYLAND_BRIDGE
 #include "streaming/waylandqtsdlbridge.h"
@@ -89,6 +92,13 @@ Pacer::Pacer(IFFmpegRenderer* renderer, PacerStats* stats)
 
 Pacer::~Pacer()
 {
+    if (m_VrrWorker != nullptr) {
+        // The Nonary VRR worker owns presentation; it cancels any prepared
+        // frame and joins its threads. No legacy thread was started.
+        m_VrrWorker.reset();
+        return;
+    }
+
     m_Stopping = true;
 
     // Stop the V-sync thread
@@ -127,6 +137,10 @@ Pacer::~Pacer()
 
 void Pacer::renderOnMainThread()
 {
+    if (m_VrrWorker != nullptr) {
+        return;
+    }
+
     // Ignore this call for renderers that work on a dedicated render thread
     if (m_RenderThread != nullptr) {
         return;
@@ -327,14 +341,88 @@ void Pacer::handleVsync(int timeUntilNextVsyncMillis)
     enqueueFrameForRenderingAndUnlock(m_PacingQueue.dequeue());
 }
 
-bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, bool enableVrr)
+// Selection logic ported from Nonary/moonlight-qt@c822745 Pacer::initialize()
+// (GPLv3), modified to fall back to the fork's VRR limiter instead of fixed
+// V-Sync pacing when the Nonary worker cannot run.
+bool Pacer::tryStartNonaryVrr(SDL_Window* window, int vrrLatencyMode, int vrrDisplayRefreshHz)
+{
+    VrrSessionConfig config;
+    config.latencyMode = vrrLatencyMode >= 0 && vrrLatencyMode <= 2 ? vrrLatencyMode : 1;
+    config.timingOptions = VrrTimingOptions{}.resolved(config.latencyMode);
+    config.streamRateHz = m_MaxVideoFps;
+    config.displayRefreshHz =
+        vrrDisplayRefreshHz > 0 ? vrrDisplayRefreshHz : StreamUtils::getDisplayRefreshRate(window);
+    config.smoothFrameTiming = true;
+    config.absorbMicrostutter = false;
+    config = vrrProductionSessionConfig(config);
+
+    VrrFallbackReason fallbackReason = VrrFallbackReason::NoFallback;
+    IVrrFramePresenter* presenter = m_VsyncRenderer->getVrrFramePresenter();
+    if (config.displayRefreshHz <= 0) {
+        fallbackReason = VrrFallbackReason::InvalidRefresh;
+    } else if (!VrrRatePolicy::hasAdaptiveHeadroom(config.streamRateHz, config.displayRefreshHz)) {
+        fallbackReason = VrrFallbackReason::InsufficientHeadroom;
+    } else if (presenter == nullptr) {
+        fallbackReason = VrrFallbackReason::UnsupportedRenderer;
+    } else {
+        fallbackReason = presenter->checkSupport();
+        if (fallbackReason == VrrFallbackReason::NoFallback) {
+            // Present times feed the frame time percentiles (1% and 0.1% lows)
+            m_Telemetry.setPresentedHook([](uint64_t submissionUs) {
+                Session::get()->getStatsModel().recordFramePresented(submissionUs);
+            });
+            m_VrrWorker = std::make_unique<VrrPacingWorker>(presenter, config, &m_Telemetry);
+            if (m_VrrWorker->start()) {
+                m_DisplayFps = config.displayRefreshHz;
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "Nonary VRR pacing: target %d Hz with %d FPS stream (adaptive "
+                            "timestamp playout, latency mode %d, buffer %.2f frames, target "
+                            "%.2f%%)",
+                            m_DisplayFps, m_MaxVideoFps, config.latencyMode,
+                            config.timingOptions.bufferPerMille / 1000.0,
+                            config.timingOptions.targetHundredths / 100.0);
+                return true;
+            }
+            m_VrrWorker.reset();
+            fallbackReason = VrrFallbackReason::InitializationFailed;
+        }
+    }
+
+    // Undo any Nonary-only presenter state (waitable admission) so the fork
+    // limiter path presents through renderFrame() on an ordinary swapchain
+    if (presenter != nullptr && presenter->checkSupport() == VrrFallbackReason::NoFallback &&
+        !presenter->restoreFixedPresentation(fallbackReason)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Nonary VRR pacing unavailable and the presenter cannot restore fixed "
+                     "presentation");
+        return false;
+    }
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "Nonary VRR pacing unavailable: %s; falling back to the fork VRR limiter",
+                vrrFallbackReasonName(fallbackReason));
+    return true;
+}
+
+bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, bool enableVrr,
+                       StreamingPreferences::VrrImplementation vrrImplementation,
+                       int vrrLatencyMode, int vrrDisplayRefreshHz)
 {
 #ifdef HAS_QT_SDL_WAYLAND_BRIDGE
     m_Window = window;
 #endif
     m_MaxVideoFps = maxVideoFps;
-    m_DisplayFps = StreamUtils::getDisplayRefreshRate(window);
     m_RendererAttributes = m_VsyncRenderer->getRendererAttributes();
+
+    if (enableVrr && vrrImplementation == StreamingPreferences::VRR_IMPL_NONARY) {
+        if (!tryStartNonaryVrr(window, vrrLatencyMode, vrrDisplayRefreshHz)) {
+            return false;
+        }
+        if (m_VrrWorker != nullptr) {
+            return true;
+        }
+    }
+
+    m_DisplayFps = StreamUtils::getDisplayRefreshRate(window);
 
     if (enablePacing) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -391,8 +479,8 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, b
     if (enableVrr) {
         // VRR presents each frame on arrival. The only wait is a cap just below
         // the refresh rate so presents stay inside the display's VRR range.
-        SDL_assert(m_VsyncSource == nullptr);
-        if (m_VsyncRenderer->isRenderThreadSupported()) {
+        // (A Nonary VRR fallback on a force-pacing renderer keeps its V-sync source.)
+        if (m_VsyncSource == nullptr && m_VsyncRenderer->isRenderThreadSupported()) {
             m_VrrLimiter =
                 VrrPolicy::FrameLimiter(VrrPolicy::frameCapFps(m_DisplayFps), m_DisplayFps);
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -664,5 +752,32 @@ void Pacer::submitFrame(AVFrame* frame)
     }
     else {
         enqueueFrameForRenderingAndUnlock(frame);
+    }
+}
+
+void Pacer::submitFrame(PacedFrame&& frame)
+{
+    if (m_VrrWorker != nullptr) {
+        m_VrrWorker->submit(std::move(frame));
+        return;
+    }
+
+    submitFrame(frame.release());
+}
+
+bool Pacer::isVrrActive() const
+{
+    return m_VrrWorker != nullptr;
+}
+
+PacerTelemetrySnapshot Pacer::telemetrySnapshot() const
+{
+    return m_Telemetry.snapshot();
+}
+
+void Pacer::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info)
+{
+    if (m_VrrWorker != nullptr) {
+        m_VrrWorker->notifyWindowChanged(info);
     }
 }

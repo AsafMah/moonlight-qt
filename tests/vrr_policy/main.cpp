@@ -126,6 +126,30 @@ static void testDecide()
         // Unknown refresh rate: no cap and no warning
         auto d = decide({ true, false, true, 120, 0 });
         CHECK(d.enableVrr && d.presentCapFps == 0 && !d.streamAboveVrrRange);
+        CHECK(!d.nonaryVrr);
+    }
+
+    // The Nonary pacer keeps V-Sync on (it chooses tearing or synchronized
+    // presents per frame), never frame pacing, whatever they are set to
+    for (int vsync = 0; vsync < 2; vsync++) {
+        for (int pacing = 0; pacing < 2; pacing++) {
+            auto d = decide({ vsync != 0, pacing != 0, true, 120, 144, true });
+            CHECK(d.enableVsync && !d.enableFramePacing && d.enableVrr && d.nonaryVrr);
+            // Kept for the fork-limiter fallback
+            CHECK(d.presentCapFps == 138);
+        }
+    }
+    {
+        // Nonary has no below-refresh cap: it only drops above native refresh
+        CHECK(!decide({ true, false, true, 144, 144, true }).streamAboveVrrRange);
+        CHECK(!decide({ true, false, true, 139, 144, true }).streamAboveVrrRange);
+        CHECK(decide({ true, false, true, 145, 144, true }).streamAboveVrrRange);
+        CHECK(!decide({ true, false, true, 120, 0, true }).streamAboveVrrRange);
+    }
+    {
+        // Selecting the Nonary pacer without VRR changes nothing
+        auto d = decide({ true, true, false, 60, 60, true });
+        CHECK(d.enableVsync && d.enableFramePacing && !d.enableVrr && !d.nonaryVrr);
     }
 }
 

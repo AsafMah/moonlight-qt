@@ -21,6 +21,7 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | pyrowave_pacing | PyroWave 呈现策略：延迟呈现后切换三重缓冲的阈值、串流快于显示器时的帧节奏抽帧 | Windows |
 | present_stall | Pacer 一次性卡顿检测：有效呈现帧率、连续慢帧重置和 500ms 丢帧窗口 | Windows |
 | dxgi_present_queue | D3D11 呈现队列模拟:DWM 合成时帧延迟 1 + 可等待对象 + 只渲染最新帧,复现 r33 现场数据 | Windows |
+| vrr_nonary_controller | Nonary VRR 节奏器控制器（移植自 Nonary/moonlight-qt@c822745 的 tst_vrrtimingcontroller）：时间戳排程、播出延迟、掉帧与同步翻转保护 | Windows |
 | file_mapping_websocket_framing | 文件映射 WS 帧解析(fin/分片/ping-pong) | Windows |
 | shared_helpers | 配对证书策略、版本比较与 GFE 兼容性回退 | Windows |
 | amf_lifecycle | AMF 会话探测、初始化/重配/帧处理失败、析构与多会话的对象/DLL 释放顺序 | Windows |
@@ -58,6 +59,8 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | stats_overlay_layout | 性能浮层:预设、布局、指标持久化、阈值、锚点及真实字体绘制；QtGui/offscreen，无需串流 |
 | super_cmds | Foundation Sunshine 超级指令:`<SuperCmds>` JSON 解析(null/空/畸形/XML 转义)、NvApp 设置缓存往返。纯 QtCore,可直接进 CI(尚未在 build.yml 登记) |
 | host_keys | 发送到主机的组合键:扫描码→VK 映射(与 keyboard.cpp 一致)、按下/松开序列、特殊键、自定义宏的校验与 QSettings 持久化。纯 QtCore,可直接进 CI(尚未在 build.yml 登记) |
+| vrr_nonary_worker | Nonary VRR 工作线程测试（移植自 Nonary 的 tst_vrrpacingworker）。部分用例依赖真实时钟：机器繁忙时 Nonary 原版同样会偶发失败，所以不进 CI |
+| vrr_nonary_sim | Nonary 的 vrrqueuesim（加了 min/stddev 与“added jerk”输出）。`canonical_scenarios.cpp` 按 tests/vrr_policy 的 generateArrivals 生成同一组到达序列的 CSV，用于和分叉自带的 VRR 节奏器对比 |
 | `file-mapping/smoke/` | 文件映射冒烟二进制,复用 app 源码,手工构建运行。刻意**不注册**进 moonlight-qt.pro 的 SUBDIRS:它链接 app 后端与 OpenSSL,注册会给全部平台构建(含 SteamLink 老工具链)平添失败面,而它没有自动化验证价值 |
 
 ## 约定

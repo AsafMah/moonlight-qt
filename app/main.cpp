@@ -42,6 +42,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <dxgi1_6.h>
+#include "windowsvblankvirtualization.h"
 #elif defined(Q_OS_LINUX)
 #include <openssl/ssl.h>
 #endif
@@ -986,7 +987,11 @@ int main(int argc, char *argv[])
         (decltype(DXGIDisableVBlankVirtualization)*)GetProcAddress(GetModuleHandleW(L"dxgi.dll"),
                                                                    "DXGIDisableVBlankVirtualization");
     if (fnDXGIDisableVBlankVirtualization) {
-        fnDXGIDisableVBlankVirtualization();
+        const HRESULT result = fnDXGIDisableVBlankVirtualization();
+        // Reported in the Nonary VRR pacer's presentation feedback
+        WindowsVblankVirtualization::recordResult(static_cast<int64_t>(result));
+    } else {
+        WindowsVblankVirtualization::recordUnavailable();
     }
 #endif
 

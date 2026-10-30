@@ -54,6 +54,8 @@ struct SyncInput
     bool enableVrr;
     int streamFps;
     int displayHz;
+    // The Nonary VRR pacer (ported from Nonary/moonlight-qt) is selected
+    bool nonaryVrr = false;
 };
 
 struct SyncDecision
@@ -61,11 +63,15 @@ struct SyncDecision
     bool enableVsync;
     bool enableFramePacing;
     bool enableVrr;
-    // Present-rate cap in VRR mode, 0 when there is none
+    // Present-rate cap in VRR mode, 0 when there is none. With the Nonary
+    // pacer this only applies if it falls back to the fork limiter.
     int presentCapFps;
     // True when the stream's frame rate is above the cap, so some frames will
     // be dropped to stay inside the VRR range
     bool streamAboveVrrRange;
+    // The Nonary pacer runs this decoder: V-Sync stays on (it presents
+    // tearing or synchronized per frame) and frame pacing stays off
+    bool nonaryVrr = false;
 };
 
 // Turns the saved preferences into the effective presentation settings for
@@ -76,6 +82,12 @@ constexpr SyncDecision decide(const SyncInput& in)
 {
     if (in.enableVrr) {
         const int cap = frameCapFps(in.displayHz);
+        if (in.nonaryVrr) {
+            // Nonary drops only above the native refresh rate
+            return SyncDecision{
+                true, false, true, cap, in.displayHz > 0 && in.streamFps > in.displayHz, true
+            };
+        }
         return SyncDecision{ false, false, true, cap, cap > 0 && in.streamFps > cap };
     }
 

@@ -482,7 +482,13 @@ ffmpeg {
         streaming/video/ffmpeg-renderers/genhwaccel.cpp \
         streaming/video/ffmpeg-renderers/sdlvid.cpp \
         streaming/video/ffmpeg-renderers/swframemapper.cpp \
-        streaming/video/ffmpeg-renderers/pacer/pacer.cpp
+        streaming/video/ffmpeg-renderers/pacer/pacer.cpp \
+        streaming/video/ffmpeg-renderers/pacer/vrrpacingworker.cpp \
+        streaming/video/ffmpeg-renderers/pacer/vrrpacingtrace.cpp \
+        streaming/video/ffmpeg-renderers/pacer/vrr/profile.cpp \
+        streaming/video/ffmpeg-renderers/pacer/vrr/vrrtargetwaiter.cpp \
+        streaming/video/ffmpeg-renderers/pacer/vrr/vrrtimingcontroller.cpp \
+        streaming/vrrratepolicy.cpp
 
     HEADERS += \
         streaming/video/ffmpeg.h \
@@ -495,6 +501,18 @@ ffmpeg {
         streaming/video/ffmpeg-renderers/pacer/pacerstats.h \
         streaming/video/ffmpeg-renderers/pacer/presentstalldetector.h \
         streaming/video/vrrpolicy.h
+
+    # Nonary VRR pacer, ported from Nonary/moonlight-qt@c822745 (GPLv3)
+    HEADERS += \
+        settings/vrrtimingoptions.h \
+        streaming/vrrratepolicy.h \
+        streaming/video/timinggraph.h \
+        streaming/video/videothreadpriority.h \
+        streaming/video/ffmpeg-renderers/ivrrframepresenter.h \
+        streaming/video/ffmpeg-renderers/vrrpreparedframe.h \
+        streaming/video/ffmpeg-renderers/pacer/pacertelemetry.h \
+        streaming/video/ffmpeg-renderers/pacer/vrrpacingworker.h \
+        $$files(streaming/video/ffmpeg-renderers/pacer/vrr/*.h)
 }
 libva {
     message(VAAPI renderer selected)
@@ -631,13 +649,18 @@ win32:!winrt {
     SOURCES += \
         streaming/video/ffmpeg-renderers/dxva2.cpp \
         streaming/video/ffmpeg-renderers/d3d11va.cpp \
+        streaming/video/ffmpeg-renderers/d3d11vrr.cpp \
         streaming/video/ffmpeg-renderers/amfsession.cpp \
         streaming/video/ffmpeg-renderers/pacer/dxvsyncsource.cpp
 
     HEADERS += \
         streaming/video/ffmpeg-renderers/dxva2.h \
         streaming/video/ffmpeg-renderers/d3d11va.h \
+        streaming/video/ffmpeg-renderers/d3d11fencewait.h \
         streaming/video/ffmpeg-renderers/d3d11presentpolicy.h \
+        streaming/video/ffmpeg-renderers/dxgipresent.h \
+        streaming/video/ffmpeg-renderers/dxgiwaitable.h \
+        windowsvblankvirtualization.h \
         streaming/video/ffmpeg-renderers/amfsession.h \
         streaming/video/ffmpeg-renderers/videotexturesampling.h \
         streaming/video/ffmpeg-renderers/pacer/dxvsyncsource.h

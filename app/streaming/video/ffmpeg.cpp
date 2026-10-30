@@ -85,7 +85,43 @@ void FFmpegVideoDecoder::setHdrMode(bool enabled)
 
 bool FFmpegVideoDecoder::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info)
 {
-    return m_FrontendRenderer->notifyWindowChanged(info);
+    // Window-state-only notifications (minimize/restore/suspend) are advisory
+    // and only consumed by the Nonary VRR pacer. They never reach renderers,
+    // which would treat unknown flags as unhandled and force a reset.
+    constexpr uint32_t advisoryFlags = WINDOW_STATE_CHANGE_MINIMIZED |
+                                       WINDOW_STATE_CHANGE_RESTORED | WINDOW_STATE_CHANGE_SUSPENDED;
+    constexpr uint32_t geometryFlags = WINDOW_STATE_CHANGE_SIZE | WINDOW_STATE_CHANGE_DISPLAY;
+    if (info == nullptr || m_Pacer == nullptr || !m_Pacer->isVrrActive()) {
+        if (info != nullptr && (info->stateChangeFlags & advisoryFlags)) {
+            info->stateChangeFlags &= ~advisoryFlags;
+            if (info->stateChangeFlags == 0) {
+                return true;
+            }
+        }
+        return m_FrontendRenderer->notifyWindowChanged(info);
+    }
+
+    // Ported from Nonary/moonlight-qt@c822745 (GPLv3): suspension reaches the
+    // worker immediately; geometry changes reach it only after the renderer
+    // completed its synchronous refresh.
+    const WINDOW_STATE_CHANGE_INFO originalInfo = *info;
+    if (originalInfo.stateChangeFlags & advisoryFlags) {
+        WINDOW_STATE_CHANGE_INFO pacingInfo = originalInfo;
+        pacingInfo.stateChangeFlags &= advisoryFlags;
+        m_Pacer->notifyWindowChanged(&pacingInfo);
+        info->stateChangeFlags &= ~advisoryFlags;
+        if (info->stateChangeFlags == 0) {
+            return true;
+        }
+    }
+
+    const bool handled = m_FrontendRenderer->notifyWindowChanged(info);
+    if (handled && (originalInfo.stateChangeFlags & geometryFlags) != 0) {
+        WINDOW_STATE_CHANGE_INFO pacingInfo = originalInfo;
+        pacingInfo.stateChangeFlags &= geometryFlags;
+        m_Pacer->notifyWindowChanged(&pacingInfo);
+    }
+    return handled;
 }
 
 int FFmpegVideoDecoder::getDecoderCapabilities()
@@ -281,6 +317,7 @@ void FFmpegVideoDecoder::reset()
     delete m_Pacer;
     m_Pacer = nullptr;
     m_PacerStats.take();
+    m_LastNonaryVrrTelemetry = {};
 
     // This must be called after deleting Pacer because it
     // may be holding AVFrames to free in its destructor.
@@ -503,7 +540,8 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
                 params->enableFramePacing ||
                     (params->enableVsync && (m_FrontendRenderer->getRendererAttributes() &
                                              RENDERER_ATTRIBUTE_FORCE_PACING)),
-                params->enableVrr)) {
+                params->enableVrr, params->vrrImplementation, params->vrrLatencyMode,
+                params->vrrDisplayRefreshHz)) {
             return false;
         }
     }
@@ -548,8 +586,13 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
     m_VideoDecoderCtx->pkt_timebase.num = 1;
     m_VideoDecoderCtx->pkt_timebase.den = 90000;
 
-    // Allocate enough extra frames for Pacer to avoid stalling the decoder
+    // Allocate enough extra frames for Pacer to avoid stalling the decoder.
+    // The Nonary VRR pacer may hold one more waiting frame (Smooth mode).
     m_VideoDecoderCtx->extra_hw_frames = PACER_MAX_OUTSTANDING_FRAMES;
+    if (params->enableVrr && params->vrrImplementation == StreamingPreferences::VRR_IMPL_NONARY) {
+        m_VideoDecoderCtx->extra_hw_frames +=
+            static_cast<int>(VrrLargestQueuedFrames - VrrMaximumQueuedFrames);
+    }
 
     // For non-hwaccel decoders, set the pix_fmt to hint to the decoder which
     // format should be used. This is necessary for certain decoders like the
@@ -2121,6 +2164,23 @@ void FFmpegVideoDecoder::decoderThreadProc()
                     // Capture a frame timestamp to measuring pacing delay
                     frame->pkt_dts = LiGetMicroseconds();
 
+                    // The Nonary VRR pacer schedules from the host RTP timestamp, so
+                    // capture the decode unit's metadata before it is dequeued
+                    const bool nonaryVrrActive = m_Pacer->isVrrActive();
+                    int vrrFrameNumber = -1;
+                    uint32_t vrrRtpTimestamp = 0;
+                    bool vrrTimestampValid = false;
+                    uint64_t vrrReceiveUs = 0;
+                    uint64_t vrrReassembledUs = 0;
+                    if (nonaryVrrActive && !m_FrameInfoQueue.isEmpty()) {
+                        const DECODE_UNIT& head = m_FrameInfoQueue.head();
+                        vrrFrameNumber = head.frameNumber;
+                        vrrRtpTimestamp = head.rtpTimestamp;
+                        vrrTimestampValid = true;
+                        vrrReceiveUs = head.receiveTimeUs;
+                        vrrReassembledUs = head.enqueueTimeUs;
+                    }
+
                     if (!m_FrameInfoQueue.isEmpty()) {
                         // Data buffers in the DU are not valid here!
                         DECODE_UNIT du = m_FrameInfoQueue.dequeue();
@@ -2137,7 +2197,15 @@ void FFmpegVideoDecoder::decoderThreadProc()
                     m_ActiveWndVideoStats.decodedFrames++;
 
                     // Queue the frame for rendering (or render now if pacer is disabled)
-                    m_Pacer->submitFrame(frame);
+                    if (nonaryVrrActive) {
+                        PacedFrame pacedFrame(frame, vrrFrameNumber, vrrRtpTimestamp,
+                                              vrrTimestampValid,
+                                              static_cast<uint64_t>(frame->pkt_dts));
+                        pacedFrame.setDeliveryTimeline(vrrReceiveUs, vrrReassembledUs, 0);
+                        m_Pacer->submitFrame(std::move(pacedFrame));
+                    } else {
+                        m_Pacer->submitFrame(frame);
+                    }
                 }
                 else if (err == AVERROR(EAGAIN)) {
                     VIDEO_FRAME_HANDLE handle;
@@ -2222,6 +2290,19 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
         m_ActiveWndVideoStats.renderedFrames += static_cast<uint32_t>(pacerWindow.renderedFrames);
         m_ActiveWndVideoStats.totalPacerTimeUs += pacerWindow.totalPacerTimeUs;
         m_ActiveWndVideoStats.totalRenderTimeUs += pacerWindow.totalRenderTimeUs;
+        if (m_Pacer != nullptr && m_Pacer->isVrrActive()) {
+            // The Nonary VRR worker publishes cumulative telemetry instead
+            const PacerTelemetrySnapshot vrr = m_Pacer->telemetrySnapshot();
+            m_ActiveWndVideoStats.pacerDroppedFrames += static_cast<uint32_t>(
+                vrr.pacerDroppedFrames - m_LastNonaryVrrTelemetry.pacerDroppedFrames);
+            m_ActiveWndVideoStats.renderedFrames +=
+                static_cast<uint32_t>(vrr.renderedFrames - m_LastNonaryVrrTelemetry.renderedFrames);
+            m_ActiveWndVideoStats.totalPacerTimeUs +=
+                vrr.totalQueuePacingTimeUs - m_LastNonaryVrrTelemetry.totalQueuePacingTimeUs;
+            m_ActiveWndVideoStats.totalRenderTimeUs +=
+                vrr.totalRenderingTimeUs - m_LastNonaryVrrTelemetry.totalRenderingTimeUs;
+            m_LastNonaryVrrTelemetry = vrr;
+        }
         m_ActiveWndVideoStats.timedRenderFrames +=
             static_cast<uint32_t>(pacerWindow.timedRenderFrames);
         m_ActiveWndVideoStats.totalPrePresentTimeUs += pacerWindow.totalPrePresentTimeUs;

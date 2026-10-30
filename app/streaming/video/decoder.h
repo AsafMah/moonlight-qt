@@ -50,6 +50,15 @@ typedef struct _DECODER_PARAMETERS {
     // are presented on arrival with tearing allowed, and Pacer caps the
     // present rate just below the refresh rate
     bool enableVrr;
+    // Which VRR pacer runs when enableVrr is set. The Nonary pacer (ported
+    // from Nonary/moonlight-qt) keeps V-Sync on at the session boundary and
+    // schedules each frame from its host timestamp; renderers without its
+    // presenter fall back to the fork's limiter.
+    StreamingPreferences::VrrImplementation vrrImplementation;
+    // Nonary pacer: 0 Smooth, 1 Balanced, 2 Low latency
+    int vrrLatencyMode;
+    // Nonary pacer: refresh rate snapshotted by the session, 0 if unknown
+    int vrrDisplayRefreshHz;
     bool enableFramePacing;
     bool enableVideoEnhancement;
     bool ignoreAspectRatio;
@@ -58,6 +67,10 @@ typedef struct _DECODER_PARAMETERS {
 
 #define WINDOW_STATE_CHANGE_SIZE 0x01
 #define WINDOW_STATE_CHANGE_DISPLAY 0x02
+// Used by the Nonary VRR pacer to discard queued work around window transitions
+#define WINDOW_STATE_CHANGE_MINIMIZED 0x04
+#define WINDOW_STATE_CHANGE_RESTORED 0x08
+#define WINDOW_STATE_CHANGE_SUSPENDED 0x10
 
 typedef struct _WINDOW_STATE_CHANGE_INFO {
     SDL_Window* window;
@@ -86,4 +99,6 @@ public:
     virtual void renderFrameOnMainThread() = 0;
     virtual void setHdrMode(bool enabled) = 0;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info) = 0;
+    // True when the Nonary VRR pacer owns presentation for this decoder
+    virtual bool isNonaryVrrActive() { return false; }
 };

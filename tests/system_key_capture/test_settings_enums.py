@@ -30,6 +30,9 @@ BASELINE = {
                            "GQC_START_L1_R1_A GQC_START_L1_R1_B GQC_L1_R1_X_Y GQC_L1_R1_A_B"),
     "ScreenCombinationMode": (-1, "SCM_FOLLOW_HOST SCM_NO_OPERATION SCM_ENSURE_ACTIVE "
                                  "SCM_ENSURE_PRIMARY SCM_ENSURE_ONLY_DISPLAY SCM_ENSURE_SECONDARY"),
+    "VrrImplementation": (0, "VRR_IMPL_FORK VRR_IMPL_NONARY"),
+    # IDs match Nonary/moonlight-qt's persisted latency modes
+    "VrrLatencyMode": (0, "VRR_LATENCY_SMOOTH VRR_LATENCY_BALANCED VRR_LATENCY_LOW"),
 }
 
 

@@ -316,6 +316,9 @@ jobs:
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat vrr_policy vrr_policy
         if errorlevel 1 exit /b %ERRORLEVEL%
+        rem Nonary VRR pacer controller, ported from Nonary/moonlight-qt@c822745
+        call scripts\run-test.bat vrr_nonary_controller vrr_nonary_controller
+        if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat present_stall present_stall
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat dxgi_present_queue dxgi_present_queue

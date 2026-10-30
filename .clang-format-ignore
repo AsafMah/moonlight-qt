@@ -1,0 +1,23 @@
+# Files ported from Nonary/moonlight-qt@c822745 keep Nonary's formatting so
+# later re-syncs diff cleanly against upstream (the same reason the format
+# gate only checks changed lines). The fork's own glue code is still gated.
+app/settings/vrrtimingoptions.h
+app/streaming/vrrratepolicy.*
+app/streaming/video/timinggraph.h
+app/streaming/video/videothreadpriority.h
+app/windowsvblankvirtualization.h
+app/streaming/video/ffmpeg-renderers/ivrrframepresenter.h
+app/streaming/video/ffmpeg-renderers/vrrpreparedframe.h
+app/streaming/video/ffmpeg-renderers/dxgipresent.h
+app/streaming/video/ffmpeg-renderers/dxgiwaitable.h
+app/streaming/video/ffmpeg-renderers/d3d11fencewait.h
+app/streaming/video/ffmpeg-renderers/d3d11presentpolicy.h
+app/streaming/video/ffmpeg-renderers/d3d11vrr.cpp
+app/streaming/video/ffmpeg-renderers/pacer/pacertelemetry.h
+app/streaming/video/ffmpeg-renderers/pacer/vrrpacingworker.*
+app/streaming/video/ffmpeg-renderers/pacer/vrrpacingtrace.cpp
+app/streaming/video/ffmpeg-renderers/pacer/vrr/*
+tests/vrr_nonary_controller/*
+tests/vrr_nonary_worker/*
+tests/vrr_nonary_sim/vrrqueuesim.cpp
+tests/vrr_nonary_sim/vrrreplayconfig.*

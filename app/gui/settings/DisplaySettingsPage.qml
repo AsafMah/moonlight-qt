@@ -157,6 +157,37 @@ Column {
             checked: StreamingPreferences.enableVrr
             onToggled: function(value) { StreamingPreferences.enableVrr = value }
         }
+
+        // VRR 节奏器：分叉自带的「呈现上限」或移植自 Nonary 的「按主机时间戳排程」，方便 A/B 对比。
+        ChoiceRow {
+            settingsSearchKeywords: "vrr gsync freesync pacer pacing nonary timestamp cap limiter"
+            title: qsTr("Variable refresh rate pacer")
+            description: qsTr("How VRR frames are timed. Present-rate cap shows each frame as it arrives, capped just below the refresh rate. Host-timestamp scheduling (ported from Nonary's Moonlight fork) spaces frames by their capture time on the host, behind a small adaptive delay; it needs the D3D11 renderer and the Borderless windowed display mode, and uses the present-rate cap otherwise. Changes apply to the next stream.")
+            controlEnabled: StreamingPreferences.enableVrr
+            selectedValue: StreamingPreferences.vrrImplementation
+            onValueActivated: function(value) { StreamingPreferences.vrrImplementation = value }
+
+            model: ListModel {
+                ListElement { text: qsTr("Present-rate cap (default)"); val: StreamingPreferences.VRR_IMPL_FORK }
+                ListElement { text: qsTr("Host-timestamp scheduling (Nonary)"); val: StreamingPreferences.VRR_IMPL_NONARY }
+            }
+        }
+
+        ChoiceRow {
+            settingsSearchKeywords: "vrr pacer latency buffer jitter smooth nonary"
+            title: qsTr("Variable refresh rate pacer latency")
+            description: qsTr("Host-timestamp scheduling only. Smooth keeps a larger buffer to hide network jitter; Low latency keeps a smaller one and shows more of the jitter.")
+            controlEnabled: StreamingPreferences.enableVrr &&
+                            StreamingPreferences.vrrImplementation === StreamingPreferences.VRR_IMPL_NONARY
+            selectedValue: StreamingPreferences.vrrLatencyMode
+            onValueActivated: function(value) { StreamingPreferences.vrrLatencyMode = value }
+
+            model: ListModel {
+                ListElement { text: qsTr("Smooth"); val: StreamingPreferences.VRR_LATENCY_SMOOTH }
+                ListElement { text: qsTr("Balanced (default)"); val: StreamingPreferences.VRR_LATENCY_BALANCED }
+                ListElement { text: qsTr("Low latency"); val: StreamingPreferences.VRR_LATENCY_LOW }
+            }
+        }
     }
 
     // ================= 性能浮层 =================

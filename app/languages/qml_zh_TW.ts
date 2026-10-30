@@ -936,6 +936,42 @@
         <source>Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). For the smoothest result, stream a few FPS below the display&apos;s refresh rate.</source>
         <translation>每一影格到達後立即顯示，讓支援 VRR 的顯示器跟著串流的節奏更新：延遲低且不撕裂。開啟後取代垂直同步和影格平滑。需要 G-Sync 或 FreeSync 顯示器、在顯示卡驅動程式中開啟 VRR，並使用「全螢幕」或「無邊框視窗」顯示模式（只有驅動程式為視窗化程式開啟 VRR 時，「視窗」模式才有效）。想要最流暢的效果，請把串流影格率設得比顯示器更新率低幾格。</translation>
     </message>
+    <message>
+        <source>Variable refresh rate pacer</source>
+        <translation>可變更新率節奏器</translation>
+    </message>
+    <message>
+        <source>How VRR frames are timed. Present-rate cap shows each frame as it arrives, capped just below the refresh rate. Host-timestamp scheduling (ported from Nonary&apos;s Moonlight fork) spaces frames by their capture time on the host, behind a small adaptive delay; it needs the D3D11 renderer and the Borderless windowed display mode, and uses the present-rate cap otherwise. Changes apply to the next stream.</source>
+        <translation>決定 VRR 下每一影格何時顯示。「呈現速率上限」在影格到達後立即顯示，只把速率限制在更新率之下。「依主機時間戳排程」（移植自 Nonary 的 Moonlight 分支）依主機上的擷取時間排列各影格，並加入一小段自適應延遲；它需要 D3D11 轉譯器和「無邊框視窗」顯示模式，否則改用呈現速率上限。變更會在下次串流時生效。</translation>
+    </message>
+    <message>
+        <source>Present-rate cap (default)</source>
+        <translation>呈現速率上限（預設）</translation>
+    </message>
+    <message>
+        <source>Host-timestamp scheduling (Nonary)</source>
+        <translation>依主機時間戳排程（Nonary）</translation>
+    </message>
+    <message>
+        <source>Variable refresh rate pacer latency</source>
+        <translation>可變更新率節奏器延遲</translation>
+    </message>
+    <message>
+        <source>Host-timestamp scheduling only. Smooth keeps a larger buffer to hide network jitter; Low latency keeps a smaller one and shows more of the jitter.</source>
+        <translation>僅用於「依主機時間戳排程」。「流暢」保留較大的緩衝來掩蓋網路抖動；「低延遲」緩衝較小，會顯露更多抖動。</translation>
+    </message>
+    <message>
+        <source>Smooth</source>
+        <translation>流暢</translation>
+    </message>
+    <message>
+        <source>Balanced (default)</source>
+        <translation>平衡（預設）</translation>
+    </message>
+    <message>
+        <source>Low latency</source>
+        <translation>低延遲</translation>
+    </message>
 </context>
 <context>
     <name>FileMappingClient</name>

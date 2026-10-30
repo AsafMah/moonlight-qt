@@ -65,7 +65,10 @@ TestCase {
             entry(9, "可变刷新率", { categoryKey: "display", categoryTitle: "显示", categoryOrder: 1,
                                      keywords: "vrr gsync freesync" }),
             entry(10, "Driver selection", { categoryKey: "advanced", categoryTitle: "Compatibility and diagnostics",
-                                            categoryOrder: 4 })
+                                            categoryOrder: 4 }),
+            entry(11, "Variable refresh rate pacer", { categoryKey: "display", categoryTitle: "Display Settings",
+                                                       categoryOrder: 1,
+                                                       keywords: "vrr gsync freesync pacer pacing nonary timestamp cap limiter" })
         ]
     }
 
@@ -83,6 +86,8 @@ TestCase {
         return [
             { tag: "fps", query: "fps", first: "Resolution and FPS" },
             { tag: "vrr", query: "vrr", first: "Variable refresh rate (G-Sync / FreeSync)" },
+            { tag: "nonary", query: "nonary", first: "Variable refresh rate pacer" },
+            { tag: "vrr pacer", query: "vrr pacer", first: "Variable refresh rate pacer" },
             { tag: "gsync", query: "gsync", first: "Variable refresh rate (G-Sync / FreeSync)" },
             { tag: "hdr", query: "hdr", first: "Enable HDR" },
             { tag: "mouse via section", query: "mouse", first: "Show local cursor" },

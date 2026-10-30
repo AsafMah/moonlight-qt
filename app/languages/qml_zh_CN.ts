@@ -1222,6 +1222,42 @@
         <source>Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). For the smoothest result, stream a few FPS below the display&apos;s refresh rate.</source>
         <translation>每一帧到达后立即显示，让支持 VRR 的显示器跟着串流的节奏刷新：延迟低且不撕裂。开启后取代垂直同步和帧平滑。需要 G-Sync 或 FreeSync 显示器、在显卡驱动中开启 VRR，并使用“全屏”或“无边框窗口”显示模式（只有驱动为窗口化程序开启了 VRR 时，“窗口”模式才有效）。想要最流畅的效果，请把串流帧率设得比显示器刷新率低几帧。</translation>
     </message>
+    <message>
+        <source>Variable refresh rate pacer</source>
+        <translation>可变刷新率节奏器</translation>
+    </message>
+    <message>
+        <source>How VRR frames are timed. Present-rate cap shows each frame as it arrives, capped just below the refresh rate. Host-timestamp scheduling (ported from Nonary&apos;s Moonlight fork) spaces frames by their capture time on the host, behind a small adaptive delay; it needs the D3D11 renderer and the Borderless windowed display mode, and uses the present-rate cap otherwise. Changes apply to the next stream.</source>
+        <translation>决定 VRR 下每一帧何时显示。“呈现速率上限”在帧到达后立即显示，只把速率限制在刷新率之下。“按主机时间戳排程”（移植自 Nonary 的 Moonlight 分支）按主机上的采集时间排列各帧，并加入一小段自适应延迟；它需要 D3D11 渲染器和“无边框窗口”显示模式，否则改用呈现速率上限。更改在下次串流时生效。</translation>
+    </message>
+    <message>
+        <source>Present-rate cap (default)</source>
+        <translation>呈现速率上限（默认）</translation>
+    </message>
+    <message>
+        <source>Host-timestamp scheduling (Nonary)</source>
+        <translation>按主机时间戳排程（Nonary）</translation>
+    </message>
+    <message>
+        <source>Variable refresh rate pacer latency</source>
+        <translation>可变刷新率节奏器延迟</translation>
+    </message>
+    <message>
+        <source>Host-timestamp scheduling only. Smooth keeps a larger buffer to hide network jitter; Low latency keeps a smaller one and shows more of the jitter.</source>
+        <translation>仅用于“按主机时间戳排程”。“流畅”保留较大的缓冲来掩盖网络抖动；“低延迟”缓冲较小，会显露更多抖动。</translation>
+    </message>
+    <message>
+        <source>Smooth</source>
+        <translation>流畅</translation>
+    </message>
+    <message>
+        <source>Balanced (default)</source>
+        <translation>均衡（默认）</translation>
+    </message>
+    <message>
+        <source>Low latency</source>
+        <translation>低延迟</translation>
+    </message>
 </context>
 <context>
     <name>EcosystemPlatformCatalog</name>

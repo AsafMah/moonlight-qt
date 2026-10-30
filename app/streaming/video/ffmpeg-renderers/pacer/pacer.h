@@ -110,6 +110,7 @@ private:
 
     // Present-rate cap for VRR mode (disabled otherwise)
     VrrPolicy::FrameLimiter m_VrrLimiter;
+    VrrPolicy::SourceCadence m_SourceCadence;
     PreciseSleeper m_PresentSleeper;
     std::unique_ptr<PresentStallDetector> m_PresentStallDetector;
     uint64_t m_DrainSkippedFrames = 0;

@@ -594,25 +594,28 @@ void Pacer::updateRenderQueueHistoryLocked()
 
 // Called on the render thread with m_FrameQueueLock held and a frame queued.
 // In VRR mode, holds that frame until the present-rate cap allows it, then
-// presents only the newest frame that arrived meanwhile.
+// drops queued frames that newer ones have made stale.
 void Pacer::waitForVrrPresentSlot()
 {
     if (!m_VrrLimiter.isEnabled()) {
         return;
     }
 
-    const uint64_t slotUs = m_VrrLimiter.presentSlotUs(LiGetMicroseconds());
+    const uint64_t readyUs = LiGetMicroseconds();
+    const uint64_t slotUs = m_VrrLimiter.presentSlotUs(readyUs);
     uint64_t nowUs;
-    bool waited = false;
     while ((nowUs = LiGetMicroseconds()) < slotUs && !m_Stopping) {
-        // New frames only supersede the queued one, so they need not wake us
+        // New frames are only checked for staleness below, so they need not wake us
         m_FrameQueueLock.unlock();
         m_PresentSleeper.sleepUs(slotUs - nowUs);
         m_FrameQueueLock.lock();
-        waited = true;
     }
 
-    for (int i = VrrPolicy::staleQueuedFrames(m_RenderQueue.count(), waited); i > 0; i--) {
+    // pkt_dts is when the frame was decoded, so the age excludes decode time
+    while (m_RenderQueue.count() > 1 &&
+           VrrPolicy::isFrameStale(nowUs - static_cast<uint64_t>(m_RenderQueue.head()->pkt_dts),
+                                   nowUs - readyUs, m_RenderQueue.count(),
+                                   m_SourceCadence.periodUs(), m_VrrLimiter.minIntervalUs())) {
         AVFrame* frame = m_RenderQueue.dequeue();
         m_Stats->recordDrop();
         av_frame_free(&frame);
@@ -638,6 +641,10 @@ void Pacer::submitFrame(AVFrame* frame)
 
     // Queue the frame and possibly wake up the render thread
     m_FrameQueueLock.lock();
+    if (m_VrrLimiter.isEnabled() && frame->pts > 0) {
+        // pts is the frame's RTP timestamp (90 kHz)
+        m_SourceCadence.addFrame(static_cast<uint64_t>(frame->pts) * 100 / 9);
+    }
     if (m_VsyncSource != nullptr) {
         dropFrameForEnqueue(m_PacingQueue);
         m_PacingQueue.enqueue(frame);

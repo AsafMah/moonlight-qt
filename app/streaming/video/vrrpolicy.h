@@ -83,12 +83,74 @@ constexpr SyncDecision decide(const SyncInput& in)
     return SyncDecision{ vsync, vsync && in.framePacing, false, 0, false };
 }
 
-// How many queued frames to drop before presenting. While the present-rate cap
-// held a frame back, newer frames may have arrived; only the newest is worth
-// presenting, so the rest are dropped instead of building up a backlog.
-constexpr int staleQueuedFrames(int queuedFrames, bool waitedForSlot)
+// Measures the content's frame period from sender (RTP) timestamps, so bursty
+// network delivery doesn't look like a faster stream. 0 until known.
+class SourceCadence
 {
-    return waitedForSlot && queuedFrames > 1 ? queuedFrames - 1 : 0;
+public:
+    void addFrame(uint64_t sourceUs)
+    {
+        if (m_Count > 0) {
+            const uint64_t newest = m_SourceUs[(m_Next + Window - 1) % Window];
+            // Restart on a timestamp that goes backwards (wrap) or jumps
+            if (sourceUs <= newest || sourceUs - newest > 1000000) {
+                m_Count = 0;
+            }
+        }
+        m_SourceUs[m_Next] = sourceUs;
+        m_Next = (m_Next + 1) % Window;
+        if (m_Count < Window) {
+            m_Count++;
+        }
+    }
+
+    uint64_t periodUs() const
+    {
+        if (m_Count < 2) {
+            return 0;
+        }
+        const uint64_t newest = m_SourceUs[(m_Next + Window - 1) % Window];
+        const uint64_t oldest = m_SourceUs[(m_Next + Window - m_Count) % Window];
+        return (newest - oldest) / (m_Count - 1);
+    }
+
+private:
+    static constexpr int Window = 32;
+    uint64_t m_SourceUs[Window] = {};
+    int m_Next = 0;
+    int m_Count = 0;
+};
+
+// Whether to drop the oldest queued frame, ageUs old, for a newer one that is
+// already queued (queuedFrames > 1), after the present-rate cap held it back
+// for waitedUs.
+//
+// When the content runs faster than the cap, frames held back by it are
+// always superseded, so only the newest is presented. Below the cap a frame
+// is only held back by a burst of arrivals, such as two frames delivered
+// together. It is still presented unless it is more than two source periods
+// old, or one period plus the time the cap already held it (after the
+// stale-frame policy of Nonary's VRR pacer, Nonary/moonlight-qt@c822745,
+// vrrframedroppolicy.h, GPLv3), or presenting the whole queue at the cap would
+// leave the newest frame more than a source period behind (a burst after a
+// network stall), or the content is so close to the cap that the backlog
+// can't catch up within 8 frames. An unknown cadence counts as at the cap.
+constexpr bool isFrameStale(uint64_t ageUs, uint64_t waitedUs, int queuedFrames,
+                            uint64_t sourcePeriodUs, uint64_t minIntervalUs)
+{
+    const uint64_t periodUs = sourcePeriodUs != 0 ? sourcePeriodUs : minIntervalUs;
+    if (periodUs < minIntervalUs) {
+        return waitedUs > 0;
+    }
+    const uint64_t horizonUs =
+        2 * periodUs > periodUs + waitedUs ? 2 * periodUs : periodUs + waitedUs;
+    const uint64_t backlogUs =
+        queuedFrames > 1 ? static_cast<uint64_t>(queuedFrames - 1) * minIntervalUs : 0;
+    // Each frame after a burst gains (period - cap interval) on the schedule.
+    // Just under the cap that is so little that a kept frame leaves a standing
+    // queue, so keep it only if the backlog drains within 8 frames.
+    const bool drainsQuickly = backlogUs <= 8 * (periodUs - minIntervalUs);
+    return ageUs > horizonUs || backlogUs > periodUs || !drainsQuickly;
 }
 
 // Spaces presents to at most capFps per second, and never closer together

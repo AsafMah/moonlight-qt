@@ -1,16 +1,23 @@
 #include "settings/statsoverlaysettings.h"
 #include "streaming/video/overlaystatswindow.h"
+#include "streaming/video/overlaystatscontroller.h"
+#include "streaming/video/overlaymanager.h"
+#include "streaming/stats/streamstatsmodel.h"
 
 #include <QCoreApplication>
 #include <QCursor>
 #include <QDir>
+#include <QFontDatabase>
 #include <QImage>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QMouseEvent>
 #include <QPaintEngine>
 #include <QPainter>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTextStream>
+#include <QTranslator>
 
 #include <cmath>
 
@@ -711,6 +718,303 @@ bool testLiveFreeDrag(QTextStream& err)
     return ok;
 }
 
+bool testMoveControlsVisible(QTextStream& err)
+{
+    bool ok = true;
+    for (const int scale : { 80, 100, 150 }) {
+        RenderWindow window;
+        window.setStats(sample(), {});
+        window.setPreset(Preset::Compact);
+        window.setScalePercent(scale);
+        window.setBodySize(QSize(320, 80));
+        window.setEditing(true);
+        const auto text = window.recordedText();
+        const auto tr = [](const char* text) {
+            return QCoreApplication::translate("OverlayStatsWindow", text);
+        };
+        QVector<QRectF> bounds;
+        for (const QString& label :
+             { tr("Detach"), tr("Details: %1").arg(tr("Compact")), tr("Done") }) {
+            const auto found = std::find_if(text.begin(), text.end(), [&](const PaintedText& item) {
+                return item.text == label;
+            });
+            ok &= require(found != text.end(),
+                          QStringLiteral("move mode is missing visible control '%1'").arg(label),
+                          err);
+            if (found != text.end()) {
+                ok &= require(QRectF(QPointF(), window.size()).contains(found->bounds),
+                              QStringLiteral("move-mode control '%1' is clipped at %2%")
+                                  .arg(label)
+                                  .arg(scale),
+                              err);
+                for (const auto& other : bounds) {
+                    ok &= require(!other.intersects(found->bounds),
+                                  QStringLiteral("move-mode control labels overlap"), err);
+                }
+                bounds.append(found->bounds);
+            }
+        }
+        const QString output = qEnvironmentVariable("MOONLIGHT_OVERLAY_TEST_OUTPUT_DIR");
+        if (!output.isEmpty()) {
+            const QString locale =
+                tr("Detach") == QLatin1String("Detach") ? QStringLiteral("en") : tr("Compact");
+            ok &= require(window.render().save(QDir(output).filePath(
+                              QStringLiteral("edit-controls-%1-%2.png").arg(locale).arg(scale))),
+                          QStringLiteral("save edit-controls image"), err);
+        }
+    }
+    return ok;
+}
+
+bool clickControl(RenderWindow& window, const QString& label, QTextStream& err,
+                  QEvent::Type pressType = QEvent::MouseButtonPress)
+{
+    const auto text = window.recordedText();
+    const auto found = std::find_if(text.begin(), text.end(),
+                                    [&](const PaintedText& item) { return item.text == label; });
+    if (!require(found != text.end(), QStringLiteral("missing control '%1'").arg(label), err)) {
+        return false;
+    }
+    const QPointF local = found->bounds.center();
+    const QPointF global = window.position() + local;
+    QMouseEvent press(pressType, local, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&window, &press);
+    bool ok = require(press.isAccepted() && !window.isDragging(),
+                      QStringLiteral("control '%1' started a drag or resize").arg(label), err);
+    QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton,
+                        Qt::NoModifier);
+    QCoreApplication::sendEvent(&window, &release);
+    ok &= require(release.isAccepted(), QStringLiteral("control release escaped to stream"), err);
+    return ok;
+}
+
+// A physical double-click arrives as press, release, double-click, release
+bool doubleClickControl(RenderWindow& window, const QString& label, QTextStream& err)
+{
+    const auto text = window.recordedText();
+    const auto found = std::find_if(text.begin(), text.end(),
+                                    [&](const PaintedText& item) { return item.text == label; });
+    if (!require(found != text.end(), QStringLiteral("missing control '%1'").arg(label), err)) {
+        return false;
+    }
+    const QPointF local = found->bounds.center();
+    bool ok = true;
+    for (const QEvent::Type type : { QEvent::MouseButtonPress, QEvent::MouseButtonRelease,
+                                     QEvent::MouseButtonDblClick, QEvent::MouseButtonRelease }) {
+        const bool release = type == QEvent::MouseButtonRelease;
+        QMouseEvent event(type, local, window.position() + local, Qt::LeftButton,
+                          release ? Qt::NoButton : Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&window, &event);
+        ok &= require(event.isAccepted() && !window.isDragging(),
+                      QStringLiteral("double-click on '%1' escaped or dragged").arg(label), err);
+    }
+    return ok;
+}
+
+bool testMoveControlLifecycle(QTextStream& err)
+{
+    QTemporaryDir directory;
+    if (!require(directory.isValid(), QStringLiteral("temporary edit settings"), err)) {
+        return false;
+    }
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
+    QCoreApplication::setApplicationName(QStringLiteral("OverlayMoveControls"));
+    Overlay::OverlayManager manager;
+    StreamStatsModel model;
+    auto window = std::make_unique<RenderWindow>();
+    auto* view = window.get();
+    OverlayStatsController controller(manager, model, nullptr, OverlayWindowMode::Detached, true,
+                                      std::move(window));
+    const QRect stream(0, 0, 1280, 720);
+    const QString key = displayKey(QGuiApplication::primaryScreen()->name());
+    StatsOverlaySettings settings;
+    settings.setAttachedPosition(key, QPoint(91, 73));
+    settings.setDetachedPosition(key, QPoint(350, 220));
+    settings.setDisplaySize(key, Preset::Compact, QSize(410, 90));
+    controller.setParentGeometryProvider([&] { return stream; });
+    controller.setPreset(Preset::Compact);
+    int editStarts = 0;
+    int editEnds = 0;
+    bool captured = true;
+    controller.setEditModeCallback([&](bool editing) {
+        editing ? ++editStarts : ++editEnds;
+        captured = !editing;
+    });
+    controller.beginEditing();
+    QWindow* focusBefore = QGuiApplication::focusWindow();
+    bool ok = require(controller.isEditing() && !captured,
+                      QStringLiteral("entering edit mode must release pointer"), err);
+
+    ok &= clickControl(*view, QStringLiteral("Detach"), err);
+    ok &=
+        require(controller.isDetached() && controller.isEditing() && !captured && editStarts == 1 &&
+                    editEnds == 0 && QGuiApplication::focusWindow() == focusBefore &&
+                    view->flags().testFlag(Qt::WindowDoesNotAcceptFocus),
+                QStringLiteral("detach must preserve editing, focus and capture ownership"), err);
+    ok &= clickControl(*view, QStringLiteral("Re-attach"), err);
+    ok &= require(!controller.isDetached() && controller.isEditing() && !captured &&
+                      settings.attachedPosition(key) == QPoint(91, 73) &&
+                      settings.detachedPosition(key) == QPoint(350, 220) &&
+                      settings.displaySize(key, Preset::Compact) == QSize(410, 90),
+                  QStringLiteral("re-attach must preserve both placement stores"), err);
+    {
+        const auto text = view->recordedText();
+        const auto detach = std::find_if(text.begin(), text.end(), [](const PaintedText& item) {
+            return item.text == QLatin1String("Detach");
+        });
+        if (!require(detach != text.end(), QStringLiteral("detach control after round trip"),
+                     err)) {
+            return false;
+        }
+        const QPointF local = detach->bounds.center();
+        QMouseEvent press(QEvent::MouseButtonPress, local, view->position() + local, Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(view, &press);
+        ok &= require(!controller.isDetached() && !view->isDragging(),
+                      QStringLiteral("detach must wait until control release"), err);
+        QMouseEvent release(QEvent::MouseButtonRelease, QPointF(), QPointF(view->position()),
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(view, &release);
+        ok &= require(!controller.isDetached() && release.isAccepted(),
+                      QStringLiteral("release outside control must cancel without leaking input"),
+                      err);
+    }
+
+    const std::array<QString, 5> names = { QStringLiteral("Compact"), QStringLiteral("Detailed"),
+                                           QStringLiteral("Custom"), QStringLiteral("Off"),
+                                           QStringLiteral("Minimal") };
+    for (const auto& name : names) {
+        const Preset expected = nextPreset(controller.preset());
+        ok &= clickControl(*view, QStringLiteral("Details: ") + name, err);
+        ok &= require(
+            controller.preset() == expected && controller.isEditing() && view->isVisible() &&
+                !captured && editEnds == 0,
+            QStringLiteral("cycling %1 must update preview without closing editor").arg(name), err);
+        const auto preview = view->recordedText();
+        const bool offPreview =
+            std::any_of(preview.begin(), preview.end(), [](const PaintedText& item) {
+                return item.text == QLatin1String("Overlay off");
+            });
+        ok &= require(offPreview == (expected == Preset::Off),
+                      QStringLiteral("Off must replace the stats with an explicit live preview"),
+                      err);
+        if (expected != Preset::Off) {
+            ok &= require(settings.displayState(key).preset == expected,
+                          QStringLiteral("edit-mode preset did not persist"), err);
+        }
+    }
+    // Each click of a cycle control counts, so rapid clicking keeps cycling.
+    // A toggle swallows the second click; it would silently undo the first.
+    ok &= doubleClickControl(*view, QStringLiteral("Details: Compact"), err);
+    ok &= require(controller.preset() == Preset::Custom,
+                  QStringLiteral("double-clicking Details must advance once per click"), err);
+    ok &= doubleClickControl(*view, QStringLiteral("Detach"), err);
+    ok &= require(controller.isDetached() && controller.isEditing(),
+                  QStringLiteral("double-clicking Detach must toggle exactly once"), err);
+    ok &= clickControl(*view, QStringLiteral("Re-attach"), err);
+    controller.setPreset(Preset::Compact);
+    controller.setPreset(Preset::Off);
+    ok &= clickControl(*view, QStringLiteral("Done"), err);
+    ok &= require(!controller.isEditing() && !view->isVisible() && captured && editEnds == 1 &&
+                      controller.preset() == Preset::Off,
+                  QStringLiteral("Done must hide Off preview and end capture ownership once"), err);
+
+    controller.setPointerEditMode(true);
+    controller.beginEditing();
+    ok &= clickControl(*view, QStringLiteral("Details: Compact"), err);
+    ok &= require(controller.preset() == Preset::Detailed,
+                  QStringLiteral("reopening Off editor must preview the retained preset"), err);
+    controller.setPreset(Preset::Off);
+    controller.setPointerEditMode(false);
+    ok &= require(!controller.isEditing() && !view->isVisible() && editEnds == 2,
+                  QStringLiteral("leaving persistent Right Alt mode must close Off editor"), err);
+    controller.setPointerEditMode(true);
+    controller.beginEditing();
+    controller.syncWithStreamWindow(false);
+    ok &= require(!controller.isEditing() && !view->isVisible(),
+                  QStringLiteral("minimizing must hide the editor"), err);
+    return ok;
+}
+
+bool testMoveControlsFitStream(QTextStream& err)
+{
+    QTemporaryDir directory;
+    if (!require(directory.isValid(), QStringLiteral("temporary fit settings"), err)) {
+        return false;
+    }
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
+    QCoreApplication::setApplicationName(QStringLiteral("OverlayMoveControlsFit"));
+    const QRect stream(0, 0, 1280, 720);
+    const QString key = displayKey(QGuiApplication::primaryScreen()->name());
+    StatsOverlaySettings settings;
+    settings.setScalePercent(80);
+    // Narrowest and tallest saved panel: the controls wrap into several rows
+    settings.setDisplaySize(key, Preset::Detailed, QSize(1, 100000));
+    Overlay::OverlayManager manager;
+    StreamStatsModel model;
+    auto window = std::make_unique<RenderWindow>();
+    auto* view = window.get();
+    OverlayStatsController controller(manager, model, nullptr, OverlayWindowMode::Detached, true,
+                                      std::move(window));
+    controller.setParentGeometryProvider([&] { return stream; });
+    controller.setPreset(Preset::Detailed);
+    controller.beginEditing();
+    bool ok = require(stream.contains(view->geometry()) &&
+                          stream.contains(QRect(view->position(), view->preferredSize())),
+                      QStringLiteral("move-mode window leaves the stream: %1x%2 at %3,%4")
+                          .arg(view->preferredSize().width())
+                          .arg(view->preferredSize().height())
+                          .arg(view->x())
+                          .arg(view->y()),
+                      err);
+    const auto text = view->recordedText();
+    const QRectF client(QPointF(), view->size());
+    QString painted;
+    for (const PaintedText& item : text) {
+        ok &= require(client.contains(item.bounds),
+                      QStringLiteral("'%1' is painted outside the %2x%3 move-mode window")
+                          .arg(item.text)
+                          .arg(view->width())
+                          .arg(view->height()),
+                      err);
+        painted += item.text;
+    }
+    // Narrow controls wrap their labels across painted lines
+    painted.remove(QLatin1Char(' '));
+    for (const QString& label :
+         { QStringLiteral("Detach"), QStringLiteral("Details:Detailed"), QStringLiteral("Done") }) {
+        ok &= require(painted.contains(label),
+                      QStringLiteral("move-mode control '%1' is not painted").arg(label), err);
+    }
+    controller.endEditing();
+    return ok;
+}
+
+bool testLocalizedMoveControls(QTextStream& err)
+{
+    bool ok = true;
+#ifdef Q_OS_WIN32
+    // The offscreen font database does not discover Windows' system fallback fonts.
+    ok &= require(
+        QFontDatabase::addApplicationFont(
+            QDir(qEnvironmentVariable("WINDIR")).filePath(QStringLiteral("Fonts/msyh.ttc"))) >= 0,
+        QStringLiteral("load production Microsoft YaHei fallback for offscreen rendering"), err);
+#endif
+    for (const QString& locale : { QStringLiteral("zh_CN"), QStringLiteral("zh_TW") }) {
+        QTranslator translator;
+        if (!require(translator.load(QDir(QStringLiteral(TEST_TRANSLATIONS_DIR))
+                                         .filePath(QStringLiteral("qml_%1.qm").arg(locale))),
+                     QStringLiteral("load compiled move-control translations for %1").arg(locale),
+                     err)) {
+            return false;
+        }
+        QCoreApplication::installTranslator(&translator);
+        ok &= testMoveControlsVisible(err);
+        QCoreApplication::removeTranslator(&translator);
+    }
+    return ok;
+}
+
 } // namespace
 
 bool runWindowRenderTests(QTextStream& err)
@@ -725,5 +1029,9 @@ bool runWindowRenderTests(QTextStream& err)
     ok &= testLightSnapping(err);
     ok &= testConditionalClickThrough(err);
     ok &= testLiveFreeDrag(err);
+    ok &= testMoveControlsVisible(err);
+    ok &= testMoveControlLifecycle(err);
+    ok &= testMoveControlsFitStream(err);
+    ok &= testLocalizedMoveControls(err);
     return ok;
 }

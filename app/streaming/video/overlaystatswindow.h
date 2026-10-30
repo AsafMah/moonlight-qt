@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <optional>
+#include <array>
 
 class QMouseEvent;
 class QWheelEvent;
@@ -123,6 +124,11 @@ public:
     }
     void setWheelCallback(WheelCallback cb) { m_WheelCallback = std::move(cb); }
     void setEndEditingCallback(EndEditingCallback cb) { m_EndEditingCallback = std::move(cb); }
+    void setToggleDetachedCallback(std::function<void()> cb)
+    {
+        m_ToggleDetachedCallback = std::move(cb);
+    }
+    void setCyclePresetCallback(std::function<void()> cb) { m_CyclePresetCallback = std::move(cb); }
     // Called whenever the window moves, however it was moved
     void setMovedCallback(MovedCallback cb) { m_MovedCallback = std::move(cb); }
 
@@ -184,6 +190,8 @@ private:
     QString editHintText() const;
     int editHintHeight(int width) const;
     void paintEditHint(QPainter* painter, int y, int width) const;
+    int layoutEditControls(QPainter* painter, int y, int width) const;
+    int editControlAt(const QPoint& local) const;
     void paintResizeGrip(QPainter* painter, const QSize& body) const;
 
     // Takes mouse input: edit mode, or always when standalone
@@ -234,4 +242,9 @@ private:
     WheelCallback m_WheelCallback;
     EndEditingCallback m_EndEditingCallback;
     MovedCallback m_MovedCallback;
+    std::function<void()> m_ToggleDetachedCallback;
+    std::function<void()> m_CyclePresetCallback;
+    mutable std::array<QRect, 3> m_EditControls;
+    int m_PressedControl = -1;
+    int m_HoverControl = -1;
 };

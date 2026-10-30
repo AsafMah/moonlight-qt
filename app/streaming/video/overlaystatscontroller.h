@@ -9,6 +9,7 @@
 #include <QRect>
 
 #include <functional>
+#include <memory>
 #include <optional>
 
 class OverlayStatsTooltip;
@@ -57,7 +58,8 @@ public:
     static constexpr int EdgeMargin = 16;
 
     OverlayStatsController(Overlay::OverlayManager& overlayManager, StreamStatsModel& model,
-                           QWindow* parent, OverlayWindowMode windowMode, bool initiallyVisible);
+                           QWindow* parent, OverlayWindowMode windowMode, bool initiallyVisible,
+                           std::unique_ptr<OverlayStatsWindow> window = {});
     ~OverlayStatsController();
 
     OverlayStatsController(const OverlayStatsController&) = delete;

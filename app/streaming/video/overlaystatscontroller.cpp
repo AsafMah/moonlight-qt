@@ -58,14 +58,17 @@ Qt::Alignment alignmentFor(Anchor anchor)
 
 OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayManager,
                                                StreamStatsModel& model, QWindow* parent,
-                                               OverlayWindowMode windowMode, bool initiallyVisible)
+                                               OverlayWindowMode windowMode, bool initiallyVisible,
+                                               std::unique_ptr<OverlayStatsWindow> window)
     : m_OverlayManager(overlayManager), m_Model(model), m_Parent(parent), m_WindowMode(windowMode),
       m_Visible(initiallyVisible), m_Preset(m_Settings.presetValue())
 {
     m_Clock.start();
 
-    if (compositorWindowSupported()) {
-        m_Window = new OverlayStatsWindow(parent, windowMode);
+    m_Window = window                        ? window.release()
+               : compositorWindowSupported() ? new OverlayStatsWindow(parent, windowMode)
+                                             : nullptr;
+    if (m_Window != nullptr) {
         m_Window->setDragFinishedCallback([this](const QPoint& center) { onDragFinished(center); });
         m_Window->setWheelCallback(
             [this](int steps, bool adjustOpacity) { onWheel(steps, adjustOpacity); });
@@ -74,6 +77,8 @@ OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayM
         });
         m_Window->setEndEditingCallback([this] { endEditing(); });
         m_Window->setBeginEditingCallback([this] { beginEditing(); });
+        m_Window->setToggleDetachedCallback([this] { setDetached(!m_Detached); });
+        m_Window->setCyclePresetCallback([this] { cyclePreset(); });
         createTooltip();
         applyStyle();
     }
@@ -146,7 +151,6 @@ Preset OverlayStatsController::preset() const
 void OverlayStatsController::setPreset(Preset preset)
 {
     if (preset == Preset::Off) {
-        endEditing();
         m_Visible = false;
     } else {
         m_Visible = true;
@@ -154,9 +158,9 @@ void OverlayStatsController::setPreset(Preset preset)
         if (!m_DisplayKey.isEmpty()) {
             m_Settings.setDisplayPreset(m_DisplayKey, preset);
         }
-        applyStyle();
     }
 
+    applyStyle();
     applyVisibility();
 }
 
@@ -224,6 +228,7 @@ void OverlayStatsController::beginEditing()
 
     m_Editing = true;
     m_Window->setEditing(true);
+    applyStyle();
     applyVisibility();
 
     if (m_EditModeCallback) {
@@ -332,7 +337,7 @@ bool OverlayStatsController::needsEventProcessing() const
 
 bool OverlayStatsController::windowShouldShow() const
 {
-    return m_Visible && m_StreamVisible;
+    return (m_Visible || m_Editing) && m_StreamVisible;
 }
 
 void OverlayStatsController::applyVisibility()
@@ -581,7 +586,7 @@ void OverlayStatsController::applyStyle()
     }
 
     m_Metrics = m_Settings.metricList();
-    m_Window->setPreset(m_Preset);
+    m_Window->setPreset(m_Visible ? m_Preset : Preset::Off);
     m_Window->setMetrics(m_Metrics);
     m_Window->setScalePercent(m_Settings.scalePercent());
     m_Window->setOpacityPercent(m_Settings.opacityPercent());

@@ -5035,6 +5035,16 @@
 </context>
 <context>
     <name>OverlayStatsWindow</name>
+    <message><source>Detach</source><translation>分离</translation></message>
+    <message><source>Re-attach</source><translation>重新附加</translation></message>
+    <message><source>Details: %1</source><translation>详细程度：%1</translation></message>
+    <message><source>Done</source><translation>完成</translation></message>
+    <message><source>Minimal</source><translation>极简</translation></message>
+    <message><source>Compact</source><translation>紧凑</translation></message>
+    <message><source>Detailed</source><translation>详细</translation></message>
+    <message><source>Custom</source><translation>自定义</translation></message>
+    <message><source>Overlay off</source><translation>浮层已关闭</translation></message>
+    <message><source>Detached windows may increase latency.</source><translation>分离的窗口可能增加延迟。</translation></message>
     <message>
         <source>Stream</source>
         <translation>串流</translation>

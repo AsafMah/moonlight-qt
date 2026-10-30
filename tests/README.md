@@ -43,6 +43,7 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | overlay_event_wake_state | 悬浮菜单事件唤醒状态 | Windows |
 | overlay_button_native_wake | 悬浮按钮原生唤醒 | Windows + macOS + Linux(xvfb) |
 | overlay_toast_event_state | 悬浮 toast 事件状态 | Windows |
+| stats_overlay_layout | Production stats painter/layout and move-mode controls, compiled zh_CN/zh_TW labels, real controller preset/detach/Off-preview lifecycle with a fake connection/renderer (offscreen) | Windows |
 | overlay_menu_navigation | 悬浮菜单键盘/鼠标导航(QTest 事件,需 offscreen) | Windows |
 | stream_quality | 串流画质菜单的分辨率/帧率预设生成、配置差异与切换路径判定 | Windows |
 | app_picker | 名称/类型/运行状态/隐藏状态筛选，排序与分组顺序 | Windows |
@@ -57,7 +58,6 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | usb_forwarding_tunnel | USB/IP 隧道手动联调探针:需要 10 个 CLI 参数和真实 usbipd 服务端,不能进 CI。用法看 main.cpp 头注释 |
 | shortcuts | 键盘快捷键:绑定解析/格式化、键位转换、默认前缀、冲突、持久化、匹配器。纯 QtCore,可直接进 CI(尚未在 build.yml 登记) |
 | stats_model | 串流统计模型:百分位/1% 与 0.1% 低帧、呈现时间环、会话直方图、RFC 3550 抖动、延迟分解、快照与会话累计。纯 QtCore,可直接进 CI(尚未在 build.yml 登记) |
-| stats_overlay_layout | 性能浮层:预设、布局、指标持久化、阈值、锚点及真实字体绘制；QtGui/offscreen，无需串流 |
 | super_cmds | Foundation Sunshine 超级指令:`<SuperCmds>` JSON 解析(null/空/畸形/XML 转义)、NvApp 设置缓存往返。纯 QtCore,可直接进 CI(尚未在 build.yml 登记) |
 | host_keys | 发送到主机的组合键:扫描码→VK 映射(与 keyboard.cpp 一致)、按下/松开序列、特殊键、自定义宏的校验与 QSettings 持久化。纯 QtCore,可直接进 CI(尚未在 build.yml 登记) |
 | vrr_nonary_worker | Nonary VRR 工作线程测试（移植自 Nonary 的 tst_vrrpacingworker）。部分用例依赖真实时钟：机器繁忙时 Nonary 原版同样会偶发失败，所以不进 CI |

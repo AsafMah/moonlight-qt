@@ -22,4 +22,6 @@ SOURCES += regression.cpp ../../app/streaming/clipboardipc.cpp
 HEADERS += ../../app/streaming/clipboardipc.h
 SOURCES += fileoffer.cpp ../../app/streaming/fileofferreceiver.cpp
 HEADERS += ../../app/streaming/fileofferreceiver.h
+SOURCES += fileupload.cpp ../../app/streaming/fileuploader.cpp
+HEADERS += ../../app/streaming/fileuploader.h
 RESOURCES += fixtures.qrc

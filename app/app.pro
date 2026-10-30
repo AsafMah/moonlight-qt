@@ -260,6 +260,7 @@ SOURCES += \
     streaming/input/reltouch.cpp \
     streaming/session.cpp \
     streaming/sessionhostactions.cpp \
+    streaming/sessionfiledrop.cpp \
     streaming/hostcommandrunner.cpp \
     streaming/filemappingclient.cpp \
     streaming/filemappingwebsocket.cpp \

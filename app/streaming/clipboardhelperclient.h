@@ -34,10 +34,18 @@ public:
 
     bool isRunning() const;
 
+    // Asks the helper to send local files to the host. False when the helper
+    // isn't ready; progress then arrives as transferEvent(Upload).
+    bool uploadFiles(const ClipboardIpc::UploadFiles& upload);
+    void cancelTransfers();
+
 signals:
     // Host file offer progress reported by the helper. Emitted from
     // processPendingMessages(), i.e. on the session/main thread.
     void transferEvent(const ClipboardIpc::TransferEvent& event);
+    // The helper process went away (crash, hang, protocol error). Anything it
+    // was doing, such as an upload, is gone; a restart starts from scratch.
+    void helperLost();
 
 private:
     friend class ClipboardHelperClientTest;

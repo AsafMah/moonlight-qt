@@ -1,5 +1,6 @@
 #include "clipboardipc.h"
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -28,6 +29,10 @@ QString typeToString(MessageType type)
         return QStringLiteral("pong");
     case MessageType::TransferEvent:
         return QStringLiteral("transferEvent");
+    case MessageType::UploadFiles:
+        return QStringLiteral("uploadFiles");
+    case MessageType::CancelTransfers:
+        return QStringLiteral("cancelTransfers");
     case MessageType::Unknown:
         break;
     }
@@ -63,6 +68,12 @@ MessageType stringToType(const QString& type)
     if (type == QStringLiteral("transferEvent")) {
         return MessageType::TransferEvent;
     }
+    if (type == QStringLiteral("uploadFiles")) {
+        return MessageType::UploadFiles;
+    }
+    if (type == QStringLiteral("cancelTransfers")) {
+        return MessageType::CancelTransfers;
+    }
     return MessageType::Unknown;
 }
 
@@ -71,6 +82,8 @@ QString transferStateToString(TransferState state)
     switch (state) {
     case TransferState::Started:
         return QStringLiteral("started");
+    case TransferState::Progress:
+        return QStringLiteral("progress");
     case TransferState::Finished:
         return QStringLiteral("finished");
     case TransferState::Failed:
@@ -81,8 +94,8 @@ QString transferStateToString(TransferState state)
 
 bool stringToTransferState(const QString& value, TransferState& out)
 {
-    for (TransferState state :
-         { TransferState::Started, TransferState::Finished, TransferState::Failed }) {
+    for (TransferState state : { TransferState::Started, TransferState::Progress,
+                                 TransferState::Finished, TransferState::Failed }) {
         if (value == transferStateToString(state)) {
             out = state;
             return true;
@@ -184,10 +197,34 @@ QByteArray encodePong(quint32 sequence)
     return encodeObject(baseMessage(MessageType::Pong, sequence));
 }
 
+QByteArray encodeUploadFiles(quint32 sequence, const UploadFiles& upload)
+{
+    QJsonObject obj = baseMessage(MessageType::UploadFiles, sequence);
+    obj.insert(QStringLiteral("paths"), QJsonArray::fromStringList(upload.paths));
+    obj.insert(QStringLiteral("intent"), upload.intent);
+    if (upload.x) {
+        obj.insert(QStringLiteral("x"), *upload.x);
+    }
+    if (upload.y) {
+        obj.insert(QStringLiteral("y"), *upload.y);
+    }
+    return encodeObject(obj);
+}
+
+QByteArray encodeCancelTransfers(quint32 sequence)
+{
+    return encodeObject(baseMessage(MessageType::CancelTransfers, sequence));
+}
+
 QByteArray encodeTransferEvent(quint32 sequence, const TransferEvent& event)
 {
     QJsonObject obj = baseMessage(MessageType::TransferEvent, sequence);
     obj.insert(QStringLiteral("state"), transferStateToString(event.state));
+    obj.insert(QStringLiteral("direction"), event.direction == TransferDirection::Upload
+                                                ? QStringLiteral("upload")
+                                                : QStringLiteral("download"));
+    obj.insert(QStringLiteral("count"), event.count);
+    obj.insert(QStringLiteral("bytes"), static_cast<double>(event.bytes));
     obj.insert(QStringLiteral("id"), event.id);
     obj.insert(QStringLiteral("name"), event.name);
     obj.insert(QStringLiteral("size"), static_cast<double>(event.size));
@@ -293,6 +330,38 @@ bool decodeLine(const QByteArray& line, Message& outMessage, QString& outError)
             static_cast<qint64>(obj.value(QStringLiteral("size")).toDouble(-1));
         outMessage.transfer.path = obj.value(QStringLiteral("path")).toString();
         outMessage.transfer.error = obj.value(QStringLiteral("error")).toString();
+        outMessage.transfer.direction =
+            obj.value(QStringLiteral("direction")).toString() == QStringLiteral("upload")
+                ? TransferDirection::Upload
+                : TransferDirection::Download;
+        outMessage.transfer.count = obj.value(QStringLiteral("count")).toInt(1);
+        outMessage.transfer.bytes =
+            static_cast<qint64>(obj.value(QStringLiteral("bytes")).toDouble(0));
+        return true;
+    case MessageType::UploadFiles: {
+        const QJsonValue paths = obj.value(QStringLiteral("paths"));
+        if (!paths.isArray()) {
+            outError = QStringLiteral("uploadFiles needs a path list");
+            return false;
+        }
+        for (const QJsonValue& path : paths.toArray()) {
+            if (!path.isString() || path.toString().isEmpty()) {
+                outError = QStringLiteral("invalid upload path");
+                return false;
+            }
+            outMessage.upload.paths.append(path.toString());
+        }
+        outMessage.upload.intent = obj.value(QStringLiteral("intent")).toString();
+        for (auto [key, target] :
+             { std::pair{ "x", &outMessage.upload.x }, std::pair{ "y", &outMessage.upload.y } }) {
+            const QJsonValue v = obj.value(QLatin1String(key));
+            if (v.isDouble()) {
+                *target = v.toDouble();
+            }
+        }
+        return true;
+    }
+    case MessageType::CancelTransfers:
         return true;
     case MessageType::Ready:
     case MessageType::Stop:

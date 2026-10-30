@@ -305,6 +305,12 @@ private:
     void startRuntimeBitrateWorker();
     void showStreamingToast(const QString& message, int durationMs = 2000);
     void showFileTransferToast(const ClipboardIpc::TransferEvent& event);
+    void showFileUploadToast(const ClipboardIpc::TransferEvent& event);
+    void registerFileTransferShortcuts();
+    void cancelFileTransfers();
+    bool handleFileDropEvent(const SDL_Event& event);
+    void finishFileDrop();
+    void onClipboardHelperLost();
     void processQtOverlayEvents();
     void updateFileMappingMenuState();
     void updateRemoteUsbMenuState();
@@ -474,6 +480,13 @@ private:
     QString m_ClientDisplayName;
     std::optional<bool> m_LaunchUseVdd;
     SDL_Window* m_Window;
+    QStringList m_DroppedPaths;
+    bool m_DropInProgress = false;
+    // Pending: uploadFiles sent, helper hasn't reported Started yet.
+    bool m_FileUploadPending = false;
+    bool m_FileUploadActive = false;
+    QString m_FileUploadId;
+    quint32 m_FileUploadToastTicks = 0;
     IVideoDecoder* m_VideoDecoder;
     SDL_mutex* m_DecoderLock;
     bool m_AudioDisabled;

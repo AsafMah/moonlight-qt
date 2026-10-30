@@ -155,6 +155,7 @@ constexpr const char Minimize[] = "minimize";
 constexpr const char PasteText[] = "paste-text";
 constexpr const char TogglePointerRegionLock[] = "toggle-pointer-region-lock";
 constexpr const char ToggleKeyboardGrab[] = "toggle-keyboard-grab";
+constexpr const char CancelFileTransfer[] = "cancel-file-transfer";
 constexpr const char HoldReleaseMouse[] = "hold-release-mouse";
 constexpr const char RightAltMouseRelease[] = "right-alt-mouse-release";
 // Moonlight V+ only

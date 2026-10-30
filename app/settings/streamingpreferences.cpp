@@ -91,6 +91,7 @@
 #define SER_CLIPBOARDSYNCTEXT "clipboardsynctext"
 #define SER_CLIPBOARDSYNCIMAGES "clipboardsyncimages"
 #define SER_CLIPBOARDRECEIVEFILES "clipboardreceivefiles"
+#define SER_CLIPBOARDDROPFILES "clipboarddropfiles"
 #define SER_RENDERER "renderer"
 #define SER_BACKGROUNDSOURCE "backgroundsource"
 #define SER_BACKGROUNDIMAGEAPI "backgroundimageapi"
@@ -306,6 +307,7 @@ void StreamingPreferences::reload()
     clipboardSyncText = settings.value(SER_CLIPBOARDSYNCTEXT, true).toBool();
     clipboardSyncImages = settings.value(SER_CLIPBOARDSYNCIMAGES, true).toBool();
     clipboardReceiveFiles = settings.value(SER_CLIPBOARDRECEIVEFILES, true).toBool();
+    clipboardDropFiles = settings.value(SER_CLIPBOARDDROPFILES, false).toBool();
 
     streamResolutionScale = settings.value(SER_STREAMRESOLUTIONSCALE, false).toBool();
     streamResolutionScaleRatio = settings.value(SER_STREAMRESOLUTIONSCALERATIO, 100).toInt();
@@ -795,6 +797,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_CLIPBOARDSYNCTEXT, clipboardSyncText);
     settings.setValue(SER_CLIPBOARDSYNCIMAGES, clipboardSyncImages);
     settings.setValue(SER_CLIPBOARDRECEIVEFILES, clipboardReceiveFiles);
+    settings.setValue(SER_CLIPBOARDDROPFILES, clipboardDropFiles);
 }
 
 int StreamingPreferences::getDefaultBitrate(int width, int height, int fps, bool yuv444)

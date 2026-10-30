@@ -516,6 +516,9 @@ bool testProfile(QTextStream& err)
     ok &= require(profile.bindings(QLatin1String(ShortcutActions::Quit)) ==
                       QVector<ShortcutBinding>({ key(k_CtrlAltShift, 'Q'), ShortcutBinding() }),
                   QStringLiteral("quit default changed"), err);
+    ok &= require(profile.bindings(QLatin1String(ShortcutActions::CancelFileTransfer)) ==
+                      QVector<ShortcutBinding>({ key(k_CtrlAltShift, 'T'), ShortcutBinding() }),
+                  QStringLiteral("cancel file transfer default missing"), err);
     ok &= require(profile.conflicts().isEmpty(), QStringLiteral("defaults conflict"), err);
     for (const ShortcutAction& action : profile.registry().actions()) {
         for (const ShortcutBinding& binding : profile.bindings(action.id)) {

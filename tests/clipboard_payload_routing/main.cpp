@@ -7,6 +7,7 @@
 
 bool runClipboardRegression(QTextStream& err);
 bool runFileOfferTests(QTextStream& err);
+bool runFileUploadTests(QTextStream& err);
 
 namespace {
 bool require(bool condition, const QString& message, QTextStream& err)
@@ -72,6 +73,7 @@ int main(int argc, char* argv[])
 
     ok &= runClipboardRegression(err);
     ok &= runFileOfferTests(err);
+    ok &= runFileUploadTests(err);
 
     if (!ok) {
         return 1;

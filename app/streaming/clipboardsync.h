@@ -91,6 +91,9 @@ public:
         KIND_REF = 3,
         // Host -> client JSON file offer; the bytes are fetched by FileOfferReceiver.
         KIND_FILE_OFFER = 4,
+        // Client -> host JSON {manifest,intent,count,total_size,x?,y?} naming a
+        // committed upload batch; the host agent fetches the files itself.
+        KIND_FILE_LIST = 5,
     };
 
     static constexpr uint8_t WIRE_VERSION = 1;
@@ -154,6 +157,9 @@ public:
     // Called from the control receive thread when the host pushes a 0x5508
     // payload. Buffer is only valid for the duration of the call; we copy.
     void handleIncomingFrame(const char* data, int length);
+
+    // Emits a KIND_FILE_LIST frame (see FileUploader::fileListReady).
+    void sendFileList(const QByteArray& payload);
 
 signals:
     // Emitted when local clipboard changes need to be sent to the host. The

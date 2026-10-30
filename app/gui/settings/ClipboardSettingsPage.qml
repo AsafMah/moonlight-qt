@@ -49,5 +49,14 @@ Column {
             controlEnabled: masterToggle.checked
             onToggled: function(value) { StreamingPreferences.clipboardReceiveFiles = value }
         }
+
+        ToggleRow {
+            title: qsTr("Drop files onto the stream")
+            description: qsTr("Drag files or folders onto the stream window to send them to the host, which puts them on its clipboard. The host must allow client-to-host file uploads.")
+            settingsSearchKeywords: "drag drop upload send files folders"
+            checked: StreamingPreferences.clipboardDropFiles
+            controlEnabled: masterToggle.checked
+            onToggled: function(value) { StreamingPreferences.clipboardDropFiles = value }
+        }
     }
 }

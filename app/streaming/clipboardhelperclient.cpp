@@ -173,6 +173,7 @@ void ClipboardHelperClient::processPendingMessages()
         m_HelperReady = false;
         m_StdinBuffer.clear();
         if (!m_StopRequested) {
+            emit helperLost();
             scheduleRestart("unexpected exit");
         }
         return;
@@ -202,6 +203,21 @@ void ClipboardHelperClient::processPendingMessages()
     }
     if (m_HelperReady) {
         flushQueuedHostFrames();
+    }
+}
+
+bool ClipboardHelperClient::uploadFiles(const ClipboardIpc::UploadFiles& upload)
+{
+    if (!m_HelperReady || !isRunning()) {
+        return false;
+    }
+    return writeLine(ClipboardIpc::encodeUploadFiles(nextSequence(), upload));
+}
+
+void ClipboardHelperClient::cancelTransfers()
+{
+    if (m_HelperReady && isRunning()) {
+        writeLine(ClipboardIpc::encodeCancelTransfers(nextSequence()));
     }
 }
 
@@ -483,6 +499,7 @@ void ClipboardHelperClient::restartHelper(const char* reason)
         }
         delete m_Process;
         m_Process = nullptr;
+        emit helperLost();
     }
 
     scheduleRestart(reason);

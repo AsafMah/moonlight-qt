@@ -5071,7 +5071,7 @@ void Session::start()
     // (or nothing selected to sync) no helper runs and host frames are dropped.
     if (m_ClipboardHelper == nullptr && m_Preferences->clipboardSyncEnabled &&
         (m_Preferences->clipboardSyncText || m_Preferences->clipboardSyncImages ||
-         m_Preferences->clipboardReceiveFiles)) {
+         m_Preferences->clipboardReceiveFiles || m_Preferences->clipboardDropFiles)) {
         ClipboardIpc::SyncPolicy policy;
         policy.text = m_Preferences->clipboardSyncText;
         policy.images = m_Preferences->clipboardSyncImages;
@@ -5079,7 +5079,15 @@ void Session::start()
         m_ClipboardHelper = new ClipboardHelperClient(m_Computer, this);
         m_ClipboardHelper->setSyncPolicy(policy);
         connect(m_ClipboardHelper, &ClipboardHelperClient::transferEvent, this,
-                [this](const ClipboardIpc::TransferEvent& event) { showFileTransferToast(event); });
+                [this](const ClipboardIpc::TransferEvent& event) {
+                    if (event.direction == ClipboardIpc::TransferDirection::Upload) {
+                        showFileUploadToast(event);
+                    } else {
+                        showFileTransferToast(event);
+                    }
+                });
+        connect(m_ClipboardHelper, &ClipboardHelperClient::helperLost, this,
+                [this] { onClipboardHelperLost(); });
         m_ClipboardHelper->start();
     } else if (m_ClipboardHelper == nullptr) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Clipboard sync disabled in settings");
@@ -5121,6 +5129,7 @@ void Session::start()
                                          m_StreamConfig.height, enablePhysicalDualSenseHaptics);
     setupStatsOverlayShortcuts();
     registerHostActionShortcuts();
+    registerFileTransferShortcuts();
     updateDualSenseHapticsControllerTarget();
 
     // Kick off the async connection thread then return to the caller to pump the event loop
@@ -6017,6 +6026,13 @@ void Session::exec()
                 break;
             }
             handleSdlUserEvent(event.user);
+            break;
+
+        case SDL_DROPBEGIN:
+        case SDL_DROPFILE:
+        case SDL_DROPTEXT:
+        case SDL_DROPCOMPLETE:
+            handleFileDropEvent(event);
             break;
 
         case SDL_WINDOWEVENT:

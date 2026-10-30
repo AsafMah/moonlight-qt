@@ -163,6 +163,17 @@ void ClipboardSync::setHostContext(const ClipboardSyncHostContext& hostContext)
     m_HostContext = hostContext;
 }
 
+void ClipboardSync::sendFileList(const QByteArray& payload)
+{
+    QByteArray frame;
+    if (!encodeFrame(KIND_FILE_LIST, 0, payload, frame)) {
+        ClipboardLog::warn("ClipboardSync: file list too large for one frame (%d bytes)",
+                           static_cast<int>(payload.size()));
+        return;
+    }
+    emit outboundFrame(frame);
+}
+
 void ClipboardSync::setPolicy(const ClipboardSyncPolicy& policy)
 {
     m_Policy = policy;

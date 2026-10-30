@@ -93,21 +93,27 @@ public:
         };
         {
             ClipboardHelperClient client(nullptr);
+            int lost = 0;
+            QObject::connect(&client, &ClipboardHelperClient::helperLost, [&] { ++lost; });
             if (!start(client, "--invalid-output"))
                 return false;
             check(client.m_Process->waitForFinished(3000), "fake helper exits");
             client.processPendingMessages();
             check(client.m_Process == nullptr && client.m_RestartAttempts == 1,
                   "invalid trailing output schedules one restart without null dereference");
+            check(lost == 1, "crashed helper reports its in-flight work as lost");
         }
         {
             ClipboardHelperClient client(nullptr);
             if (!start(client, "--hung"))
                 return false;
+            int lost = 0;
+            QObject::connect(&client, &ClipboardHelperClient::helperLost, [&] { ++lost; });
             client.m_LastResponseTicks = SDL_GetTicks() - 30001;
             client.processPendingMessages();
             check(client.m_Process == nullptr && client.m_RestartAttempts == 1,
                   "living but unresponsive helper restarts");
+            check(lost == 1, "restarted helper reports its in-flight work as lost");
         }
         {
             ClipboardHelperClient client(nullptr);

@@ -3070,6 +3070,14 @@
         <source>Files sent from the host are saved to the Sunshine Transfers folder in your Downloads. They are never opened automatically.</source>
         <translation>主机发送的文件会保存到“下载”中的 Sunshine Transfers 文件夹，不会自动打开。</translation>
     </message>
+    <message>
+        <source>Drop files onto the stream</source>
+        <translation>拖放文件到串流画面</translation>
+    </message>
+    <message>
+        <source>Drag files or folders onto the stream window to send them to the host, which puts them on its clipboard. The host must allow client-to-host file uploads.</source>
+        <translation>将文件或文件夹拖到串流窗口即可发送到主机，主机会将其放入剪贴板。主机需允许客户端上传文件。</translation>
+    </message>
 </context>
 <context>
     <name>PeripheralsSettingsPage</name>
@@ -3576,6 +3584,58 @@
     <message>
         <source>Couldn&apos;t receive %1: %2</source>
         <translation>无法接收 %1：%2</translation>
+    </message>
+    <message>
+        <source>No file transfer to cancel.</source>
+        <translation>没有可取消的文件传输。</translation>
+    </message>
+    <message>
+        <source>To send files to the host, turn on &quot;Drop files onto the stream&quot; in Moonlight&apos;s Clipboard settings.</source>
+        <translation>要向主机发送文件，请在 Moonlight 的剪贴板设置中开启“拖放文件到串流画面”。</translation>
+    </message>
+    <message>
+        <source>Sending files isn&apos;t available in this session.</source>
+        <translation>本次串流无法发送文件。</translation>
+    </message>
+    <message>
+        <source>Still sending the previous files. Wait for them to finish.</source>
+        <translation>仍在发送上一批文件，请等待完成。</translation>
+    </message>
+    <message>
+        <source>Too many files (limit %1).</source>
+        <translation>文件过多（上限 %1 个）。</translation>
+    </message>
+    <message>
+        <source>Sending files isn&apos;t ready yet. Try again in a moment.</source>
+        <translation>文件发送尚未就绪，请稍后再试。</translation>
+    </message>
+    <message numerus="yes">
+        <source>Sending %n file(s) (%1) to the host…</source>
+        <translation>
+            <numerusform>正在向主机发送 %n 个文件（%1）…</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>%1 cancels.</source>
+        <translation>按 %1 取消。</translation>
+    </message>
+    <message>
+        <source>Sending files to the host… %1%</source>
+        <translation>正在向主机发送文件… %1%</translation>
+    </message>
+    <message numerus="yes">
+        <source>Sent %n file(s). The host put them on its clipboard: paste with Ctrl+V.</source>
+        <translation>
+            <numerusform>已发送 %n 个文件。主机已将其放入剪贴板，可用 Ctrl+V 粘贴。</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t send files: %1</source>
+        <translation>无法发送文件：%1</translation>
+    </message>
+    <message>
+        <source>Sending files stopped because the clipboard helper restarted.</source>
+        <translation>剪贴板助手已重启，文件发送已中止。</translation>
     </message>
     <message>
         <source>%1 at %2 FPS</source>
@@ -4286,6 +4346,10 @@
 </context>
 <context>
     <name>Shortcuts</name>
+    <message>
+        <source>Cancel sending files to the host</source>
+        <translation>取消向主机发送文件</translation>
+    </message>
     <message>
         <source>Disconnect from host</source>
         <translation>断开与主机的连接</translation>

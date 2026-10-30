@@ -220,6 +220,17 @@ int Pacer::renderThread(void* context)
                 break;
             }
 
+            // The renderer only reports ready once it can present without
+            // blocking, so frames queued behind the newest one are already
+            // stale. (VRR mode applies its own rule above.)
+            if (!me->m_VrrLimiter.isEnabled() && me->m_VsyncRenderer->readyToPresentAfterWait()) {
+                while (me->m_RenderQueue.count() > 1) {
+                    AVFrame* stale = me->m_RenderQueue.dequeue();
+                    me->m_Stats->recordDrop();
+                    av_frame_free(&stale);
+                }
+            }
+
             frame = me->m_RenderQueue.dequeue();
         }
 

@@ -224,6 +224,11 @@ public:
         // Don't wait by default
     }
 
+    // Whether the last waitToRender() returned because the renderer can now
+    // present without blocking. Frames queued behind the newest one are then
+    // stale, so the Pacer renders only the newest.
+    virtual bool readyToPresentAfterWait() { return false; }
+
     // Called on the same thread as renderFrame() during destruction of the renderer
     virtual void cleanupRenderContext() {
         // Nothing

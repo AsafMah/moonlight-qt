@@ -20,6 +20,7 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | pyrowave_color | PyroWave 颜色合同表（SDR/HDR10/HLG × 范围）、HDR 平面位编码、SS_HDR_METADATA 解析与快照保留规则、libplacebo 元数据映射 | Windows |
 | pyrowave_pacing | PyroWave 呈现策略：延迟呈现后切换三重缓冲的阈值、串流快于显示器时的帧节奏抽帧 | Windows |
 | present_stall | Pacer 一次性卡顿检测：有效呈现帧率、连续慢帧重置和 500ms 丢帧窗口 | Windows |
+| dxgi_present_queue | D3D11 呈现队列模拟:DWM 合成时帧延迟 1 + 可等待对象 + 只渲染最新帧,复现 r33 现场数据 | Windows |
 | file_mapping_websocket_framing | 文件映射 WS 帧解析(fin/分片/ping-pong) | Windows |
 | shared_helpers | 配对证书策略、版本比较与 GFE 兼容性回退 | Windows |
 | amf_lifecycle | AMF 会话探测、初始化/重配/帧处理失败、析构与多会话的对象/DLL 释放顺序 | Windows |

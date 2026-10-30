@@ -2,6 +2,7 @@
 #include <initguid.h>
 
 #include "d3d11va.h"
+#include "d3d11presentpolicy.h"
 #include "dxutil.h"
 #include "videotexturesampling.h"
 #include "path.h"
@@ -117,6 +118,10 @@ D3D11VARenderer::~D3D11VARenderer()
     m_RenderR2DFence.Reset();
 
     m_RenderTargetView.Reset();
+    if (m_FrameLatencyWaitable != nullptr) {
+        CloseHandle(m_FrameLatencyWaitable);
+        m_FrameLatencyWaitable = nullptr;
+    }
     m_SwapChain.Reset();
 
     // Release AMF interfaces before unloading its runtime and D3D devices.
@@ -661,6 +666,21 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
     swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
     swapChainDesc.Flags = 0;
 
+    // Wait for the swapchain before picking a frame instead of blocking in
+    // Present(): with a frame latency of 1 and the waitable object, the Pacer
+    // only takes a frame once DXGI can accept it, and then takes the newest.
+    // Without it, a window DWM composes slower than frames arrive keeps 3
+    // frames queued in DXGI and Present() blocks for a refresh every frame.
+    // D3D11VA_FRAME_LATENCY_WAITABLE=0 turns it off for comparison.
+    bool waitBeforeLatch = D3D11PresentPolicy::WaitBeforeLatch;
+    if (Utils::getEnvironmentVariableOverride("D3D11VA_FRAME_LATENCY_WAITABLE", &waitBeforeLatch)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "D3D11VA_FRAME_LATENCY_WAITABLE override: %s",
+                    waitBeforeLatch ? "on" : "off");
+    }
+    if (waitBeforeLatch) {
+        swapChainDesc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+    }
+
     // 3 front buffers (default GetMaximumFrameLatency() count)
     // + 1 back buffer
     // + 1 extra for DWM to hold on to for DirectFlip
@@ -673,7 +693,9 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
     // intuitively we must avoid it to reduce latency. If we set our max
     // frame latency to 1 on thedevice, our SyncInterval 0 Present() calls
     // will block on DWM (acting like SyncInterval 1) rather than doing
-    // the non-blocking present we expect.
+    // the non-blocking present we expect. The swapchain's own frame latency
+    // (set below with the waitable object) avoids that: the wait happens in
+    // waitToRender() before a frame is picked, not inside Present().
     //
     // NB: 3 total buffers seems sufficient on NVIDIA hardware but
     // causes performance issues (buffer starvation) on AMD GPUs.
@@ -767,6 +789,16 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
                      "IDXGISwapChain::QueryInterface(IDXGISwapChain4) failed: %x",
                      hr);
         return false;
+    }
+
+    if (swapChainDesc.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) {
+        hr = m_SwapChain->SetMaximumFrameLatency(D3D11PresentPolicy::MaxFrameLatency);
+        if (SUCCEEDED(hr)) {
+            m_FrameLatencyWaitable = m_SwapChain->GetFrameLatencyWaitableObject();
+        } else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "IDXGISwapChain2::SetMaximumFrameLatency() failed: %x", hr);
+        }
     }
 
     // Disable Alt+Enter, PrintScreen, and window message snooping. This makes
@@ -1715,6 +1747,20 @@ int D3D11VARenderer::getRendererAttributes()
     }
 
     return attributes;
+}
+
+void D3D11VARenderer::waitToRender()
+{
+    m_ReadyToPresent = false;
+    if (m_FrameLatencyWaitable != nullptr) {
+        // Bounded so a lost device can't hang the render thread
+        m_ReadyToPresent = WaitForSingleObject(m_FrameLatencyWaitable, 1000) == WAIT_OBJECT_0;
+    }
+}
+
+bool D3D11VARenderer::readyToPresentAfterWait()
+{
+    return m_ReadyToPresent;
 }
 
 int D3D11VARenderer::getDecoderCapabilities()

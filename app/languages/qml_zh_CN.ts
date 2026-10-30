@@ -2454,6 +2454,10 @@
         <translation>切换系统快捷键捕获</translation>
     </message>
     <message>
+        <source>Cancel Sending Files</source>
+        <translation>取消发送文件</translation>
+    </message>
+    <message>
         <source>Cycle Preset</source>
         <translation>循环切换预设</translation>
     </message>

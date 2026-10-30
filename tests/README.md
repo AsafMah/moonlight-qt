@@ -111,6 +111,8 @@ menu-toggle and physical Right Alt hold excluded. It checks actual row invocatio
 payload-specific Ctrl+Alt+Del hints, live rebinding and removal, retained gamepad
 and remote-chord details, and the input matcher's held-key release across a rebind.
 The same profile snapshot updates hints and dispatch while the menu is open.
+Cancel Sending Files (Host tab) stays greyed out and inert until an upload is
+pending or running, enables live while the menu is open, and shows its rebound shortcut.
 
 `system_key_capture` compiles the actual input capture, Right Alt gesture and
 Session geometry methods against fake SDL/Qt windows. It preserves the existing

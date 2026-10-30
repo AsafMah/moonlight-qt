@@ -136,6 +136,7 @@ public:
 #endif
         ToggleKeyboardGrab,
         CycleOverlayPreset,
+        CancelFileTransfer,
         MenuActionMax
     };
 
@@ -361,6 +362,8 @@ public:
     void updateStreamQualityState(const StreamQualityState& state);
     void updateGamepadMouseState(bool enabled);
     void updateFileMappingState(FileMappingState state, const QString& detail);
+    // Enables Cancel Sending Files while files are on their way to the host.
+    void updateFileTransferState(bool active);
     void updateRemoteUsbState(bool available,
                               RemoteUsbState state,
                               std::vector<RemoteUsbDevice> devices,
@@ -590,6 +593,7 @@ private:
     std::function<void(const ShortcutProfile&)> m_ShortcutProfileCallback;
     FileMappingState m_FileMappingState;
     QString m_FileMappingDetail;
+    bool m_FileTransferActive = false;
     bool m_RemoteUsbAvailable;
     bool m_RemoteUsbNeedsActivation = false;
     RemoteUsbState m_RemoteUsbState;

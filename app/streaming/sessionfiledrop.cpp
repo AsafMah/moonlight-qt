@@ -48,6 +48,13 @@ void Session::cancelFileTransfers()
     m_ClipboardHelper->cancelTransfers();
 }
 
+void Session::updateFileTransferMenuState()
+{
+    if (m_MenuPanel) {
+        m_MenuPanel->updateFileTransferState(m_FileUploadActive || m_FileUploadPending);
+    }
+}
+
 bool Session::handleFileDropEvent(const SDL_Event& event)
 {
     switch (event.type) {
@@ -126,6 +133,7 @@ void Session::finishFileDrop()
                 static_cast<int>(paths.size()));
     if (m_ClipboardHelper->uploadFiles(upload)) {
         m_FileUploadPending = true;
+        updateFileTransferMenuState();
     } else {
         showStreamingToast(tr("Sending files isn't ready yet. Try again in a moment."), 4000);
     }
@@ -147,6 +155,7 @@ void Session::onClipboardHelperLost()
         m_FileUploadActive = false;
         m_FileUploadPending = false;
         m_FileUploadId.clear();
+        updateFileTransferMenuState();
         showStreamingToast(tr("Sending files stopped because the clipboard helper restarted."),
                            5000);
     }
@@ -204,4 +213,5 @@ void Session::showFileUploadToast(const ClipboardIpc::TransferEvent& event)
         }
         break;
     }
+    updateFileTransferMenuState();
 }

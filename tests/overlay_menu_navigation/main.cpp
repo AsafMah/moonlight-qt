@@ -621,6 +621,53 @@ static void testShortcutDispatch()
     ShortcutProfile().saveToSettings();
 }
 
+// Cancel Sending Files lives in the Host tab, is greyed out while nothing is
+// being sent, comes alive while the menu is open, and shows its live shortcut.
+static void testFileTransferCancel()
+{
+    OverlayMenuPanel panel;
+    QString dispatched;
+    panel.setActionCallback(
+        [&](MenuAction action) { dispatched = OverlayMenuPanel::shortcutActionId(action); });
+    ShortcutProfile profile;
+    const ShortcutBinding custom = ShortcutBinding::fromString(QStringLiteral("Ctrl+F10"));
+    if (!profile.setBinding(QLatin1String(ShortcutActions::CancelFileTransfer), 0, custom))
+        qFatal("test shortcut was rejected");
+    profile.saveToSettings();
+
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
+    QTest::qWait(240);
+    if (!panel.showTab(MenuTab::Host))
+        qFatal("Host tab is missing");
+    const int row = rowOf(panel, MenuAction::CancelFileTransfer);
+    if (!panel.rowDetail(row).contains(custom.toDisplayString()))
+        qFatal("Cancel Sending Files must show its current shortcut: %s",
+               qPrintable(panel.rowDetail(row)));
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, rowCenter(panel, row));
+    if (!dispatched.isEmpty() || !panel.isMenuVisible())
+        qFatal("Cancel Sending Files must be inert while nothing is being sent");
+
+    panel.updateFileTransferState(true);
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, rowCenter(panel, row));
+    if (dispatched != QLatin1String(ShortcutActions::CancelFileTransfer))
+        qFatal("Cancel Sending Files did not dispatch the cancel shortcut");
+    waitClosed(panel);
+
+    // Ending the transfer greys it out again while the menu is open.
+    panel.showAtCursor(0, 0, 1600, 1200, QPoint(400, 400));
+    QTest::qWait(240);
+    panel.showTab(MenuTab::Host);
+    panel.updateFileTransferState(false);
+    dispatched.clear();
+    QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier,
+                      rowCenter(panel, rowOf(panel, MenuAction::CancelFileTransfer)));
+    if (!dispatched.isEmpty())
+        qFatal("Cancel Sending Files stayed enabled after the transfer ended");
+    panel.closeMenu();
+    waitClosed(panel);
+    ShortcutProfile().saveToSettings();
+}
+
 int main(int argc, char **argv)
 {
     QGuiApplication app(argc, argv);
@@ -638,6 +685,7 @@ int main(int argc, char **argv)
     if (app.arguments().contains(QStringLiteral("--shortcut-rebinding"))) {
         testShortcutRebinding();
         testShortcutDispatch();
+        testFileTransferCancel();
         return 0;
     }
     QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/Manrope-Regular.ttf"));
@@ -1094,5 +1142,6 @@ int main(int argc, char **argv)
     testShortcutParity();
     testShortcutRebinding();
     testShortcutDispatch();
+    testFileTransferCancel();
     return 0;
 }

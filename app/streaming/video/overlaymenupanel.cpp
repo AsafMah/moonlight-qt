@@ -137,6 +137,7 @@ constexpr TabAssignment kTabAssignments[] = {
     // Host: features the host offers
     { MenuAction::OpenHostCommands, MenuTab::Host },
     { MenuAction::ShowHostFiles, MenuTab::Host },
+    { MenuAction::CancelFileTransfer, MenuTab::Host },
     // Session: the running session
     { MenuAction::OpenSessionStats, MenuTab::Session },
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
@@ -654,6 +655,8 @@ QString OverlayMenuPanel::shortcutActionId(MenuAction action, const QString& pay
         return QLatin1String(ShortcutActions::ToggleKeyboardGrab);
     case MenuAction::CycleOverlayPreset:
         return QLatin1String(ShortcutActions::CycleOverlayPreset);
+    case MenuAction::CancelFileTransfer:
+        return QLatin1String(ShortcutActions::CancelFileTransfer);
     case MenuAction::EditStatsOverlayPosition:
         return QLatin1String(ShortcutActions::EditOverlayPosition);
     case MenuAction::OpenHostCommands:
@@ -917,6 +920,8 @@ void OverlayMenuPanel::buildMenuLevels()
                         m_FileMappingState == FileMappingState::Available ||
                             m_FileMappingState == FileMappingState::Open,
                         false });
+    entries.push_back({ tr("Cancel Sending Files"), QString(), MenuItemType::Action,
+                        MenuAction::CancelFileTransfer, 0, m_FileTransferActive, false, false });
     // Session
     entries.push_back({ tr("Session"), QString(), MenuItemType::SubMenu,
                         MenuAction::OpenSessionStats, 0, true, false, false });
@@ -1629,6 +1634,19 @@ void OverlayMenuPanel::updateFileMappingState(FileMappingState state, const QStr
     if (MenuItem* item = findRootItem(MenuAction::ShowHostFiles)) {
         item->detail = detail;
         item->toggleState = state == FileMappingState::Available || state == FileMappingState::Open;
+        forceRepaint();
+    }
+}
+
+void OverlayMenuPanel::updateFileTransferState(bool active)
+{
+    if (m_FileTransferActive == active) {
+        return;
+    }
+    m_FileTransferActive = active;
+
+    if (MenuItem* item = findRootItem(MenuAction::CancelFileTransfer)) {
+        item->enabled = active;
         forceRepaint();
     }
 }

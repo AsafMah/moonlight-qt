@@ -1989,6 +1989,10 @@
         <translation>切換系統快捷鍵擷取</translation>
     </message>
     <message>
+        <source>Cancel Sending Files</source>
+        <translation>取消傳送檔案</translation>
+    </message>
+    <message>
         <source>Cycle Preset</source>
         <translation>循環切換預設</translation>
     </message>

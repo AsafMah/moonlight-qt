@@ -3170,6 +3170,7 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition)
             m_StatsOverlay->isDetached(), m_StatsOverlay->opacityPercent());
     }
     updateFileMappingMenuState();
+    updateFileTransferMenuState();
     updateRemoteUsbMenuState();
     updateHostActionsMenuState();
 

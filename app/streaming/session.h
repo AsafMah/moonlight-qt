@@ -309,6 +309,7 @@ private:
     void showCopiedFilesToast(const ClipboardIpc::TransferEvent& event);
     void registerFileTransferShortcuts();
     void cancelFileTransfers();
+    void updateFileTransferMenuState();
     bool handleFileDropEvent(const SDL_Event& event);
     void finishFileDrop();
     void onClipboardHelperLost();

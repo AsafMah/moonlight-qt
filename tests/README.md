@@ -16,6 +16,7 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | cursor_shape_classification | 光标位图 → 形状分类器的判定矩阵 | Windows |
 | clipboard_payload_routing | 剪贴板状态、复合内容、文件保护、文本/图片同步开关、主机文件推送(解析/文件名清洗/下载/超时)、拖放上传(目录展开/分块/偏移重同步/取消/超时)、文件复制粘贴(回声抑制/新复制优先/持久目录清理)、IPC 分帧和本地 TLS 传输回归（offscreen） | Windows |
 | clipboard_helper_lifecycle | helper 异常退出、响应超时和进程管道背压 | Windows |
+| clipboard_engine_thread | 主机→客户端文字写入真实系统剪贴板（helper 引擎线程模型；原生平台，测试前后保存/恢复剪贴板） | Windows |
 | overlay_button_position | 悬浮按钮归一化/还原坐标的跨分辨率往返 | Windows |
 | pyrowave_color | PyroWave 颜色合同表（SDR/HDR10/HLG × 范围）、HDR 平面位编码、SS_HDR_METADATA 解析与快照保留规则、libplacebo 元数据映射 | Windows |
 | pyrowave_pacing | PyroWave 呈现策略：延迟呈现后切换三重缓冲的阈值、串流快于显示器时的帧节奏抽帧 | Windows |

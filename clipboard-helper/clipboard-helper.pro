@@ -20,6 +20,7 @@ SOURCES += \
 macx:SOURCES += macos.mm
 
 HEADERS += \
+    clipboardhelperthreading.h \
     ../app/streaming/clipboardipc.h \
     ../app/streaming/clipboardlogging.h \
     ../app/streaming/clipboardsync.h \

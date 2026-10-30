@@ -1,3 +1,4 @@
+#include "clipboardhelperthreading.h"
 #include "streaming/clipboardsync.h"
 #include "streaming/clipboardipc.h"
 #include "streaming/fileofferreceiver.h"
@@ -151,8 +152,9 @@ public:
     explicit ClipboardHelperController(QObject* parent = nullptr)
         : QObject(parent)
     {
-        // The engine's dedicated thread. The GUI main thread keeps only the
-        // event loop and never touches the clipboard again.
+        // The engine's dedicated thread (macOS only; see
+        // clipboardhelperthreading.h). There the GUI main thread keeps only
+        // the event loop and never touches the clipboard.
         m_WorkerThread = new QThread(this);
         m_WorkerThread->setObjectName("clipboard-engine");
         m_WorkerThread->start();
@@ -265,13 +267,20 @@ private:
         policy.files = config.policy.files;
 
         if (m_ClipboardEngine == nullptr) {
-            // The engine lives on its own thread for its whole life: inbound
-            // clipboard writes happen there, so pasteboard contention can
-            // never wedge the GUI thread (which only runs the event loop).
+            // On macOS the engine lives on its own thread for its whole life:
+            // inbound clipboard writes happen there, so pasteboard contention
+            // can never wedge the GUI thread. Elsewhere Qt's clipboard only
+            // works on the GUI thread (see clipboardhelperthreading.h).
             auto* engine = new ClipboardSync(context);
             engine->setPolicy(policy);
-            adoptEngine(engine, m_WorkerThread);
-            connect(m_WorkerThread, &QThread::finished, engine, &QObject::deleteLater);
+            if (ClipboardHelperThreading::engineUsesWorkerThread()) {
+                adoptEngine(engine, m_WorkerThread);
+                connect(m_WorkerThread, &QThread::finished, engine, &QObject::deleteLater);
+            } else {
+                // Windows/Linux: Qt's clipboard only works on the GUI thread.
+                engine->setParent(this);
+                m_ClipboardEngine = engine;
+            }
             // Outbound frames are produced on the engine thread and enqueued
             // onto the writer directly (the writer owns stdout).
             connect(engine, &ClipboardSync::outboundFrame, this,

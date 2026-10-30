@@ -1,5 +1,6 @@
 #include "nvcomputer.h"
 #include "pairedcertificate.h"
+#include "streaming/video/vrrpolicy.h"
 #include <Limelight.h>
 
 #include <QHostInfo>
@@ -209,20 +210,12 @@ NvHTTP::getServerInfo(NvLogLevel logLevel, bool fastFail)
     return serverInfo;
 }
 
-void
-NvHTTP::startApp(QString verb,
-                 bool isGfe,
-                 int appId,
-                 PSTREAM_CONFIGURATION streamConfig,
-                 bool sops,
-                 bool localAudio,
-                 int gamepadMask,
-                 bool persistGameControllersOnDisconnect,
-                 QString& rtspSessionUrl,
-                 int screenCombinationMode,
-                 const std::optional<bool>& useVdd,
-                 const QString& displayName,
-                 RemoteStreamConfig &remoteStreamConfig)
+void NvHTTP::startApp(QString verb, bool isGfe, int appId, PSTREAM_CONFIGURATION streamConfig,
+                      bool sops, bool localAudio, int gamepadMask,
+                      bool persistGameControllersOnDisconnect, QString& rtspSessionUrl,
+                      int screenCombinationMode, const std::optional<bool>& useVdd,
+                      const QString& displayName, RemoteStreamConfig& remoteStreamConfig,
+                      bool clientVrrRequested)
 {
     int riKeyId;
 
@@ -299,6 +292,7 @@ NvHTTP::startApp(QString verb,
                  QString::number(qRound(remoteStreamConfig.sdrWhiteBrightness));
     }
 
+    query += VrrPolicy::hostVrrQueryParameters(clientVrrRequested);
     query += LiGetLaunchUrlQueryParameters();
 
     QString response = openConnectionToString(m_BaseUrlHttps,

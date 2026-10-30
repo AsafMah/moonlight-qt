@@ -83,6 +83,23 @@ constexpr SyncDecision decide(const SyncInput& in)
     return SyncDecision{ vsync, vsync && in.framePacing, false, 0, false };
 }
 
+// Whether to tell the host at launch/resume that this session presents in VRR
+// mode. Decided before the stream window exists, so in.displayHz may be 0; the
+// VRR decision does not depend on it.
+constexpr bool requestHostVrr(const SyncInput& in)
+{
+    return decide(in).enableVrr;
+}
+
+// Launch/resume query parameters for requestHostVrr(). Vibeshine and Vibepollo
+// read clientVrrRequested: they lower WGC capture buffering, hold the virtual
+// display at 1000 Hz so RTP timestamps are accurate to within 1 ms, and refine
+// those timestamps. Other hosts ignore unknown launch parameters.
+constexpr const char* hostVrrQueryParameters(bool requestVrr)
+{
+    return requestVrr ? "&clientVrrRequested=1" : "";
+}
+
 // How many queued frames to drop before presenting. While the present-rate cap
 // held a frame back, newer frames may have arrived; only the newest is worth
 // presenting, so the rest are dropped instead of building up a backlog.

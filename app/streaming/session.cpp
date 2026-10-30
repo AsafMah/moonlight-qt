@@ -4259,18 +4259,14 @@ bool Session::startConnectionAsync()
             sdrWhiteBrightness
         );
         m_LastClientSdrWhiteNits = sdrWhiteBrightness;
-        http.startApp(resumingSession ? "resume" : "launch",
-                      m_Computer->isNvidiaServerSoftware,
-                      m_App.id, &m_StreamConfig,
-                      enableGameOptimizations,
-                      m_Preferences->playAudioOnHost,
-                      m_InputHandler->getAttachedGamepadMask(),
-                      !m_Preferences->multiController,
-                      rtspSessionUrl,
-                      m_Preferences->screenCombinationMode,
-                      m_LaunchUseVdd,
-                      m_LaunchDisplayName,
-                      remoteStreamConfig);
+        http.startApp(
+            resumingSession ? "resume" : "launch", m_Computer->isNvidiaServerSoftware, m_App.id,
+            &m_StreamConfig, enableGameOptimizations, m_Preferences->playAudioOnHost,
+            m_InputHandler->getAttachedGamepadMask(), !m_Preferences->multiController,
+            rtspSessionUrl, m_Preferences->screenCombinationMode, m_LaunchUseVdd,
+            m_LaunchDisplayName, remoteStreamConfig,
+            VrrPolicy::requestHostVrr({ m_Preferences->enableVsync, m_Preferences->framePacing,
+                                        m_Preferences->enableVrr, m_StreamConfig.fps, 0 }));
 
         try {
             updateHostConnectionInfoFromServerInfo(http.getServerInfo(NvHTTP::NVLL_NONE, true),

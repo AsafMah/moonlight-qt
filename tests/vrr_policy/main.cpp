@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <deque>
+#include <string>
 
 static int s_Failures = 0;
 
@@ -124,6 +125,28 @@ static void testDecide()
         auto d = decide({ true, false, true, 120, 0 });
         CHECK(d.enableVrr && d.presentCapFps == 0 && !d.streamAboveVrrRange);
     }
+}
+
+static void testHostVrrRequest()
+{
+    using VrrPolicy::hostVrrQueryParameters;
+    using VrrPolicy::requestHostVrr;
+
+    // Decided before launch, when the display refresh rate is not known yet;
+    // VRR mode does not depend on it
+    for (int vsync = 0; vsync < 2; vsync++) {
+        for (int pacing = 0; pacing < 2; pacing++) {
+            CHECK(requestHostVrr({ vsync != 0, pacing != 0, true, 120, 0 }));
+            CHECK(!requestHostVrr({ vsync != 0, pacing != 0, false, 120, 0 }));
+        }
+    }
+    CHECK(requestHostVrr({ false, false, true, 240, 60 }));
+    CHECK(!requestHostVrr({ true, true, false, 60, 60 }));
+
+    // The exact launch/resume query that Vibeshine and Vibepollo read
+    const std::string base = "appid=1&gcpersist=0";
+    CHECK(base + hostVrrQueryParameters(true) == "appid=1&gcpersist=0&clientVrrRequested=1");
+    CHECK(base + hostVrrQueryParameters(false) == "appid=1&gcpersist=0");
 }
 
 static void testLimiter()
@@ -350,6 +373,7 @@ int main()
     testMinInterval();
     testDisplayMode();
     testDecide();
+    testHostVrrRequest();
     testLimiter();
     testStaleQueuedFrames();
     testLimiterLoop();

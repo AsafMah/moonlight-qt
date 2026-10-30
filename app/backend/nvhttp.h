@@ -190,20 +190,12 @@ public:
     void
     quitApp();
 
-    void
-    startApp(QString verb,
-             bool isGfe,
-             int appId,
-             PSTREAM_CONFIGURATION streamConfig,
-             bool sops,
-             bool localAudio,
-             int gamepadMask,
-             bool persistGameControllersOnDisconnect,
-             QString& rtspSessionUrl,
-             int screenCombinationMode,
-             const std::optional<bool>& useVdd,
-             const QString& displayName,
-             RemoteStreamConfig &remoteStreamConfig);
+    void startApp(QString verb, bool isGfe, int appId, PSTREAM_CONFIGURATION streamConfig,
+                  bool sops, bool localAudio, int gamepadMask,
+                  bool persistGameControllersOnDisconnect, QString& rtspSessionUrl,
+                  int screenCombinationMode, const std::optional<bool>& useVdd,
+                  const QString& displayName, RemoteStreamConfig& remoteStreamConfig,
+                  bool clientVrrRequested);
 
     QVector<NvApp>
     getAppList();

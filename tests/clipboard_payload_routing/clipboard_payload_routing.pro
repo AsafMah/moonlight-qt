@@ -24,4 +24,6 @@ SOURCES += fileoffer.cpp ../../app/streaming/fileofferreceiver.cpp
 HEADERS += ../../app/streaming/fileofferreceiver.h
 SOURCES += fileupload.cpp ../../app/streaming/fileuploader.cpp
 HEADERS += ../../app/streaming/fileuploader.h
+SOURCES += filecopy.cpp ../../app/streaming/clipboardfilesreceiver.cpp
+HEADERS += ../../app/streaming/clipboardfilesreceiver.h
 RESOURCES += fixtures.qrc

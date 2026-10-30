@@ -148,6 +148,7 @@ QByteArray encodeConfigure(quint32 sequence, const HostConfig& config)
     policy.insert(QStringLiteral("text"), config.policy.text);
     policy.insert(QStringLiteral("images"), config.policy.images);
     policy.insert(QStringLiteral("fileOffers"), config.policy.fileOffers);
+    policy.insert(QStringLiteral("files"), config.policy.files);
 
     QJsonObject obj = baseMessage(MessageType::Configure, sequence);
     obj.insert(QStringLiteral("host"), host);
@@ -305,6 +306,7 @@ bool decodeLine(const QByteArray& line, Message& outMessage, QString& outError)
             outMessage.config.policy.images = policy.value(QStringLiteral("images")).toBool(true);
             outMessage.config.policy.fileOffers =
                 policy.value(QStringLiteral("fileOffers")).toBool(true);
+            outMessage.config.policy.files = policy.value(QStringLiteral("files")).toBool(false);
             return true;
         }
     case MessageType::HostFrame:

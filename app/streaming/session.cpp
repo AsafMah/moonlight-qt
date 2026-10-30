@@ -5071,16 +5071,20 @@ void Session::start()
     // (or nothing selected to sync) no helper runs and host frames are dropped.
     if (m_ClipboardHelper == nullptr && m_Preferences->clipboardSyncEnabled &&
         (m_Preferences->clipboardSyncText || m_Preferences->clipboardSyncImages ||
-         m_Preferences->clipboardReceiveFiles || m_Preferences->clipboardDropFiles)) {
+         m_Preferences->clipboardReceiveFiles || m_Preferences->clipboardDropFiles ||
+         m_Preferences->clipboardSyncFiles)) {
         ClipboardIpc::SyncPolicy policy;
         policy.text = m_Preferences->clipboardSyncText;
         policy.images = m_Preferences->clipboardSyncImages;
         policy.fileOffers = m_Preferences->clipboardReceiveFiles;
+        policy.files = m_Preferences->clipboardSyncFiles;
         m_ClipboardHelper = new ClipboardHelperClient(m_Computer, this);
         m_ClipboardHelper->setSyncPolicy(policy);
         connect(m_ClipboardHelper, &ClipboardHelperClient::transferEvent, this,
                 [this](const ClipboardIpc::TransferEvent& event) {
-                    if (event.direction == ClipboardIpc::TransferDirection::Upload) {
+                    if (event.id == QLatin1String(ClipboardIpc::COPIED_FILES_ID)) {
+                        showCopiedFilesToast(event);
+                    } else if (event.direction == ClipboardIpc::TransferDirection::Upload) {
                         showFileUploadToast(event);
                     } else {
                         showFileTransferToast(event);

@@ -14,7 +14,8 @@ SOURCES += \
     ../app/streaming/clipboardipc.cpp \
     ../app/streaming/clipboardsync.cpp \
     ../app/streaming/fileofferreceiver.cpp \
-    ../app/streaming/fileuploader.cpp
+    ../app/streaming/fileuploader.cpp \
+    ../app/streaming/clipboardfilesreceiver.cpp
 
 macx:SOURCES += macos.mm
 
@@ -23,7 +24,8 @@ HEADERS += \
     ../app/streaming/clipboardlogging.h \
     ../app/streaming/clipboardsync.h \
     ../app/streaming/fileofferreceiver.h \
-    ../app/streaming/fileuploader.h
+    ../app/streaming/fileuploader.h \
+    ../app/streaming/clipboardfilesreceiver.h
 
 unix:!macx {
     isEmpty(PREFIX) {

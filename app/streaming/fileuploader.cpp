@@ -13,6 +13,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QSslConfiguration>
+#include <QTimer>
 #include <QUuid>
 
 #include <algorithm>
@@ -186,14 +187,37 @@ void FileUploader::start(const UploadRequest& request)
 {
     const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     if (isBusy()) {
-        emit failed(id, tr("Another file transfer is still running."));
-        return;
+        if (request.intent != QStringLiteral("clipboard")) {
+            emit failed(id, tr("Another file transfer is still running."));
+            return;
+        }
+        if (m_Request.intent != QStringLiteral("clipboard")) {
+            // A drop is running: only the newest copy waits for it.
+            m_PendingCopy = request;
+            return;
+        }
+        // The host clipboard must end up with the newest copy.
+        const QString old = m_Id;
+        stopCurrent();
+        ClipboardLog::info("FileUploader: copy upload replaced by a newer copy");
+        emit superseded(old);
     }
 
     QList<UploadItem> items;
     QString error;
     if (!planUpload(request.paths, items, error)) {
         emit failed(id, error);
+        return;
+    }
+    qint64 planned = 0;
+    for (const UploadItem& item : items) {
+        planned += item.size;
+    }
+    if (planned > request.maxTotalBytes) {
+        emit failed(id,
+                    tr("The copied files are too large to paste on the host (limit %1 MB). Drag "
+                       "them onto the stream instead.")
+                        .arg(request.maxTotalBytes / (1024 * 1024)));
         return;
     }
     QUrl probe;
@@ -432,6 +456,7 @@ void FileUploader::onReply(QNetworkReply* reply)
         ClipboardLog::info("FileUploader: host accepted %d file(s)", count);
         emit fileListReady(QJsonDocument(list).toJson(QJsonDocument::Compact));
         emit finished(id, count, total);
+        startPendingCopy();
         return;
     }
 
@@ -449,9 +474,8 @@ void FileUploader::onReply(QNetworkReply* reply)
     }
 }
 
-QNetworkReply* FileUploader::fail(const QString& error)
+QNetworkReply* FileUploader::stopCurrent()
 {
-    const QString id = m_Id;
     if (m_Reply) {
         m_Reply->disconnect(this);
         m_Reply->abort();
@@ -462,9 +486,32 @@ QNetworkReply* FileUploader::fail(const QString& error)
     m_File = nullptr;
     QNetworkReply* release = abortRemote();
     m_Stage = Stage::Idle;
+    return release;
+}
+
+QNetworkReply* FileUploader::fail(const QString& error)
+{
+    const QString id = m_Id;
+    QNetworkReply* release = stopCurrent();
     ClipboardLog::warn("FileUploader: %s", error.toUtf8().constData());
     emit failed(id, error);
+    startPendingCopy();
     return release;
+}
+
+void FileUploader::startPendingCopy()
+{
+    if (!m_PendingCopy) {
+        return;
+    }
+    // Deferred: never re-enter start() from inside a signal of the previous batch.
+    QTimer::singleShot(0, this, [this]() {
+        if (m_PendingCopy && !isBusy()) {
+            const UploadRequest request = *m_PendingCopy;
+            m_PendingCopy.reset();
+            start(request);
+        }
+    });
 }
 
 QNetworkReply* FileUploader::abortRemote()

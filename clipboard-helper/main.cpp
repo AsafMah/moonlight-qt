@@ -2,6 +2,7 @@
 #include "streaming/clipboardipc.h"
 #include "streaming/fileofferreceiver.h"
 #include "streaming/fileuploader.h"
+#include "streaming/clipboardfilesreceiver.h"
 
 #include <QByteArray>
 #include <QCoreApplication>
@@ -192,9 +193,9 @@ public slots:
 
         if (message.type == ClipboardIpc::MessageType::UploadFiles) {
             if (m_Uploader == nullptr) {
-                writeProtocolLine(ClipboardIpc::encodeError(message.sequence,
-                                                            QStringLiteral("not-ready"),
-                                                            QStringLiteral("clipboard sync is not configured")));
+                writeProtocolLine(
+                    ClipboardIpc::encodeError(message.sequence, QStringLiteral("not-ready"),
+                                              QStringLiteral("clipboard sync is not configured")));
                 return;
             }
             UploadRequest request;
@@ -261,6 +262,7 @@ private:
         policy.text = config.policy.text;
         policy.images = config.policy.images;
         policy.fileOffers = config.policy.fileOffers;
+        policy.files = config.policy.files;
 
         if (m_ClipboardEngine == nullptr) {
             // The engine lives on its own thread for its whole life: inbound
@@ -282,7 +284,8 @@ private:
             // to the engine thread, which owns the outbound frame path.
             m_Uploader = new FileUploader(context, this);
             connect(m_Uploader, &FileUploader::fileListReady, this, [this](QByteArray payload) {
-                postToEngine([engine = m_ClipboardEngine, payload] { engine->sendFileList(payload); });
+                postToEngine(
+                    [engine = m_ClipboardEngine, payload] { engine->sendFileList(payload); });
             });
             connect(m_Uploader, &FileUploader::started, this,
                     [this](QString id, int count, qint64 total) {
@@ -299,6 +302,45 @@ private:
                     });
             connect(m_Uploader, &FileUploader::failed, this, [this](QString id, QString error) {
                 sendUploadEvent(ClipboardIpc::TransferState::Failed, id, 0, 0, -1, error);
+            });
+            connect(m_Uploader, &FileUploader::superseded, this, [this](QString id) {
+                // Empty error: replaced by a newer copy, nothing to report.
+                sendUploadEvent(ClipboardIpc::TransferState::Failed, id, 0, 0, -1, QString());
+            });
+            // File copy/paste. Copies are detected on the engine thread and
+            // uploaded from here; host file lists download here and are applied
+            // back on the engine thread, which owns the clipboard.
+            connect(
+                engine, &ClipboardSync::localFilesCopied, this,
+                [this](QStringList paths) {
+                    UploadRequest request;
+                    request.paths = paths;
+                    request.intent = QStringLiteral("clipboard");
+                    request.maxTotalBytes = ClipboardFilesReceiver::MAX_TOTAL_BYTES;
+                    m_Uploader->start(request);
+                },
+                Qt::QueuedConnection);
+            m_FilesReceiver = new ClipboardFilesReceiver(context, this);
+            connect(
+                engine, &ClipboardSync::fileListReceived, this,
+                [this](QByteArray payload, quint64 revision) {
+                    // A clipboard change after this revision beats the download.
+                    m_FilesRevision = revision;
+                    m_FilesReceiver->handleFileList(payload);
+                },
+                Qt::QueuedConnection);
+            connect(m_FilesReceiver, &ClipboardFilesReceiver::filesReady, this,
+                    [this](QList<QUrl> urls) {
+                        postToEngine(
+                            [this, engine = m_ClipboardEngine, urls, revision = m_FilesRevision] {
+                                if (engine->applyLocalFiles(urls, revision)) {
+                                    sendCopiedFilesEvent(ClipboardIpc::TransferState::Finished,
+                                                         urls.size());
+                                }
+                            });
+                    });
+            connect(m_FilesReceiver, &ClipboardFilesReceiver::failed, this, [this](QString error) {
+                sendCopiedFilesEvent(ClipboardIpc::TransferState::Failed, 0, error);
             });
             connect(engine, &ClipboardSync::fileOfferReceived, m_FileOffers,
                     &FileOfferReceiver::handleOffer, Qt::QueuedConnection);
@@ -325,6 +367,7 @@ private:
             });
             m_FileOffers->setHostContext(context);
             m_Uploader->setHostContext(context);
+            m_FilesReceiver->setHostContext(context);
         }
 
         writeProtocolLine(ClipboardIpc::encodeReady(sequence));
@@ -333,6 +376,20 @@ private:
     void sendLocalFrame(const QByteArray& frame)
     {
         writeProtocolLine(ClipboardIpc::encodeLocalFrame(m_NextSequence++, frame));
+    }
+
+    // Host -> client file copy; the main process shows it as a paste notice.
+    // Thread-safe (writer + atomic sequence): also called on the engine thread.
+    void sendCopiedFilesEvent(ClipboardIpc::TransferState state, int count,
+                              const QString& error = QString())
+    {
+        ClipboardIpc::TransferEvent event;
+        event.state = state;
+        event.direction = ClipboardIpc::TransferDirection::Download;
+        event.id = QLatin1String(ClipboardIpc::COPIED_FILES_ID);
+        event.count = count;
+        event.error = error;
+        writeProtocolLine(ClipboardIpc::encodeTransferEvent(m_NextSequence++, event));
     }
 
     void sendUploadEvent(ClipboardIpc::TransferState state, const QString& id, int count,
@@ -401,6 +458,8 @@ private:
     ClipboardSync* m_ClipboardEngine = nullptr;
     FileOfferReceiver* m_FileOffers = nullptr;
     FileUploader* m_Uploader = nullptr;
+    ClipboardFilesReceiver* m_FilesReceiver = nullptr;
+    quint64 m_FilesRevision = 0;
     // Touched from snapshot threads (inline frames) and the GUI thread (REF
     // callbacks and file transfer events), so the increment must be atomic.
     std::atomic<quint32> m_NextSequence{ 1 };

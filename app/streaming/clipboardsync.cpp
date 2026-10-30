@@ -4,6 +4,7 @@
 
 #include <QBuffer>
 #include <QClipboard>
+#include <QDir>
 #include <QGuiApplication>
 #include <QImage>
 #include <QImageReader>
@@ -163,6 +164,60 @@ void ClipboardSync::setHostContext(const ClipboardSyncHostContext& hostContext)
     m_HostContext = hostContext;
 }
 
+namespace {
+QStringList sortedLocalPaths(const QList<QUrl>& urls)
+{
+    QStringList paths;
+    for (const QUrl& url : urls) {
+        if (url.isLocalFile()) {
+            paths.append(QDir::cleanPath(url.toLocalFile()).toLower());
+        }
+    }
+    paths.sort();
+    return paths;
+}
+} // namespace
+
+bool ClipboardSync::reportLocalFiles(const QMimeData* mime)
+{
+    if (!m_Policy.files || mime == nullptr || !mime->hasUrls()) {
+        return false;
+    }
+    QStringList paths;
+    for (const QUrl& url : mime->urls()) {
+        if (url.isLocalFile()) {
+            paths.append(url.toLocalFile());
+        }
+    }
+    if (paths.isEmpty()) {
+        return false;
+    }
+    if (!m_OwnFilePaths.isEmpty() && sortedLocalPaths(mime->urls()) == m_OwnFilePaths) {
+        ClipboardLog::debug("ClipboardSync: file clipboard is our own; not sent back");
+        return false;
+    }
+    emit localFilesCopied(paths);
+    return true;
+}
+
+bool ClipboardSync::applyLocalFiles(const QList<QUrl>& urls, quint64 expectedRevision)
+{
+    QClipboard* cb = QGuiApplication::clipboard();
+    if (cb == nullptr || urls.isEmpty()) {
+        return false;
+    }
+    if (m_Revision != expectedRevision) {
+        ClipboardLog::info(
+            "ClipboardSync: copied host files arrived after a newer clipboard; not applied");
+        return false;
+    }
+    m_OwnFilePaths = sortedLocalPaths(urls);
+    auto* mime = new QMimeData();
+    mime->setUrls(urls);
+    cb->setMimeData(mime);
+    return true;
+}
+
 void ClipboardSync::sendFileList(const QByteArray& payload)
 {
     QByteArray frame;
@@ -307,6 +362,14 @@ void ClipboardSync::onIncomingFrame(QByteArray frame)
         return;
     }
 
+    if (kind == KIND_FILE_LIST) {
+        if (m_Policy.files) {
+            emit fileListReceived(payload, m_Revision);
+        } else {
+            ClipboardLog::debug("ClipboardSync: host file list ignored (file copy/paste off)");
+        }
+        return;
+    }
     if (kind == KIND_FILE_OFFER) {
         if (m_Policy.fileOffers) {
             emit fileOfferReceived(payload);
@@ -785,6 +848,7 @@ void ClipboardSync::onLocalClipboardChanged()
     if (finderOrigin) {
         beginClipboardChange();
         m_HaveClipboardSnapshot = false;
+        reportLocalFiles(mime);
         ClipboardLog::debug("ClipboardSync: Finder file clipboard detected; sync skipped");
         return;
     }
@@ -799,6 +863,7 @@ void ClipboardSync::onLocalClipboardChanged()
     if (hasFileReferences(mime) && !havePng) {
         beginClipboardChange();
         m_HaveClipboardSnapshot = false;
+        reportLocalFiles(mime);
         ClipboardLog::debug(
             "ClipboardSync: file clipboard without transferable image; sync skipped");
         return;

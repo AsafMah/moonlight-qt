@@ -42,6 +42,15 @@ Column {
         }
 
         ToggleRow {
+            title: qsTr("Files (copy and paste)")
+            description: qsTr("Copy files on one side and paste them on the other. Files are transferred when you copy (up to 512 MB), then pasted from a copy. The host must allow client-to-host file uploads.")
+            settingsSearchKeywords: "files copy paste transfer clipboard"
+            checked: StreamingPreferences.clipboardSyncFiles
+            controlEnabled: masterToggle.checked
+            onToggled: function(value) { StreamingPreferences.clipboardSyncFiles = value }
+        }
+
+        ToggleRow {
             title: qsTr("Receive files from the host")
             description: qsTr("Files sent from the host are saved to the Sunshine Transfers folder in your Downloads. They are never opened automatically.")
             settingsSearchKeywords: "file transfer download send save"

@@ -306,6 +306,7 @@ private:
     void showStreamingToast(const QString& message, int durationMs = 2000);
     void showFileTransferToast(const ClipboardIpc::TransferEvent& event);
     void showFileUploadToast(const ClipboardIpc::TransferEvent& event);
+    void showCopiedFilesToast(const ClipboardIpc::TransferEvent& event);
     void registerFileTransferShortcuts();
     void cancelFileTransfers();
     bool handleFileDropEvent(const SDL_Event& event);

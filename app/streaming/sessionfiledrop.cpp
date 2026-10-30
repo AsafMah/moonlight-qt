@@ -131,6 +131,16 @@ void Session::finishFileDrop()
     }
 }
 
+void Session::showCopiedFilesToast(const ClipboardIpc::TransferEvent& event)
+{
+    if (event.state == ClipboardIpc::TransferState::Finished) {
+        showStreamingToast(
+            tr("Copied %n file(s) from the host. Paste them with Ctrl+V.", "", event.count), 4000);
+    } else if (event.state == ClipboardIpc::TransferState::Failed) {
+        showStreamingToast(tr("Couldn't copy files from the host: %1").arg(event.error), 5000);
+    }
+}
+
 void Session::onClipboardHelperLost()
 {
     if (m_FileUploadActive || m_FileUploadPending) {
@@ -188,7 +198,10 @@ void Session::showFileUploadToast(const ClipboardIpc::TransferEvent& event)
         m_FileUploadActive = false;
         m_FileUploadPending = false;
         m_FileUploadId.clear();
-        showStreamingToast(tr("Couldn't send files: %1").arg(event.error), 6000);
+        // An empty error means a newer copy replaced this upload.
+        if (!event.error.isEmpty()) {
+            showStreamingToast(tr("Couldn't send files: %1").arg(event.error), 6000);
+        }
         break;
     }
 }

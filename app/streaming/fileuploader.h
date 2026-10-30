@@ -31,6 +31,8 @@ struct UploadRequest
     QString intent = QStringLiteral("drop");
     std::optional<double> x;
     std::optional<double> y;
+    // Copies are uploaded eagerly, so they get a lower cap than drops.
+    qint64 maxTotalBytes = 16LL * 1024 * 1024 * 1024;
 };
 
 // Sends local files to a Foundation Sunshine host (client-to-host upload API,
@@ -76,6 +78,8 @@ signals:
     void progress(QString id, qint64 sentBytes, qint64 totalBytes);
     void finished(QString id, int count, qint64 totalBytes);
     void failed(QString id, QString error);
+    // A copy upload was dropped in favor of a newer copy (no error to show).
+    void superseded(QString id);
     // JSON payload for a KIND_FILE_LIST frame.
     void fileListReady(QByteArray payload);
 
@@ -100,6 +104,9 @@ private:
     void onReply(QNetworkReply* reply);
     // Returns the batch DELETE request still in flight, if any.
     QNetworkReply* fail(const QString& error);
+    // Aborts the batch locally and on the host; returns the host DELETE request.
+    QNetworkReply* stopCurrent();
+    void startPendingCopy();
     void finishBatch();
     QNetworkReply* abortRemote();
     static QString describeHttpError(int status, const QByteArray& body);
@@ -121,4 +128,5 @@ private:
     qint64 m_Offset = 0;
     QFile* m_File = nullptr;
     QPointer<QNetworkReply> m_Reply;
+    std::optional<UploadRequest> m_PendingCopy;
 };

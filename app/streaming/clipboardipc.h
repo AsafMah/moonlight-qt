@@ -12,6 +12,8 @@ static constexpr int PROTOCOL_VERSION = 1;
 static constexpr int MAX_LINE_BYTES = 1024 * 1024;
 // Paths per uploadFiles message; matches FileUploader::MAX_FILES.
 static constexpr int MAX_UPLOAD_PATHS = 1000;
+// TransferEvent id for files copied on the host and placed on our clipboard.
+static constexpr const char COPIED_FILES_ID[] = "copied-files";
 
 enum class MessageType
 {
@@ -36,6 +38,8 @@ struct SyncPolicy
     bool text = true;
     bool images = true;
     bool fileOffers = true;
+    // File copy/paste with the host. Opt-in, so absent means off.
+    bool files = false;
 };
 
 enum class TransferState

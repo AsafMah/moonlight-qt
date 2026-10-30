@@ -310,6 +310,7 @@ public:
     Q_PROPERTY(
         bool clipboardReceiveFiles MEMBER clipboardReceiveFiles NOTIFY clipboardReceiveFilesChanged)
     Q_PROPERTY(bool clipboardDropFiles MEMBER clipboardDropFiles NOTIFY clipboardDropFilesChanged)
+    Q_PROPERTY(bool clipboardSyncFiles MEMBER clipboardSyncFiles NOTIFY clipboardSyncFilesChanged)
     Q_PROPERTY(QStringList usbForwardingBoundDevices READ usbForwardingBoundDevices WRITE setUsbForwardingBoundDevices NOTIFY usbForwardingBoundDevicesChanged)
 
     Q_INVOKABLE bool retranslate();
@@ -403,6 +404,8 @@ public:
     bool clipboardReceiveFiles;
     // Send files dropped onto the stream window to the host (needs host file_upload).
     bool clipboardDropFiles;
+    // Copy/paste files with the host (copy-then-paste, up to 512 MB per copy).
+    bool clipboardSyncFiles;
     RendererSelection rendererSelection;
 
 signals:
@@ -481,6 +484,7 @@ signals:
     void clipboardSyncImagesChanged();
     void clipboardReceiveFilesChanged();
     void clipboardDropFilesChanged();
+    void clipboardSyncFilesChanged();
     void rendererSelectionChanged();
 
 private:

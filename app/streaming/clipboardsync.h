@@ -11,6 +11,7 @@
 #include <QSslKey>
 #include <QString>
 #include <QStringList>
+#include <QUrl>
 #include <cstdint>
 #include <functional>
 
@@ -37,6 +38,8 @@ struct ClipboardSyncPolicy
     bool text = true;
     bool images = true;
     bool fileOffers = true;
+    // File copy/paste with the host (copy-then-paste); opt-in.
+    bool files = false;
 };
 
 // ClipboardSync owns the local clipboard state inside the clipboard helper
@@ -161,6 +164,14 @@ public:
     // Emits a KIND_FILE_LIST frame (see FileUploader::fileListReady).
     void sendFileList(const QByteArray& payload);
 
+    // Bumped by every local clipboard change and inbound apply.
+    quint64 clipboardRevision() const { return m_Revision; }
+
+    // Puts files received from the host on the local clipboard unless the
+    // clipboard changed since expectedRevision (a newer copy wins). The list
+    // is then not reported back as a local copy.
+    bool applyLocalFiles(const QList<QUrl>& urls, quint64 expectedRevision);
+
 signals:
     // Emitted when local clipboard changes need to be sent to the host. The
     // owner decides how to deliver the frame, which lets the clipboard engine
@@ -170,6 +181,13 @@ signals:
     // A KIND_FILE_OFFER payload arrived and file offers are enabled. It never
     // touches the clipboard or its echo state.
     void fileOfferReceived(QByteArray payload);
+
+    // The user copied local files (policy.files). Paths are absolute.
+    void localFilesCopied(QStringList paths);
+
+    // A host FILE_LIST (kind 5) arrived and policy.files is on. revision is
+    // the clipboard revision at arrival, for applyLocalFiles().
+    void fileListReceived(QByteArray payload, quint64 revision);
 
 private slots:
 #ifdef Q_OS_MACOS
@@ -204,6 +222,9 @@ private:
         bool havePng = false;
         QTimer* timer = nullptr;
     };
+
+    // Reports a pure local file clipboard (policy.files); false if none.
+    bool reportLocalFiles(const QMimeData* mime);
 
     bool encodeFrame(uint8_t kind, quint32 token, const QByteArray& payload, QByteArray& outFrame) const;
     bool decodeFrame(const QByteArray& frame,
@@ -265,6 +286,8 @@ private:
     bool m_HaveClipboardSnapshot = false;
     uint64_t m_LastTextHash = 0;
     uint64_t m_LastImageHash = 0;
+    // Sorted local paths of the file list we last placed (echo suppression).
+    QStringList m_OwnFilePaths;
     quint64 m_Revision = 0;
     quint32 m_CurrentToken = 0;
     quint32 m_OutgoingToken = 0;

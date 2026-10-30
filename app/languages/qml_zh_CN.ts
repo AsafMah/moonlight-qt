@@ -3075,6 +3075,14 @@
         <translation>拖放文件到串流画面</translation>
     </message>
     <message>
+        <source>Files (copy and paste)</source>
+        <translation>文件（复制和粘贴）</translation>
+    </message>
+    <message>
+        <source>Copy files on one side and paste them on the other. Files are transferred when you copy (up to 512 MB), then pasted from a copy. The host must allow client-to-host file uploads.</source>
+        <translation>在一端复制文件，在另一端粘贴。文件在复制时即开始传输（最多 512 MB），粘贴的是传输后的副本。主机需允许客户端上传文件。</translation>
+    </message>
+    <message>
         <source>Drag files or folders onto the stream window to send them to the host, which puts them on its clipboard. The host must allow client-to-host file uploads.</source>
         <translation>将文件或文件夹拖到串流窗口即可发送到主机，主机会将其放入剪贴板。主机需允许客户端上传文件。</translation>
     </message>
@@ -3636,6 +3644,16 @@
     <message>
         <source>Sending files stopped because the clipboard helper restarted.</source>
         <translation>剪贴板助手已重启，文件发送已中止。</translation>
+    </message>
+    <message numerus="yes">
+        <source>Copied %n file(s) from the host. Paste them with Ctrl+V.</source>
+        <translation>
+            <numerusform>已从主机复制 %n 个文件，可用 Ctrl+V 粘贴。</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Couldn&apos;t copy files from the host: %1</source>
+        <translation>无法从主机复制文件：%1</translation>
     </message>
     <message>
         <source>%1 at %2 FPS</source>

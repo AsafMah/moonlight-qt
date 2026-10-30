@@ -489,5 +489,54 @@ bool runFileUploadTests(QTextStream& err)
         ok &= check(rec.failures.size() == 1, "upload without host connection fails visibly", err);
     }
 
+    {
+        QTemporaryDir dir;
+        writeFile(dir.filePath("a.bin"), "0123456789");
+        writeFile(dir.filePath("b.bin"), "0123456789");
+        host.requests.clear();
+        host.stallPuts = true;
+        FileUploader uploader(context);
+        uploader.setChunkBytes(4);
+        Recorder rec;
+        QStringList superseded;
+        rec.attach(uploader);
+        QObject::connect(&uploader, &FileUploader::superseded,
+                         [&](QString id) { superseded.append(id); });
+        auto batches = [&] {
+            int n = 0;
+            for (const auto& r : host.requests)
+                n += r.method == "POST" && r.path.endsWith("/batches");
+            return n;
+        };
+        auto puts = [&] {
+            int n = 0;
+            for (const auto& r : host.requests)
+                n += r.method == "PUT";
+            return n;
+        };
+        UploadRequest copyA{ { dir.filePath("a.bin") }, QStringLiteral("clipboard") };
+        UploadRequest copyB{ { dir.filePath("b.bin") }, QStringLiteral("clipboard") };
+        uploader.start(copyA);
+        ok &= check(waitFor([&] { return puts() == 1; }), "first copy upload running", err);
+        uploader.start(copyB);
+        ok &= check(superseded.size() == 1 && rec.failures.isEmpty() && uploader.isBusy(),
+                    "a newer copy silently replaces a running copy upload", err);
+        ok &= check(waitFor([&] { return batches() == 2 && puts() == 2; }),
+                    "the newer copy uploads", err);
+
+        uploader.cancel();
+        rec.failures.clear();
+        host.requests.clear();
+        uploader.start({ { dir.filePath("a.bin") } });
+        ok &= check(waitFor([&] { return puts() == 1; }), "drop upload running", err);
+        uploader.start(copyB);
+        ok &= check(rec.failures.isEmpty() && batches() == 1, "a copy during a drop waits", err);
+        uploader.cancel();
+        ok &= check(waitFor([&] { return batches() == 2; }),
+                    "the waiting copy starts after the drop ends", err);
+        uploader.cancel();
+        host.stallPuts = false;
+    }
+
     return ok;
 }

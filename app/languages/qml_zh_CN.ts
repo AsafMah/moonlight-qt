@@ -1258,6 +1258,18 @@
         <source>Low latency</source>
         <translation>低延迟</translation>
     </message>
+    <message>
+        <source>Smooth VRR</source>
+        <translation>平滑 VRR</translation>
+    </message>
+    <message>
+        <source>Shows each frame at the pace the host captured it instead of as soon as it arrives, hiding network jitter. Adds a few milliseconds of latency, more on unstable connections.</source>
+        <translation>按主机采集画面的节奏显示每一帧，而不是一到就显示，从而掩盖网络抖动。会增加几毫秒延迟，网络不稳定时增加更多。</translation>
+    </message>
+    <message>
+        <source>Turn on variable refresh rate to use Smooth VRR.</source>
+        <translation>开启可变刷新率后才能使用平滑 VRR。</translation>
+    </message>
 </context>
 <context>
     <name>EcosystemPlatformCatalog</name>

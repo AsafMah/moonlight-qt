@@ -405,7 +405,7 @@ bool Pacer::tryStartNonaryVrr(SDL_Window* window, int vrrLatencyMode, int vrrDis
 
 bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, bool enableVrr,
                        StreamingPreferences::VrrImplementation vrrImplementation,
-                       int vrrLatencyMode, int vrrDisplayRefreshHz)
+                       int vrrLatencyMode, int vrrDisplayRefreshHz, bool smoothVrr)
 {
 #ifdef HAS_QT_SDL_WAYLAND_BRIDGE
     m_Window = window;
@@ -483,8 +483,10 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, b
         if (m_VsyncSource == nullptr && m_VsyncRenderer->isRenderThreadSupported()) {
             m_VrrLimiter =
                 VrrPolicy::FrameLimiter(VrrPolicy::frameCapFps(m_DisplayFps), m_DisplayFps);
+            m_SmoothVrr = smoothVrr;
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "VRR mode: presenting on arrival, capped at %d FPS for a %d Hz display",
+                        "VRR mode: presenting %s, capped at %d FPS for a %d Hz display",
+                        m_SmoothVrr ? "on the sender's schedule (Smooth)" : "on arrival",
                         VrrPolicy::frameCapFps(m_DisplayFps), m_DisplayFps);
         } else {
             // Never block the main thread to space out presents
@@ -608,8 +610,9 @@ void Pacer::renderFrame(AVFrame* frame)
             renderTiming.presentUs);
     }
 
-    // Catch up if we're several frames ahead
-    while (m_RenderQueue.count() > frameDropTarget) {
+    // Catch up if we're several frames ahead. Smooth VRR keeps frames queued
+    // until their scheduled time on purpose and drops late ones itself.
+    while (!m_SmoothVrr && m_RenderQueue.count() > frameDropTarget) {
         AVFrame* frame = m_RenderQueue.dequeue();
 
         // Drop the lock while we call av_frame_free()
@@ -694,6 +697,17 @@ void Pacer::updateRenderQueueHistoryLocked()
 // Called on the render thread with m_FrameQueueLock held and a frame queued.
 // In VRR mode, holds that frame until the present-rate cap allows it, then
 // drops queued frames that newer ones have made stale.
+// When Smooth mode presents frame, or 0 to present it now (unknown sender
+// timestamp or schedule)
+uint64_t Pacer::playoutTargetUs(const AVFrame* frame) const
+{
+    if (frame->pts <= 0) {
+        return 0;
+    }
+    // pts is the frame's RTP timestamp (90 kHz)
+    return m_PlayoutClock.targetUs(static_cast<uint64_t>(frame->pts) * 100 / 9);
+}
+
 void Pacer::waitForVrrPresentSlot()
 {
     if (!m_VrrLimiter.isEnabled()) {
@@ -701,7 +715,11 @@ void Pacer::waitForVrrPresentSlot()
     }
 
     const uint64_t readyUs = LiGetMicroseconds();
-    const uint64_t slotUs = m_VrrLimiter.presentSlotUs(readyUs);
+    uint64_t slotUs = m_VrrLimiter.presentSlotUs(readyUs);
+    if (m_SmoothVrr) {
+        // Not before the frame's place on the sender's schedule
+        slotUs = (std::max)(slotUs, playoutTargetUs(m_RenderQueue.head()));
+    }
     uint64_t nowUs;
     while ((nowUs = LiGetMicroseconds()) < slotUs && !m_Stopping) {
         // New frames are only checked for staleness below, so they need not wake us
@@ -710,8 +728,21 @@ void Pacer::waitForVrrPresentSlot()
         m_FrameQueueLock.lock();
     }
 
+    if (m_SmoothVrr) {
+        // A frame is stale once the next one is already due
+        while (m_RenderQueue.count() > 1) {
+            const uint64_t nextTargetUs = playoutTargetUs(m_RenderQueue.at(1));
+            if (nextTargetUs == 0 || nextTargetUs > nowUs) {
+                break;
+            }
+            AVFrame* frame = m_RenderQueue.dequeue();
+            m_Stats->recordDrop();
+            av_frame_free(&frame);
+        }
+    }
+
     // pkt_dts is when the frame was decoded, so the age excludes decode time
-    while (m_RenderQueue.count() > 1 &&
+    while (!m_SmoothVrr && m_RenderQueue.count() > 1 &&
            VrrPolicy::isFrameStale(nowUs - static_cast<uint64_t>(m_RenderQueue.head()->pkt_dts),
                                    nowUs - readyUs, m_RenderQueue.count(),
                                    m_SourceCadence.periodUs(), m_VrrLimiter.minIntervalUs())) {
@@ -742,7 +773,11 @@ void Pacer::submitFrame(AVFrame* frame)
     m_FrameQueueLock.lock();
     if (m_VrrLimiter.isEnabled() && frame->pts > 0) {
         // pts is the frame's RTP timestamp (90 kHz)
-        m_SourceCadence.addFrame(static_cast<uint64_t>(frame->pts) * 100 / 9);
+        const uint64_t sourceUs = static_cast<uint64_t>(frame->pts) * 100 / 9;
+        m_SourceCadence.addFrame(sourceUs);
+        if (m_SmoothVrr) {
+            m_PlayoutClock.observe(sourceUs, static_cast<uint64_t>(frame->pkt_dts));
+        }
     }
     if (m_VsyncSource != nullptr) {
         dropFrameForEnqueue(m_PacingQueue);

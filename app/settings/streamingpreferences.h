@@ -251,6 +251,7 @@ public:
     Q_PROPERTY(VrrImplementation vrrImplementation MEMBER vrrImplementation NOTIFY
                    vrrImplementationChanged)
     Q_PROPERTY(VrrLatencyMode vrrLatencyMode MEMBER vrrLatencyMode NOTIFY vrrLatencyModeChanged)
+    Q_PROPERTY(bool vrrSmooth MEMBER vrrSmooth NOTIFY vrrSmoothChanged)
     Q_PROPERTY(bool videoEnhancement MEMBER videoEnhancement NOTIFY videoEnhancementChanged)
     Q_PROPERTY(bool streamResolutionScale MEMBER streamResolutionScale NOTIFY streamResolutionScaleChanged)
     Q_PROPERTY(int streamResolutionScaleRatio MEMBER streamResolutionScaleRatio NOTIFY streamResolutionScaleRatioChanged)
@@ -342,6 +343,9 @@ public:
     bool enableVrr;
     VrrImplementation vrrImplementation;
     VrrLatencyMode vrrLatencyMode;
+    // VRR Smooth: present each frame at its sender timestamp plus a learned
+    // playout delay instead of on arrival (less jitter, more latency)
+    bool vrrSmooth;
     bool videoEnhancement;
     bool streamResolutionScale;
     int streamResolutionScaleRatio;
@@ -437,6 +441,7 @@ signals:
     void enableVrrChanged();
     void vrrImplementationChanged();
     void vrrLatencyModeChanged();
+    void vrrSmoothChanged();
     void videoEnhancementChanged();
     void streamResolutionScaleChanged();
     void streamResolutionScaleRatioChanged();

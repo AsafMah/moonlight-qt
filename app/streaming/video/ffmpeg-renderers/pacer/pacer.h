@@ -81,7 +81,7 @@ public:
                     StreamingPreferences::VrrImplementation vrrImplementation =
                         StreamingPreferences::VRR_IMPL_FORK,
                     int vrrLatencyMode = StreamingPreferences::VRR_LATENCY_BALANCED,
-                    int vrrDisplayRefreshHz = 0);
+                    int vrrDisplayRefreshHz = 0, bool smoothVrr = false);
 
     void signalVsync();
 
@@ -101,6 +101,7 @@ private:
     void dropFrameForEnqueue(QQueue<AVFrame*>& queue);
 
     void waitForVrrPresentSlot();
+    uint64_t playoutTargetUs(const AVFrame* frame) const;
     void updateRenderQueueHistoryLocked();
 
 #ifdef HAS_QT_SDL_WAYLAND_BRIDGE
@@ -129,6 +130,9 @@ private:
     // Present-rate cap for VRR mode (disabled otherwise)
     VrrPolicy::FrameLimiter m_VrrLimiter;
     VrrPolicy::SourceCadence m_SourceCadence;
+    // VRR Smooth mode: frames are presented on the sender's schedule
+    bool m_SmoothVrr = false;
+    VrrPolicy::PlayoutClock m_PlayoutClock;
     PreciseSleeper m_PresentSleeper;
     std::unique_ptr<PresentStallDetector> m_PresentStallDetector;
     uint64_t m_DrainSkippedFrames = 0;

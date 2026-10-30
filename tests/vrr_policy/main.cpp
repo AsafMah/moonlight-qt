@@ -378,16 +378,21 @@ struct VrrLoopResult
     uint64_t averageAgeUs;
     uint64_t p99AgeUs;
     uint64_t minGapUs;
+    // Share of consecutive present gaps that differ by more than 2 ms, beyond
+    // what the host's own capture gaps explain: the stutter the client adds
+    double addedJerkPercent;
 };
 
 using WakeModel = uint64_t (*)(uint64_t nowUs, uint64_t deadlineUs, int n);
 
-static VrrLoopResult simulateVrrLoop(const std::vector<Arrival>& arrivals, WakeModel wakeUs)
+static VrrLoopResult simulateVrrLoop(const std::vector<Arrival>& arrivals, WakeModel wakeUs,
+                                     bool smooth = false)
 {
     const int displayHz = 180;
     const uint64_t renderUs = 250;
     VrrPolicy::FrameLimiter limiter(VrrPolicy::frameCapFps(displayHz), displayHz);
     VrrPolicy::SourceCadence cadence;
+    VrrPolicy::PlayoutClock playout;
     std::deque<size_t> queue;
     std::deque<int> queueHistory;
     size_t next = 0;
@@ -399,6 +404,7 @@ static VrrLoopResult simulateVrrLoop(const std::vector<Arrival>& arrivals, WakeM
                 drops++;
             }
             cadence.addFrame(arrivals[next].sourceUs);
+            playout.observe(arrivals[next].sourceUs, arrivals[next].arrivalUs);
             queue.push_back(next++);
         }
     };
@@ -406,6 +412,9 @@ static VrrLoopResult simulateVrrLoop(const std::vector<Arrival>& arrivals, WakeM
     std::vector<uint64_t> ages;
     uint64_t minGapUs = UINT64_MAX;
     uint64_t lastPresentUs = 0;
+    int64_t lastSpacingErrorUs = 0;
+    int jerks = 0, addedJerks = 0;
+    size_t lastFrame = 0;
     uint64_t now = arrivals.front().arrivalUs;
     int sleeps = 0;
     while (next < arrivals.size() || !queue.empty()) {
@@ -416,26 +425,47 @@ static VrrLoopResult simulateVrrLoop(const std::vector<Arrival>& arrivals, WakeM
         }
 
         const uint64_t readyUs = now;
-        const uint64_t slotUs = limiter.presentSlotUs(now);
+        uint64_t slotUs = limiter.presentSlotUs(now);
+        if (smooth) {
+            slotUs = std::max(slotUs, playout.targetUs(arrivals[queue.front()].sourceUs));
+        }
         while (now < slotUs) {
             now = wakeUs(now, slotUs, sleeps++);
             receiveUntil(now);
         }
-        while (queue.size() > 1 &&
-               VrrPolicy::isFrameStale(now - arrivals[queue.front()].arrivalUs, now - readyUs,
-                                       static_cast<int>(queue.size()), cadence.periodUs(),
-                                       limiter.minIntervalUs())) {
-            queue.pop_front();
-            drops++;
+        if (smooth) {
+            while (queue.size() > 1 && playout.targetUs(arrivals[queue[1]].sourceUs) != 0 &&
+                   playout.targetUs(arrivals[queue[1]].sourceUs) <= now) {
+                queue.pop_front();
+                drops++;
+            }
+        } else {
+            while (queue.size() > 1 &&
+                   VrrPolicy::isFrameStale(now - arrivals[queue.front()].arrivalUs, now - readyUs,
+                                           static_cast<int>(queue.size()), cadence.periodUs(),
+                                           limiter.minIntervalUs())) {
+                queue.pop_front();
+                drops++;
+            }
         }
 
-        ages.push_back(now - arrivals[queue.front()].arrivalUs);
+        const size_t frame = queue.front();
+        ages.push_back(now - arrivals[frame].arrivalUs);
         queue.pop_front();
         limiter.onPresented(slotUs, now);
-        if (!ages.empty() && lastPresentUs != 0) {
+        if (lastPresentUs != 0) {
             minGapUs = std::min(minGapUs, now - lastPresentUs);
+            // How far this gap is from the host's capture gap
+            const int64_t spacingErrorUs =
+                static_cast<int64_t>(now - lastPresentUs) -
+                static_cast<int64_t>(arrivals[frame].sourceUs - arrivals[lastFrame].sourceUs);
+            if (jerks++ > 0) {
+                addedJerks += std::llabs(spacingErrorUs - lastSpacingErrorUs) > 2000;
+            }
+            lastSpacingErrorUs = spacingErrorUs;
         }
         lastPresentUs = now;
+        lastFrame = frame;
         now += renderUs;
         receiveUntil(now);
 
@@ -451,7 +481,8 @@ static VrrLoopResult simulateVrrLoop(const std::vector<Arrival>& arrivals, WakeM
             queueHistory.pop_front();
         }
         queueHistory.push_back(static_cast<int>(queue.size()));
-        while (static_cast<int>(queue.size()) > dropTarget) {
+        // (Smooth keeps frames queued until their time and skips this)
+        while (!smooth && static_cast<int>(queue.size()) > dropTarget) {
             queue.pop_front();
             drops++;
         }
@@ -464,17 +495,22 @@ static VrrLoopResult simulateVrrLoop(const std::vector<Arrival>& arrivals, WakeM
     }
     std::vector<uint64_t> sorted = ages;
     std::sort(sorted.begin(), sorted.end());
-    return { ages.size() / seconds, 100.0 * drops / arrivals.size(), totalAgeUs / ages.size(),
-             sorted[sorted.size() * 99 / 100], minGapUs };
+    return { ages.size() / seconds,
+             100.0 * drops / arrivals.size(),
+             totalAgeUs / ages.size(),
+             sorted[sorted.size() * 99 / 100],
+             minGapUs,
+             100.0 * addedJerks / std::max(1, jerks - 1) };
 }
 
 static void printLoop(const char* name, const VrrLoopResult& r)
 {
-    std::printf(
-        "%-34s %6.1f FPS presented, %5.1f%% dropped, frame age avg %5llu us, "
-        "p99 %5llu us, shortest gap %llu us\n",
-        name, r.presentedFps, r.dropPercent, static_cast<unsigned long long>(r.averageAgeUs),
-        static_cast<unsigned long long>(r.p99AgeUs), static_cast<unsigned long long>(r.minGapUs));
+    std::printf("%-40s %6.1f FPS presented, %5.1f%% dropped, frame age avg %5llu us, "
+                "p99 %5llu us, shortest gap %llu us, added jerk %4.1f%%\n",
+                name, r.presentedFps, r.dropPercent,
+                static_cast<unsigned long long>(r.averageAgeUs),
+                static_cast<unsigned long long>(r.p99AgeUs),
+                static_cast<unsigned long long>(r.minGapUs), r.addedJerkPercent);
 }
 
 // Sleep() on Windows with a 1 ms timer period: the wait is rounded up to whole
@@ -555,6 +591,70 @@ static void testLimiterLoop()
     CHECK(gridNearCapResult.minGapUs >= displayRefreshUs);
 }
 
+static void testPlayoutClock()
+{
+    VrrPolicy::PlayoutClock clock;
+    CHECK(clock.targetUs(1000000) == 0);
+
+    // Host clock 3 s ahead of the client; frames take 9-11 ms to arrive
+    uint64_t source = 3000000;
+    for (int i = 0; i < 300; i++) {
+        source += 5556;
+        const uint64_t lateness = 9000 + (i % 10) * 200;
+        clock.observe(source, source - 3000000 + lateness);
+    }
+    // The fastest path is 9 ms; the 95th percentile is 1.8 ms later than that
+    CHECK(clock.delayUs() >= 2000 && clock.delayUs() <= 2600);
+    CHECK(clock.targetUs(source) == source - 3000000 + 9000 + clock.delayUs());
+
+    // A sender clock that restarts (RTP wrap) starts learning again
+    clock.observe(1000, 5000000);
+    CHECK(clock.targetUs(1000) == 0);
+}
+
+static void testSmoothLoop()
+{
+    const uint64_t displayRefreshUs = VrrPolicy::minPresentIntervalUs(180);
+    const uint64_t durationUs = 10000000;
+
+    // A game at 130 FPS on a 1000 Hz host: presenting on arrival passes the
+    // network jitter to the screen; Smooth replays the host's timing for a
+    // couple of milliseconds more latency
+    const auto jittery = generateArrivals({ 1000, 130, 0, false }, durationUs);
+    const VrrLoopResult onArrival = simulateVrrLoop(jittery, highResolutionSleep);
+    const VrrLoopResult smooth = simulateVrrLoop(jittery, highResolutionSleep, true);
+    printLoop("130 FPS, 1000 Hz host", onArrival);
+    printLoop("130 FPS, 1000 Hz host, Smooth", smooth);
+    CHECK(smooth.addedJerkPercent * 4 < onArrival.addedJerkPercent);
+    CHECK(smooth.dropPercent < 0.5);
+    CHECK(smooth.averageAgeUs < onArrival.averageAgeUs + 3000);
+    CHECK(smooth.minGapUs >= displayRefreshUs);
+
+    // Network stalls: late frames are shown on arrival and the schedule
+    // catches up by dropping frames whose successor is already due
+    const auto stalls = generateArrivals({ 1000, 130, 0, true }, durationUs);
+    const VrrLoopResult stallSmooth = simulateVrrLoop(stalls, highResolutionSleep, true);
+    printLoop("130 FPS, 1000 Hz host, stalls, Smooth", stallSmooth);
+    CHECK(stallSmooth.dropPercent < 2.0);
+    CHECK(stallSmooth.averageAgeUs < 4000);
+    CHECK(stallSmooth.minGapUs >= displayRefreshUs);
+
+    // Paired delivery: Smooth spaces the pair out by sender time
+    const auto paired = generateArrivals({ 180, 130, 0.3, false }, durationUs);
+    const VrrLoopResult pairedSmooth = simulateVrrLoop(paired, highResolutionSleep, true);
+    printLoop("130 FPS, 30% paired, Smooth", pairedSmooth);
+    CHECK(pairedSmooth.dropPercent < 0.5);
+    CHECK(pairedSmooth.minGapUs >= displayRefreshUs);
+
+    // Content above the cap: the cap still decides and the delay stays small
+    const auto atCap = generateArrivals({ 180, 200, 0, false }, durationUs);
+    const VrrLoopResult atCapSmooth = simulateVrrLoop(atCap, highResolutionSleep, true);
+    printLoop("180 FPS content, Smooth", atCapSmooth);
+    CHECK(atCapSmooth.presentedFps >= 165);
+    CHECK(atCapSmooth.averageAgeUs < 5000);
+    CHECK(atCapSmooth.minGapUs >= displayRefreshUs);
+}
+
 int main()
 {
     testFrameCap();
@@ -565,6 +665,8 @@ int main()
     testSourceCadence();
     testFrameStale();
     testLimiterLoop();
+    testPlayoutClock();
+    testSmoothLoop();
 
     if (s_Failures != 0) {
         std::fprintf(stderr, "%d VRR policy check(s) failed\n", s_Failures);

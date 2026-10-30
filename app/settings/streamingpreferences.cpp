@@ -42,6 +42,7 @@
 #define SER_VRR "vrr"
 #define SER_VRRIMPLEMENTATION "vrrimplementation"
 #define SER_VRRLATENCYMODE "vrrlatencymode"
+#define SER_VRRSMOOTH "vrrsmooth"
 #define SER_VIDEOENHANCEMENT "videoenhancement"
 #define SER_STREAMRESOLUTIONSCALE "streamresolutionscale"
 #define SER_STREAMRESOLUTIONSCALERATIO "streamresolutionscaleratio"
@@ -294,6 +295,7 @@ void StreamingPreferences::reload()
         qBound(static_cast<int>(VRR_LATENCY_SMOOTH),
                settings.value(SER_VRRLATENCYMODE, VRR_LATENCY_BALANCED).toInt(),
                static_cast<int>(VRR_LATENCY_LOW)));
+    vrrSmooth = settings.value(SER_VRRSMOOTH, false).toBool();
     videoEnhancement = settings.value(SER_VIDEOENHANCEMENT, false).toBool();
     enableMicrophone = settings.value(SER_MICROPHONE, false).toBool();
     overlayMenuPosition = loadOverlayMenuPlacement(settings);
@@ -734,6 +736,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_VRR, enableVrr);
     settings.setValue(SER_VRRIMPLEMENTATION, vrrImplementation);
     settings.setValue(SER_VRRLATENCYMODE, vrrLatencyMode);
+    settings.setValue(SER_VRRSMOOTH, vrrSmooth);
     settings.setValue(SER_VIDEOENHANCEMENT, videoEnhancement);
     settings.setValue(SER_STREAMRESOLUTIONSCALE, streamResolutionScale);
     settings.setValue(SER_STREAMRESOLUTIONSCALERATIO, streamResolutionScaleRatio);

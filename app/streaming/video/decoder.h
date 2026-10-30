@@ -59,6 +59,9 @@ typedef struct _DECODER_PARAMETERS {
     int vrrLatencyMode;
     // Nonary pacer: refresh rate snapshotted by the session, 0 if unknown
     int vrrDisplayRefreshHz;
+    // VRR Smooth mode: present each frame at its sender timestamp plus a
+    // learned playout delay instead of on arrival
+    bool smoothVrr = false;
     bool enableFramePacing;
     bool enableVideoEnhancement;
     bool ignoreAspectRatio;

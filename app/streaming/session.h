@@ -372,7 +372,7 @@ private:
                               StreamingPreferences::VrrImplementation vrrImplementation =
                                   StreamingPreferences::VRR_IMPL_FORK,
                               int vrrLatencyMode = StreamingPreferences::VRR_LATENCY_BALANCED,
-                              int vrrDisplayRefreshHz = 0);
+                              int vrrDisplayRefreshHz = 0, bool smoothVrr = false);
 
     static
     void clStageStarting(int stage);

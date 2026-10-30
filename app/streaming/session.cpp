@@ -1047,7 +1047,7 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                             bool enableVrr, bool enableFramePacing, bool enableVideoEnhancement,
                             bool ignoreAspectRatio, bool testOnly, IVideoDecoder*& chosenDecoder,
                             StreamingPreferences::VrrImplementation vrrImplementation,
-                            int vrrLatencyMode, int vrrDisplayRefreshHz)
+                            int vrrLatencyMode, int vrrDisplayRefreshHz, bool smoothVrr)
 {
     DECODER_PARAMETERS params;
 
@@ -1072,6 +1072,7 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     params.vrrImplementation = vrrImplementation;
     params.vrrLatencyMode = vrrLatencyMode;
     params.vrrDisplayRefreshHz = vrrDisplayRefreshHz;
+    params.smoothVrr = params.enableVrr && smoothVrr;
     params.enableFramePacing = enableFramePacing;
     // Preserve the saved preference while making the effective decoder state
     // match the UI: video enhancement is unavailable with software decoding.
@@ -6287,7 +6288,7 @@ void Session::exec()
                         m_Preferences->ignoreAspectRatio, false, s_ActiveSession->m_VideoDecoder,
                         sync.nonaryVrr ? StreamingPreferences::VRR_IMPL_NONARY
                                        : StreamingPreferences::VRR_IMPL_FORK,
-                        m_Preferences->vrrLatencyMode, displayHz)) {
+                        m_Preferences->vrrLatencyMode, displayHz, m_Preferences->vrrSmooth)) {
                     SDL_UnlockMutex(m_DecoderLock);
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                                  "Failed to recreate decoder after reset");

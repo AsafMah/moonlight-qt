@@ -188,6 +188,19 @@ Column {
                 ListElement { text: qsTr("Low latency"); val: StreamingPreferences.VRR_LATENCY_LOW }
             }
         }
+
+        // VRR 平滑：按主机发送时间戳 + 自适应播放延迟呈现，而不是一到就呈现。
+        // 抖动更小，代价是多几毫秒延迟；只在 VRR 开着时可用，默认关。
+        ToggleRow {
+            settingsSearchKeywords: "vrr smooth jitter playout buffer stutter latency"
+            title: qsTr("Smooth VRR")
+            description: StreamingPreferences.enableVrr
+                         ? qsTr("Shows each frame at the pace the host captured it instead of as soon as it arrives, hiding network jitter. Adds a few milliseconds of latency, more on unstable connections.")
+                         : qsTr("Turn on variable refresh rate to use Smooth VRR.")
+            controlEnabled: StreamingPreferences.enableVrr
+            checked: StreamingPreferences.vrrSmooth && StreamingPreferences.enableVrr
+            onToggled: function(value) { StreamingPreferences.vrrSmooth = value }
+        }
     }
 
     // ================= 性能浮层 =================

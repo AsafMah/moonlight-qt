@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 // Variable refresh rate (G-Sync / FreeSync) presentation policy.
@@ -164,6 +165,71 @@ constexpr bool isFrameStale(uint64_t ageUs, uint64_t waitedUs, int queuedFrames,
     const bool drainsQuickly = backlogUs <= 8 * (periodUs - minIntervalUs);
     return ageUs > horizonUs || backlogUs > periodUs || !drainsQuickly;
 }
+
+// Smooth mode: instead of presenting each frame on arrival, present it at
+// its sender (RTP) timestamp plus a playout delay, so network jitter doesn't
+// reach the screen. The delay is learned: the smallest arrival - source
+// offset over the window is the fastest path (it also absorbs the clock
+// difference between host and client), and the delay covers the 95th
+// percentile of how much later than that frames arrive, plus a margin.
+class PlayoutClock
+{
+public:
+    // A frame captured at sourceUs (sender clock) was decoded at arrivalUs
+    void observe(uint64_t sourceUs, uint64_t arrivalUs)
+    {
+        // Restart on a sender timestamp that goes backwards (wrap) or jumps
+        if (m_Count > 0 && (sourceUs <= m_LastSourceUs || sourceUs - m_LastSourceUs > 1000000)) {
+            m_Count = 0;
+        }
+        m_LastSourceUs = sourceUs;
+        m_OffsetUs[m_Next] = static_cast<int64_t>(arrivalUs) - static_cast<int64_t>(sourceUs);
+        m_Next = (m_Next + 1) % Window;
+        if (m_Count < Window) {
+            m_Count++;
+        }
+
+        int64_t lateness[Window];
+        int64_t fastest = m_OffsetUs[(m_Next + Window - 1) % Window];
+        for (int i = 1; i < m_Count; i++) {
+            fastest = (std::min)(fastest, m_OffsetUs[(m_Next + Window - 1 - i) % Window]);
+        }
+        for (int i = 0; i < m_Count; i++) {
+            lateness[i] = m_OffsetUs[(m_Next + Window - 1 - i) % Window] - fastest;
+        }
+        const int p95 = m_Count * 95 / 100;
+        std::nth_element(lateness, lateness + p95, lateness + m_Count);
+        m_FastestOffsetUs = fastest;
+        m_DelayUs =
+            (std::min<uint64_t>)(static_cast<uint64_t>(lateness[p95]) + MarginUs, MaxDelayUs);
+    }
+
+    // When to present the frame captured at sourceUs; 0 while unknown
+    uint64_t targetUs(uint64_t sourceUs) const
+    {
+        if (m_Count < MinSamples) {
+            return 0;
+        }
+        const int64_t target =
+            static_cast<int64_t>(sourceUs) + m_FastestOffsetUs + static_cast<int64_t>(m_DelayUs);
+        return target > 0 ? static_cast<uint64_t>(target) : 0;
+    }
+
+    uint64_t delayUs() const { return m_Count < MinSamples ? 0 : m_DelayUs; }
+
+private:
+    // About 1.4 s at 180 FPS
+    static constexpr int Window = 256;
+    static constexpr int MinSamples = 16;
+    static constexpr uint64_t MarginUs = 500;
+    static constexpr uint64_t MaxDelayUs = 20000;
+    int64_t m_OffsetUs[Window] = {};
+    int m_Next = 0;
+    int m_Count = 0;
+    uint64_t m_LastSourceUs = 0;
+    int64_t m_FastestOffsetUs = 0;
+    uint64_t m_DelayUs = 0;
+};
 
 // Spaces presents to at most capFps per second, and never closer together
 // than one refresh of a displayHz display. Each present gets a slot on a fixed

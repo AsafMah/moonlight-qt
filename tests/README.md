@@ -65,6 +65,13 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 
 ## 约定
 
+The VRR mode matrix also compiles Session's production decoder-parameter setup:
+Smooth is opt-in and only applies to the fork pacer, never Nonary, its fallback,
+VRR-off or decoder probes. `settings_search/tst_vrr_modes.qml` instantiates the
+actual Display settings toggle with a fake preference backend and checks that
+Nonary/VRR-off disable it without overwriting its saved value. Run QML search
+tests with `QML_XHR_ALLOW_FILE_READ=1` so the fixture can read that production row.
+
 `derive_version` round-trips the CI-frozen artifact string (including the r25/r33
 regression fixtures) back to its numeric version. Development EXE, MSI and setup
 versions retain the commit count as `major.minor.patch.count`; exact tags remain

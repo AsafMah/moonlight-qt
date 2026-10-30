@@ -192,13 +192,16 @@ Column {
         // VRR 平滑：按主机发送时间戳 + 自适应播放延迟呈现，而不是一到就呈现。
         // 抖动更小，代价是多几毫秒延迟；只在 VRR 开着时可用，默认关。
         ToggleRow {
-            settingsSearchKeywords: "vrr smooth jitter playout buffer stutter latency"
+            settingsSearchKeywords: "vrr smooth jitter playout buffer stutter latency nonary present-rate cap"
             title: qsTr("Smooth VRR")
-            description: StreamingPreferences.enableVrr
-                         ? qsTr("Shows each frame at the pace the host captured it instead of as soon as it arrives, hiding network jitter. Adds a few milliseconds of latency, more on unstable connections.")
-                         : qsTr("Turn on variable refresh rate to use Smooth VRR.")
-            controlEnabled: StreamingPreferences.enableVrr
-            checked: StreamingPreferences.vrrSmooth && StreamingPreferences.enableVrr
+            description: !StreamingPreferences.enableVrr
+                         ? qsTr("Turn on variable refresh rate to use Smooth VRR.")
+                         : StreamingPreferences.vrrImplementation === StreamingPreferences.VRR_IMPL_NONARY
+                           ? qsTr("Only available with the Present-rate cap pacer. Host-timestamp scheduling has its own latency controls.")
+                           : qsTr("Shows each frame at the pace the host captured it instead of as soon as it arrives, hiding network jitter. Adds a few milliseconds of latency, more on unstable connections.")
+            controlEnabled: StreamingPreferences.enableVrr &&
+                            StreamingPreferences.vrrImplementation === StreamingPreferences.VRR_IMPL_FORK
+            checked: StreamingPreferences.vrrSmooth && controlEnabled
             onToggled: function(value) { StreamingPreferences.vrrSmooth = value }
         }
     }

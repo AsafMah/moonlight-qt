@@ -282,6 +282,7 @@ jobs:
         if errorlevel 1 exit /b %ERRORLEVEL%
         rem 设置搜索：排序 + 真实设置组件上的导航/滚动/焦点/高亮/Esc。
         rem mocks 里是 SdlGamepadKeyNavigation 的 QML 替身。
+        set QML_XHR_ALLOW_FILE_READ=1
         qmltestrunner -input tests\settings_search -import tests\settings_search\mocks
         if errorlevel 1 exit /b %ERRORLEVEL%
 

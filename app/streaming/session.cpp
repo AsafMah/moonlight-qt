@@ -1072,7 +1072,8 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     params.vrrImplementation = vrrImplementation;
     params.vrrLatencyMode = vrrLatencyMode;
     params.vrrDisplayRefreshHz = vrrDisplayRefreshHz;
-    params.smoothVrr = params.enableVrr && smoothVrr;
+    params.smoothVrr = VrrPolicy::smoothEnabled(
+        params.enableVrr, smoothVrr, vrrImplementation == StreamingPreferences::VRR_IMPL_NONARY);
     params.enableFramePacing = enableFramePacing;
     // Preserve the saved preference while making the effective decoder state
     // match the UI: video enhancement is unavailable with software decoding.
@@ -6246,6 +6247,8 @@ void Session::exec()
                 const VrrPolicy::SyncDecision sync = VrrPolicy::decide(
                     { m_Preferences->enableVsync, m_Preferences->framePacing,
                       m_Preferences->enableVrr, m_StreamConfig.fps, displayHz, tryNonaryVrr });
+                const bool smoothVrr = VrrPolicy::smoothEnabled(
+                    sync.enableVrr, m_Preferences->vrrSmooth, tryNonaryVrr);
                 if (m_Preferences->enableVsync && !sync.enableVsync && !sync.enableVrr) {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                                 "Disabling V-sync because refresh rate limit exceeded");
@@ -6288,7 +6291,7 @@ void Session::exec()
                         m_Preferences->ignoreAspectRatio, false, s_ActiveSession->m_VideoDecoder,
                         sync.nonaryVrr ? StreamingPreferences::VRR_IMPL_NONARY
                                        : StreamingPreferences::VRR_IMPL_FORK,
-                        m_Preferences->vrrLatencyMode, displayHz, m_Preferences->vrrSmooth)) {
+                        m_Preferences->vrrLatencyMode, displayHz, smoothVrr)) {
                     SDL_UnlockMutex(m_DecoderLock);
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                                  "Failed to recreate decoder after reset");
@@ -6314,7 +6317,8 @@ void Session::exec()
                             m_ActiveVideoFrameRate, forkSync.enableVsync, forkSync.enableVrr,
                             forkSync.enableFramePacing, m_Preferences->videoEnhancement,
                             m_Preferences->ignoreAspectRatio, false,
-                            s_ActiveSession->m_VideoDecoder)) {
+                            s_ActiveSession->m_VideoDecoder, StreamingPreferences::VRR_IMPL_FORK,
+                            m_Preferences->vrrLatencyMode, displayHz, false)) {
                         SDL_UnlockMutex(m_DecoderLock);
                         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                                      "Failed to recreate decoder after reset");

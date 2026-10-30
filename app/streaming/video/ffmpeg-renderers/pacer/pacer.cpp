@@ -483,7 +483,8 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, b
         if (m_VsyncSource == nullptr && m_VsyncRenderer->isRenderThreadSupported()) {
             m_VrrLimiter =
                 VrrPolicy::FrameLimiter(VrrPolicy::frameCapFps(m_DisplayFps), m_DisplayFps);
-            m_SmoothVrr = smoothVrr;
+            m_SmoothVrr = VrrPolicy::smoothEnabled(
+                enableVrr, smoothVrr, vrrImplementation == StreamingPreferences::VRR_IMPL_NONARY);
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "VRR mode: presenting %s, capped at %d FPS for a %d Hz display",
                         m_SmoothVrr ? "on the sender's schedule (Smooth)" : "on arrival",
@@ -694,9 +695,6 @@ void Pacer::updateRenderQueueHistoryLocked()
     m_RenderQueueHistory.enqueue(m_RenderQueue.count());
 }
 
-// Called on the render thread with m_FrameQueueLock held and a frame queued.
-// In VRR mode, holds that frame until the present-rate cap allows it, then
-// drops queued frames that newer ones have made stale.
 // When Smooth mode presents frame, or 0 to present it now (unknown sender
 // timestamp or schedule)
 uint64_t Pacer::playoutTargetUs(const AVFrame* frame) const
@@ -708,6 +706,8 @@ uint64_t Pacer::playoutTargetUs(const AVFrame* frame) const
     return m_PlayoutClock.targetUs(static_cast<uint64_t>(frame->pts) * 100 / 9);
 }
 
+// Called on the render thread with m_FrameQueueLock held and a frame queued.
+// Wait for the cap (and Smooth's playout target), then discard stale frames.
 void Pacer::waitForVrrPresentSlot()
 {
     if (!m_VrrLimiter.isEnabled()) {

@@ -31,6 +31,14 @@
 
 ## 约定
 
+The default VRR pacer remains **Present-rate cap**, presenting on arrival.
+**Smooth VRR** is a separate opt-in for that pacer only; selecting
+**Host-timestamp scheduling (Nonary)** disables it without changing its saved
+value. Nonary uses its own latency controls, including its independent Smooth
+latency preset. If Nonary is unavailable, the session recreates the decoder with
+the ordinary fork/on-arrival policy, not the saved Smooth preference. PyroWave
+does not use the fork's Smooth scheduler.
+
 - **新增顶层模块默认 qmake** 并注册进 `moonlight-qt.pro` 的 SUBDIRS;仅当「上游不存在 + 依赖 CMake-only + 纯新增目录」三条件同时满足才允许 CMake(现例:usb-helper)。
 - 语言标准:C++17 为 app 地板(SteamLink 工具链上限),usb-helper 为 C++23 孤岛,不再引入第三种。
 - 依赖钉值:Linux 源码依赖在 build.yml;Win/Mac 预编译组在 setup-deps(v-tag);升级要与上游对齐(见 upstream-sync.md 的依赖双轨一节)。

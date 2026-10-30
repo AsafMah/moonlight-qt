@@ -14,6 +14,11 @@
 // Everything here is pure so it can be unit tested.
 namespace VrrPolicy {
 
+constexpr bool smoothEnabled(bool enableVrr, bool savedSmooth, bool nonarySelected)
+{
+    return enableVrr && savedSmooth && !nonarySelected;
+}
+
 // The highest present rate that stays safely inside the VRR range of a
 // display running at displayHz: refresh - refresh^2 / 3600, rounded away from
 // the maximum, and at least 3 below it (60 -> 57, 120 -> 116, 144 -> 138,

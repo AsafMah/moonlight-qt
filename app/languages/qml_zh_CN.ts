@@ -1263,6 +1263,10 @@
         <translation>平滑 VRR</translation>
     </message>
     <message>
+        <source>Only available with the Present-rate cap pacer. Host-timestamp scheduling has its own latency controls.</source>
+        <translation>仅适用于“呈现速率上限”节奏器。“按主机时间戳排程”有独立的延迟控制选项。</translation>
+    </message>
+    <message>
         <source>Shows each frame at the pace the host captured it instead of as soon as it arrives, hiding network jitter. Adds a few milliseconds of latency, more on unstable connections.</source>
         <translation>按主机采集画面的节奏显示每一帧，而不是一到就显示，从而掩盖网络抖动。会增加几毫秒延迟，网络不稳定时增加更多。</translation>
     </message>

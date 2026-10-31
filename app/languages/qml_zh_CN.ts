@@ -3174,6 +3174,26 @@
 <context>
     <name>PortableUpdateInstaller</name>
     <message>
+        <source>Finish streaming before downloading and installing an update.</source>
+        <translation>请先结束串流，再下载并安装更新。</translation>
+    </message>
+    <message>
+        <source>Finish streaming before installing an update.</source>
+        <translation>请先结束串流，再安装更新。</translation>
+    </message>
+    <message>
+        <source>Unable to start the update installer.</source>
+        <translation>无法启动更新安装程序。</translation>
+    </message>
+    <message>
+        <source>Unable to launch the update installer.</source>
+        <translation>无法运行更新安装程序。</translation>
+    </message>
+    <message>
+        <source>Waiting for Windows administrator confirmation...</source>
+        <translation>正在等待 Windows 管理员确认...</translation>
+    </message>
+    <message>
         <source>The update URL is invalid.</source>
         <translation>更新链接无效。</translation>
     </message>
@@ -6058,6 +6078,28 @@ Choose another video codec in Settings if this keeps happening.</source>
     <message>
         <source>Vulkan can&apos;t draw to the stream window.</source>
         <translation>Vulkan 无法绘制到串流窗口。</translation>
+    </message>
+</context>
+<context>
+    <name>AutoUpdateChecker</name>
+    <message>
+        <source>No verified update package is available for this installation.</source>
+        <translation>这种安装方式没有经过验证的更新包。</translation>
+    </message>
+</context>
+<context>
+    <name>UpdateConfirmationDialog</name>
+    <message>
+        <source>Download and install update</source>
+        <translation>下载并安装更新</translation>
+    </message>
+    <message>
+        <source>Download version %1 and install it now? Moonlight will restart. Finish any stream before continuing.</source>
+        <translation>现在下载并安装版本 %1？Moonlight 将重新启动。请先结束所有串流。</translation>
+    </message>
+    <message>
+        <source>Download and install</source>
+        <translation>下载并安装</translation>
     </message>
 </context>
 </TS>

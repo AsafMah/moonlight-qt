@@ -5140,4 +5140,49 @@ Choose another video codec in Settings if this keeps happening.</source>
         <translation>Vulkan 無法繪製到串流視窗。</translation>
     </message>
 </context>
+<context>
+    <name>PortableUpdateInstaller</name>
+    <message>
+        <source>Finish streaming before downloading and installing an update.</source>
+        <translation>請先結束串流，再下載並安裝更新。</translation>
+    </message>
+    <message>
+        <source>Finish streaming before installing an update.</source>
+        <translation>請先結束串流，再安裝更新。</translation>
+    </message>
+    <message>
+        <source>Unable to start the update installer.</source>
+        <translation>無法啟動更新安裝程式。</translation>
+    </message>
+    <message>
+        <source>Unable to launch the update installer.</source>
+        <translation>無法執行更新安裝程式。</translation>
+    </message>
+    <message>
+        <source>Waiting for Windows administrator confirmation...</source>
+        <translation>正在等待 Windows 系統管理員確認...</translation>
+    </message>
+</context>
+<context>
+    <name>AutoUpdateChecker</name>
+    <message>
+        <source>No verified update package is available for this installation.</source>
+        <translation>這種安裝方式沒有經過驗證的更新套件。</translation>
+    </message>
+</context>
+<context>
+    <name>UpdateConfirmationDialog</name>
+    <message>
+        <source>Download and install update</source>
+        <translation>下載並安裝更新</translation>
+    </message>
+    <message>
+        <source>Download version %1 and install it now? Moonlight will restart. Finish any stream before continuing.</source>
+        <translation>現在下載並安裝版本 %1？Moonlight 將重新啟動。請先結束所有串流。</translation>
+    </message>
+    <message>
+        <source>Download and install</source>
+        <translation>下載並安裝</translation>
+    </message>
+</context>
 </TS>

@@ -11,6 +11,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QTemporaryFile>
 #include <QStandardPaths>
@@ -30,8 +31,7 @@ PortableUpdateInstaller::PortableUpdateInstaller(QObject *parent) :
 bool PortableUpdateInstaller::supportsInAppUpdate() const
 {
 #if defined(Q_OS_WIN32)
-    return isPortableInstall() &&
-            !getPortableUpdaterExecutable().isEmpty();
+    return !getPortableUpdaterExecutable().isEmpty();
 #elif defined(Q_OS_DARWIN)
     // 条件就两个：从 .app 里运行，而且那个 bundle 所在的目录可写。装在 root 拥有的
     // 目录里、或者直接从 DMG 的只读卷上跑的时候退回浏览器下载。
@@ -46,18 +46,23 @@ bool PortableUpdateInstaller::supportsInAppUpdate() const
 
 void PortableUpdateInstaller::installUpdate(const QString& url, const QString& expectedDigest)
 {
+    if (m_StreamingActive()) {
+        emit onPortableUpdateFailed(
+            tr("Finish streaming before downloading and installing an update."));
+        return;
+    }
     if (!supportsInAppUpdate()) {
         emit onPortableUpdateFailed(tr("In-app update is not supported for this installation."));
         return;
     }
 
-    if (m_UpdateReply != nullptr) {
+    if (m_UpdateReply != nullptr || m_InstallStarting) {
         emit onPortableUpdateStatusChanged(tr("An update is already in progress."));
         return;
     }
 
     QUrl downloadUrl = QUrl::fromUserInput(url.trimmed());
-    if (!downloadUrl.isValid() || downloadUrl.scheme().isEmpty()) {
+    if (!downloadUrl.isValid() || downloadUrl.scheme() != QStringLiteral("https")) {
         emit onPortableUpdateFailed(tr("The update URL is invalid."));
         return;
     }
@@ -73,17 +78,10 @@ void PortableUpdateInstaller::installUpdate(const QString& url, const QString& e
     }
 
     static const QRegularExpression sha256Pattern(QStringLiteral("^[0-9a-fA-F]{64}$"));
-#if defined(Q_OS_DARWIN)
     if (!sha256Pattern.match(normalizedDigest).hasMatch()) {
         emit onPortableUpdateFailed(tr("The update package has no valid integrity information. Please install the update manually."));
         return;
     }
-#else
-    if (!normalizedDigest.isEmpty() && !sha256Pattern.match(normalizedDigest).hasMatch()) {
-        emit onPortableUpdateFailed(tr("The update package has invalid integrity information."));
-        return;
-    }
-#endif
 
     QString errorMessage;
     if (!ensureWritableInstallDir(errorMessage)) {
@@ -119,6 +117,9 @@ void PortableUpdateInstaller::installUpdate(const QString& url, const QString& e
     }
 
     QNetworkRequest request(downloadUrl);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+    request.setTransferTimeout(15000);
+#endif
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QString("Moonlight/%1").arg(VERSION_STR));
     request.setRawHeader("Accept", "application/octet-stream");
@@ -138,8 +139,30 @@ void PortableUpdateInstaller::installUpdate(const QString& url, const QString& e
             this, &PortableUpdateInstaller::handlePortableUpdateDownloadProgress);
     connect(m_UpdateReply, &QNetworkReply::finished,
             this, &PortableUpdateInstaller::handlePortableUpdateDownloadFinished);
+    auto streamGuard = new QTimer(m_UpdateReply);
+    streamGuard->setInterval(100);
+    connect(m_UpdateReply, &QNetworkReply::finished, streamGuard, &QTimer::stop);
+    connect(streamGuard, &QTimer::timeout, this, [this]() {
+        if (m_StreamingActive()) {
+            cancelUpdate();
+            emit onPortableUpdateFailed(
+                tr("Update deferred because streaming started. Try again after the stream ends."));
+        }
+    });
+    streamGuard->start();
 
     emit onPortableUpdateStatusChanged(tr("Downloading update..."));
+}
+
+void PortableUpdateInstaller::cancelUpdate()
+{
+    if (m_UpdateReply == nullptr)
+        return;
+    auto reply = m_UpdateReply;
+    disconnect(reply, nullptr, this, nullptr);
+    reply->abort();
+    resetPortableUpdateState(true);
+    emit onUpdateCancelled();
 }
 
 bool PortableUpdateInstaller::isPortableInstall() const
@@ -176,6 +199,8 @@ QString PortableUpdateInstaller::getUpdateArchiveSuffix() const
 {
 #if defined(Q_OS_DARWIN)
     return QStringLiteral(".dmg");
+#elif defined(Q_OS_WIN32)
+    return isPortableInstall() ? QStringLiteral(".zip") : QStringLiteral(".exe");
 #else
     return QStringLiteral(".zip");
 #endif
@@ -185,6 +210,9 @@ QString PortableUpdateInstaller::getUpdateArchiveName() const
 {
 #if defined(Q_OS_DARWIN)
     return QStringLiteral("MoonlightUpdate.dmg");
+#elif defined(Q_OS_WIN32)
+    return isPortableInstall() ? QStringLiteral("MoonlightPortableUpdate.zip")
+                               : QStringLiteral("MoonlightSetupUpdate.exe");
 #else
     return QStringLiteral("MoonlightPortableUpdate.zip");
 #endif
@@ -206,7 +234,7 @@ QString PortableUpdateInstaller::getUpdateStorageProbePath() const
 
     return QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
 #else
-    return Path::getPortableRootDir();
+    return isPortableInstall() ? Path::getPortableRootDir() : QDir::tempPath();
 #endif
 }
 
@@ -229,6 +257,8 @@ QString PortableUpdateInstaller::getPortableUpdaterExecutable() const
 bool PortableUpdateInstaller::ensureWritableInstallDir(QString& errorMessage) const
 {
 #if defined(Q_OS_WIN32)
+    if (!isPortableInstall())
+        return true;
     QTemporaryFile probeFile(QDir(Path::getPortableRootDir()).filePath("MoonlightUpdateWriteProbe-XXXXXX.tmp"));
     probeFile.setAutoRemove(true);
 
@@ -293,7 +323,8 @@ QString PortableUpdateInstaller::materializePortableUpdateScript(const QString& 
 #if defined(Q_OS_DARWIN)
     static const QLatin1String kScriptName("install-dmg-update.sh");
 #else
-    static const QLatin1String kScriptName("install-portable-update.ps1");
+    const QString kScriptName = isPortableInstall() ? QStringLiteral("install-portable-update.ps1")
+                                                    : QStringLiteral("install-setup-update.ps1");
 #endif
 
     QFile resourceFile(QStringLiteral(":/data/") + kScriptName);
@@ -356,7 +387,9 @@ bool PortableUpdateInstaller::verifyUpdateArchive(const QString& archivePath,
                                                    QString& errorMessage) const
 {
     if (m_ExpectedSha256.isEmpty()) {
-        return true;
+        errorMessage = tr("The update package has no valid integrity information. Please install "
+                          "the update manually.");
+        return false;
     }
 
     QFile archive(archivePath);
@@ -617,6 +650,11 @@ void PortableUpdateInstaller::handlePortableUpdateDownloadFinished()
         emit onPortableUpdateFailed(verificationError);
         return;
     }
+    if (m_StreamingActive()) {
+        resetPortableUpdateState(true);
+        emit onPortableUpdateFailed(tr("Finish streaming before installing an update."));
+        return;
+    }
 
 #if defined(Q_OS_DARWIN)
     // 先把 DMG 里的 bundle 挂载、拷出来、清掉隔离属性，失败还来得及弹对话框
@@ -635,6 +673,12 @@ void PortableUpdateInstaller::handlePortableUpdateDownloadFinished()
         emit onPortableUpdateFailed(tr("Unable to prepare the update installer."));
         return;
     }
+#if defined(Q_OS_WIN32)
+    if (!isPortableInstall()) {
+        startSetupUpdate(archivePath, scriptPath);
+        return;
+    }
+#endif
 
     QString updaterExecutable = getPortableUpdaterExecutable();
     QStringList arguments;
@@ -656,23 +700,41 @@ void PortableUpdateInstaller::handlePortableUpdateDownloadFinished()
     arguments << "-NoProfile"
               << "-ExecutionPolicy" << "Bypass"
               << "-WindowStyle" << "Hidden"
-              << "-File" << QDir::toNativeSeparators(scriptPath)
-              << "-WorkspaceDir" << QDir::toNativeSeparators(m_PortableUpdateWorkspace)
-              << "-InstallDir" << installDir
-              << "-ZipPath" << QDir::toNativeSeparators(archivePath)
-              << "-ExePath" << QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+              << "-File" << QDir::toNativeSeparators(scriptPath) << "-WorkspaceDir"
+              << QDir::toNativeSeparators(m_PortableUpdateWorkspace) << "-InstallDir" << installDir
+              << "-ZipPath" << QDir::toNativeSeparators(archivePath) << "-ExpectedSha256"
+              << QString::fromLatin1(m_ExpectedSha256) << "-ExePath"
+              << QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
 
     workingDirectory = installDir;
 #endif
 
-    if (updaterExecutable.isEmpty() ||
-            !QProcess::startDetached(updaterExecutable, arguments, workingDirectory)) {
+    QProcess updater;
+    updater.setProgram(updaterExecutable);
+    updater.setArguments(arguments);
+    updater.setWorkingDirectory(workingDirectory);
+#if defined(Q_OS_WIN32)
+    auto environment = QProcessEnvironment::systemEnvironment();
+    if (QFileInfo(updaterExecutable)
+            .fileName()
+            .compare(QStringLiteral("powershell.exe"), Qt::CaseInsensitive) == 0) {
+        environment.insert(QStringLiteral("PSModulePath"),
+                           environment.value(QStringLiteral("SystemRoot")) +
+                               QStringLiteral("\\System32\\WindowsPowerShell\\v1.0\\Modules;") +
+                               environment.value(QStringLiteral("ProgramFiles")) +
+                               QStringLiteral("\\WindowsPowerShell\\Modules"));
+    }
+    updater.setProcessEnvironment(environment);
+#endif
+    if (updaterExecutable.isEmpty() || !updater.startDetached()) {
         resetPortableUpdateState(true);
         emit onPortableUpdateFailed(tr("Unable to launch the updater."));
         return;
     }
 
+    m_InstallStarting = true;
     emit onPortableUpdateStatusChanged(tr("Installing update and restarting Moonlight..."));
+    emit onUpdateInstallStarted();
 
     if (m_UpdateReply != nullptr) {
         m_UpdateReply->deleteLater();
@@ -689,4 +751,80 @@ void PortableUpdateInstaller::handlePortableUpdateDownloadFinished()
     // 注意：这里不能 resetPortableUpdateState(true) —— 工作目录里放着脚本、
     // 暂存好的 bundle 和备份，删掉更新就没了。清理由脚本自己收尾。
     QTimer::singleShot(0, qApp, &QCoreApplication::quit);
+}
+
+bool PortableUpdateInstaller::startSetupUpdate(const QString& archivePath,
+                                               const QString& scriptPath)
+{
+#if defined(Q_OS_WIN32)
+    m_InstallStarting = true;
+    auto process = new QProcess(this);
+    const QString workspace = m_PortableUpdateWorkspace;
+    auto environment = QProcessEnvironment::systemEnvironment();
+    if (QFileInfo(getPortableUpdaterExecutable())
+            .fileName()
+            .compare(QStringLiteral("powershell.exe"), Qt::CaseInsensitive) == 0) {
+        environment.insert(QStringLiteral("PSModulePath"),
+                           environment.value(QStringLiteral("SystemRoot")) +
+                               QStringLiteral("\\System32\\WindowsPowerShell\\v1.0\\Modules;") +
+                               environment.value(QStringLiteral("ProgramFiles")) +
+                               QStringLiteral("\\WindowsPowerShell\\Modules"));
+    }
+    process->setProcessEnvironment(environment);
+    process->setProgram(getPortableUpdaterExecutable());
+    process->setArguments(
+        { QStringLiteral("-NoProfile"), QStringLiteral("-ExecutionPolicy"),
+          QStringLiteral("Bypass"), QStringLiteral("-File"), scriptPath,
+          QStringLiteral("-WorkspaceDir"), workspace, QStringLiteral("-InstallerPath"), archivePath,
+          QStringLiteral("-ExpectedSha256"), QString::fromLatin1(m_ExpectedSha256),
+          QStringLiteral("-ExePath"), QCoreApplication::applicationFilePath(),
+          QStringLiteral("-ParentPid"), QString::number(QCoreApplication::applicationPid()) });
+    process->setWorkingDirectory(workspace);
+    auto handshake = new QTimer(process);
+    handshake->setInterval(100);
+    connect(handshake, &QTimer::timeout, this, [this, process, handshake, workspace]() {
+        if (!QFile::exists(QDir(workspace).filePath(QStringLiteral("setup-ready"))))
+            return;
+        handshake->stop();
+        // After elevation succeeds, the helper owns the installer wait and relaunch.
+        // It must outlive Moonlight, not be killed by QObject parent destruction.
+        process->setParent(nullptr);
+        connect(process, &QProcess::finished, process, &QObject::deleteLater);
+        resetPortableUpdateState(false);
+        QTimer::singleShot(0, qApp, &QCoreApplication::quit);
+    });
+    connect(process, &QProcess::finished, this, [this, process, handshake, workspace]() {
+        if (!handshake->isActive())
+            return;
+        handshake->stop();
+        QFile error(QDir(workspace).filePath(QStringLiteral("setup-error.txt")));
+        QString message = tr("Unable to start the update installer.");
+        if (error.open(QIODevice::ReadOnly))
+            message = QString::fromUtf8(error.readAll());
+        resetPortableUpdateState(true);
+        m_InstallStarting = false;
+        emit onPortableUpdateFailed(message);
+        process->deleteLater();
+    });
+    connect(process, &QProcess::errorOccurred, this,
+            [this, process, handshake](QProcess::ProcessError error) {
+                if (error != QProcess::FailedToStart)
+                    return;
+                handshake->stop();
+                resetPortableUpdateState(true);
+                m_InstallStarting = false;
+                emit onPortableUpdateFailed(tr("Unable to launch the update installer."));
+                process->deleteLater();
+            });
+    emit onUpdateInstallStarted();
+    emit onPortableUpdateStatusChanged(tr("Waiting for Windows administrator confirmation..."));
+    resetPortableUpdateState(false);
+    process->start();
+    handshake->start();
+    return true;
+#else
+    Q_UNUSED(archivePath);
+    Q_UNUSED(scriptPath);
+    return false;
+#endif
 }

@@ -1363,11 +1363,12 @@ int main(int argc, char *argv[])
                                               [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                                   return new ComputerManager(StreamingPreferences::get(qmlEngine));
                                               });
-    qmlRegisterSingletonType<AutoUpdateChecker>("AutoUpdateChecker", 1, 0,
-                                                "AutoUpdateChecker",
-                                                [](QQmlEngine*, QJSEngine*) -> QObject* {
-                                                    return new AutoUpdateChecker();
-                                                });
+    qmlRegisterSingletonType<AutoUpdateChecker>(
+        "AutoUpdateChecker", 1, 0, "AutoUpdateChecker", [](QQmlEngine*, QJSEngine*) -> QObject* {
+            auto checker = new AutoUpdateChecker();
+            checker->setStreamingActiveProvider([] { return Session::get() != nullptr; });
+            return checker;
+        });
     qmlRegisterSingletonType<ShortcutModel>(
         "ShortcutModel", 1, 0, "ShortcutModel",
         [](QQmlEngine*, QJSEngine*) -> QObject* { return new ShortcutModel(); });

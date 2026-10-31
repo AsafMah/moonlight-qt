@@ -13,10 +13,29 @@
 #include <QSysInfo>
 #include <QTextStream>
 #include <QTimer>
+#include <QRegularExpression>
 
-// GitHub repository for update checks
-#define GITHUB_OWNER "qiin2333"
-#define GITHUB_REPO  "moonlight-qt"
+#ifndef UPDATE_REPOSITORY
+#define UPDATE_REPOSITORY "qiin2333/moonlight-qt"
+#endif
+#ifndef UPDATE_BUILD_IS_RELEASE
+#define UPDATE_BUILD_IS_RELEASE 0
+#endif
+
+static bool isUpdateRepositoryUrl(const QString& value, const QString& pathPrefix)
+{
+    const QUrl url(value);
+    return url.scheme() == QStringLiteral("https") && url.host() == QStringLiteral("github.com") &&
+           url.userInfo().isEmpty() &&
+           url.path().startsWith(QStringLiteral("/") + QStringLiteral(UPDATE_REPOSITORY) +
+                                 pathPrefix);
+}
+
+static bool hasUpdateDigest(const QString& digest)
+{
+    static const QRegularExpression pattern(QStringLiteral("^sha256:[0-9a-fA-F]{64}$"));
+    return pattern.match(digest).hasMatch();
+}
 
 AutoUpdateChecker::AutoUpdateChecker(QObject *parent) :
     QObject(parent)
@@ -35,7 +54,7 @@ AutoUpdateChecker::AutoUpdateChecker(QObject *parent) :
 
     QString currentVersion(VERSION_STR);
     qDebug() << "Current Moonlight version:" << currentVersion;
-    m_CurrentVersion = VersionUtils::parseRelease(currentVersion);
+    m_CurrentVersion = VersionUtils::parseBuild(currentVersion);
 
     // Should at least have a 1.0-style version number
     Q_ASSERT(m_CurrentVersion.segmentCount() > 1);
@@ -44,11 +63,26 @@ AutoUpdateChecker::AutoUpdateChecker(QObject *parent) :
             this, &AutoUpdateChecker::onPortableUpdateStatusChanged);
     connect(m_PortableUpdateInstaller, &PortableUpdateInstaller::onPortableUpdateFailed,
             this, &AutoUpdateChecker::onPortableUpdateFailed);
+    connect(m_PortableUpdateInstaller, &PortableUpdateInstaller::onUpdateCancelled, this,
+            &AutoUpdateChecker::onUpdateCancelled);
+    connect(m_PortableUpdateInstaller, &PortableUpdateInstaller::onUpdateInstallStarted, this,
+            &AutoUpdateChecker::onUpdateInstallStarted);
+}
+
+void AutoUpdateChecker::cancelUpdate()
+{
+    m_PortableUpdateInstaller->cancelUpdate();
+}
+
+void AutoUpdateChecker::setStreamingActiveProvider(std::function<bool()> provider)
+{
+    m_PortableUpdateInstaller->setStreamingActiveProvider(std::move(provider));
 }
 
 bool AutoUpdateChecker::supportsInAppUpdate() const
 {
-    return m_PortableUpdateInstaller->supportsInAppUpdate();
+    return !m_UpdateDownloadUrl.isEmpty() && hasUpdateDigest(m_UpdateAssetDigest) &&
+           m_PortableUpdateInstaller->supportsInAppUpdate();
 }
 
 bool AutoUpdateChecker::supportsUpdateCheck() const
@@ -62,13 +96,21 @@ bool AutoUpdateChecker::supportsUpdateCheck() const
 
 void AutoUpdateChecker::installUpdate(QString url)
 {
-    const QString expectedDigest = url == m_UpdateDownloadUrl ? m_UpdateAssetDigest : QString();
-    m_PortableUpdateInstaller->installUpdate(url, expectedDigest);
+    if (url != m_UpdateDownloadUrl || !supportsInAppUpdate()) {
+        emit onPortableUpdateFailed(
+            tr("No verified update package is available for this installation."));
+        return;
+    }
+    m_PortableUpdateInstaller->installUpdate(url, m_UpdateAssetDigest);
 }
 
 void AutoUpdateChecker::start()
 {
-    checkForUpdates();
+#if UPDATE_BUILD_IS_RELEASE
+    if (!QStringLiteral(VERSION_STR).contains(QStringLiteral("dirty"))) {
+        checkForUpdates();
+    }
+#endif
 }
 
 bool AutoUpdateChecker::checkForUpdates()
@@ -96,8 +138,8 @@ bool AutoUpdateChecker::checkForUpdates()
 #endif
 
     // Query GitHub Releases API for the latest release
-    QUrl url(QString("https://api.github.com/repos/%1/%2/releases/latest")
-                 .arg(GITHUB_OWNER, GITHUB_REPO));
+    QUrl url(QStringLiteral("https://api.github.com/repos/") + QStringLiteral(UPDATE_REPOSITORY) +
+             QStringLiteral("/releases/latest"));
     QNetworkRequest request(url);
 
 #if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
@@ -255,6 +297,14 @@ void AutoUpdateChecker::handleUpdateCheckRequestFinished(QNetworkReply* reply)
         }
 
         QJsonObject releaseObj = jsonDoc.object();
+        m_UpdateDownloadUrl.clear();
+        m_UpdateAssetDigest.clear();
+        if (!isUpdateRepositoryUrl(releaseObj["html_url"].toString(),
+                                   QStringLiteral("/releases/tag/"))) {
+            qWarning() << "Release does not belong to the configured update repository";
+            fail();
+            return;
+        }
 
         // GitHub Releases API response format:
         // {
@@ -319,6 +369,13 @@ void AutoUpdateChecker::handleUpdateCheckRequestFinished(QNetworkReply* reply)
                 for (const auto& asset : std::as_const(assets)) {
                     if (asset.isObject()) {
                         QJsonObject assetObj = asset.toObject();
+                        if (!hasUpdateDigest(assetObj["digest"].toString()) ||
+                            !isUpdateRepositoryUrl(assetObj["browser_download_url"].toString(),
+                                                   QStringLiteral("/releases/download/"))) {
+                            qWarning()
+                                << "Skipping update asset with missing integrity or foreign URL";
+                            continue;
+                        }
                         QString assetName = assetObj["name"].toString();
                         bool prefixMatches = expectedPrefix.isEmpty() ||
                                              assetName.startsWith(expectedPrefix, Qt::CaseInsensitive);
@@ -371,15 +428,11 @@ void AutoUpdateChecker::handleUpdateCheckRequestFinished(QNetworkReply* reply)
                 }
             }
 
-            // Fall back to the release page URL if no matching asset found
-            if (downloadUrl.isEmpty()) {
-                downloadUrl = releaseObj["html_url"].toString();
-            }
-
             m_UpdateDownloadUrl = downloadUrl;
             m_UpdateAssetDigest = assetDigest;
 
-            emit onUpdateAvailable(tagName, downloadUrl);
+            emit onUpdateAvailable(
+                tagName, downloadUrl.isEmpty() ? releaseObj["html_url"].toString() : downloadUrl);
             finish(true);
         }
         else if (res > 0) {

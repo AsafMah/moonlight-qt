@@ -25,6 +25,21 @@ MOONLIGHT_NUMERIC_VERSION = $$system($$VERSION_PYTHON $$VERSION_SCRIPT --source-
 isEmpty(MOONLIGHT_VERSION): MOONLIGHT_VERSION = $$cat(version.txt)
 isEmpty(MOONLIGHT_NUMERIC_VERSION): MOONLIGHT_NUMERIC_VERSION = $$cat(version.txt)
 
+CI_UPDATE_BUILD = $$(GITHUB_ACTIONS)
+isEmpty(UPDATE_REPOSITORY) {
+    equals(CI_UPDATE_BUILD, true): UPDATE_REPOSITORY = $$(GITHUB_REPOSITORY)
+    isEmpty(UPDATE_REPOSITORY): UPDATE_REPOSITORY = qiin2333/moonlight-qt
+}
+!contains(UPDATE_REPOSITORY, "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$") {
+    error("UPDATE_REPOSITORY must be a GitHub owner/repository")
+}
+DEFINES += UPDATE_REPOSITORY=\\\"$$UPDATE_REPOSITORY\\\"
+UPDATE_BUILD_IS_RELEASE = 0
+equals(CI_UPDATE_BUILD, true):!contains(MOONLIGHT_VERSION, dirty) {
+    UPDATE_BUILD_IS_RELEASE = 1
+}
+DEFINES += UPDATE_BUILD_IS_RELEASE=$$UPDATE_BUILD_IS_RELEASE
+
 # Precompile QML files to avoid writing qmlcache on portable versions.
 # Since this binds the app against the Qt runtime version, we will only
 # do this for Windows and Mac (when disable-prebuilts is not defined),

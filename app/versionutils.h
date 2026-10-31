@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QRegularExpression>
 #include <QVersionNumber>
 
 namespace VersionUtils {
@@ -33,6 +34,25 @@ inline QVersionNumber parseRelease(QString version)
         version.truncate(suffix);
     }
     return parseNumeric(version);
+}
+
+inline QVersionNumber parseBuild(const QString& version)
+{
+    const auto base = parseRelease(version);
+    static const QRegularExpression revision(QStringLiteral("[+-](\\d+)\\.g[0-9a-fA-F]+"));
+    const auto match = revision.match(version);
+    if (!match.hasMatch() || base.segmentCount() < 3) {
+        return base;
+    }
+    bool ok = false;
+    const int distance = match.captured(1).toInt(&ok);
+    auto segments = base.segments();
+    if (segments.size() == 3)
+        segments.append(0);
+    if (!ok || segments.size() != 4 || distance > 65535 - segments[3])
+        return QVersionNumber();
+    segments[3] += distance;
+    return QVersionNumber(segments);
 }
 
 // Preserve the existing rule that absent trailing segments are zero.

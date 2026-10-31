@@ -2,13 +2,24 @@ param(
     [Parameter(Mandatory=$true)][string]$WorkspaceDir,
     [Parameter(Mandatory=$true)][string]$InstallDir,
     [Parameter(Mandatory=$true)][string]$ZipPath,
-    [Parameter(Mandatory=$true)][string]$ExePath
+    [Parameter(Mandatory=$true)][string]$ExePath,
+    [Parameter(Mandatory=$true)][string]$ExpectedSha256
 )
 
 $ErrorActionPreference = 'Stop'
 $extractDir = Join-Path $WorkspaceDir 'extract'
 $backupDir = Join-Path $WorkspaceDir 'backup'
 $workspaceFullPath = [System.IO.Path]::GetFullPath($WorkspaceDir).TrimEnd('\', '/')
+$installFullPath = [System.IO.Path]::GetFullPath($InstallDir).TrimEnd('\', '/')
+if ((Split-Path -Leaf $workspaceFullPath) -notmatch '^MoonlightPortableUpdate-\d+-\d+$' -or
+    [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($ZipPath)) -ne $workspaceFullPath -or
+    [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($ExePath)) -ne $installFullPath -or
+    $installFullPath -eq $env:USERPROFILE -or
+    $installFullPath -eq ([System.IO.Path]::GetPathRoot($InstallDir).TrimEnd('\', '/'))) {
+    throw 'Unsafe portable update workspace or installation path.'
+}
+$backupStarted = $false
+$copyStarted = $false
 
 function Get-RequiredFreeBytes {
     param([string]$ArchivePath)
@@ -70,12 +81,18 @@ function Get-ReplacedItems {
         $itemFullPath = [System.IO.Path]::GetFullPath($_.FullName).TrimEnd('\', '/')
 
         $_.Name -ne 'Moonlight Game Streaming Project' -and
+        $_.Name -ne 'Moonlight.ini' -and
+        $_.Name -ne 'portable.dat' -and
         $_.Name -notlike 'Moonlight-*.log' -and
         ![string]::Equals($itemFullPath, $workspaceFullPath, [System.StringComparison]::OrdinalIgnoreCase)
     }
 }
 
 try {
+    if ($ExpectedSha256 -notmatch '^[0-9a-fA-F]{64}$' -or
+        (Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash -ne $ExpectedSha256) {
+        throw 'The update package failed its integrity check.'
+    }
     Wait-ForUnlockedFile -Path $ExePath
 
     if (!(Test-Path -LiteralPath $WorkspaceDir)) {
@@ -101,8 +118,10 @@ try {
     $itemsToReplace = @(Get-ReplacedItems -Path $InstallDir)
     foreach ($item in $itemsToReplace) {
         Move-Item -LiteralPath $item.FullName -Destination $backupDir -Force
+        $backupStarted = $true
     }
 
+    $copyStarted = $true
     Get-ChildItem -LiteralPath $extractDir -Force | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination $InstallDir -Recurse -Force
     }
@@ -110,12 +129,15 @@ try {
     Remove-Item -LiteralPath $backupDir -Recurse -Force
     $backupDir = $null
 
-    Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir | Out-Null
+    $updated = Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir -PassThru
+    "updated-process-pid=$($updated.Id)" | Out-File -LiteralPath (Join-Path $InstallDir 'Moonlight-update.log') -Append
 }
 catch {
-    if ($backupDir -and (Test-Path -LiteralPath $backupDir)) {
-        Get-ReplacedItems -Path $InstallDir | ForEach-Object {
-            Remove-Item -LiteralPath $_.FullName -Recurse -Force
+    if ($backupStarted -and $backupDir -and (Test-Path -LiteralPath $backupDir)) {
+        if ($copyStarted) {
+            Get-ReplacedItems -Path $InstallDir | ForEach-Object {
+                Remove-Item -LiteralPath $_.FullName -Recurse -Force
+            }
         }
 
         Get-ChildItem -LiteralPath $backupDir -Force | ForEach-Object {
@@ -125,6 +147,9 @@ catch {
 
     $logPath = Join-Path $InstallDir 'Moonlight-update-error.log'
     $_ | Out-File -LiteralPath $logPath -Append -Encoding utf8
+    if (Test-Path -LiteralPath $ExePath) {
+        Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir | Out-Null
+    }
 }
 finally {
     try {

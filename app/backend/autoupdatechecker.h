@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QNetworkAccessManager>
 #include <QVersionNumber>
+#include <functional>
 
 class QNetworkReply;
 class PortableUpdateInstaller;
@@ -19,6 +20,8 @@ public:
     Q_INVOKABLE bool checkForUpdates();
     Q_INVOKABLE bool supportsInAppUpdate() const;
     Q_INVOKABLE void installUpdate(QString url);
+    Q_INVOKABLE void cancelUpdate();
+    void setStreamingActiveProvider(std::function<bool()> provider);
 
 signals:
     void onUpdateCheckStarted();
@@ -27,6 +30,8 @@ signals:
     void onUpdateAvailable(QString newVersion, QString url);
     void onPortableUpdateStatusChanged(QString message);
     void onPortableUpdateFailed(QString message);
+    void onUpdateCancelled();
+    void onUpdateInstallStarted();
 
 private slots:
     void handleUpdateCheckRequestFinished(QNetworkReply* reply);

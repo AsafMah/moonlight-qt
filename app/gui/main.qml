@@ -649,6 +649,7 @@ ApplicationWindow {
 
             NavigableToolButton {
                 property string browserUrl: ""
+                property string releaseVersion: ""
 
                 id: updateButton
 
@@ -664,9 +665,9 @@ ApplicationWindow {
 
                 onClicked: {
                     if (AutoUpdateChecker.supportsInAppUpdate()) {
-                        portableUpdateDialog.text = qsTr("Preparing update...")
-                        portableUpdateDialog.open()
-                        AutoUpdateChecker.installUpdate(browserUrl)
+                        updateConfirmationDialog.downloadUrl = browserUrl
+                        updateConfirmationDialog.releaseVersion = releaseVersion
+                        updateConfirmationDialog.open()
                     }
                     else if (SystemProperties.hasBrowser) {
                         Qt.openUrlExternally(browserUrl);
@@ -677,6 +678,7 @@ ApplicationWindow {
                 {
                     ToolTip.text = Brand.text(qsTr("Update available for Moonlight: Version %1")).arg(version)
                     updateButton.browserUrl = url
+                    updateButton.releaseVersion = version
                     updateButton.visible = true
                 }
 
@@ -699,6 +701,13 @@ ApplicationWindow {
                     AutoUpdateChecker.onUpdateAvailable.connect(updateAvailable)
                     AutoUpdateChecker.onPortableUpdateStatusChanged.connect(portableUpdateStatusChanged)
                     AutoUpdateChecker.onPortableUpdateFailed.connect(portableUpdateFailed)
+                    AutoUpdateChecker.onUpdateCancelled.connect(function() {
+                        portableUpdateDialog.close()
+                    })
+                    AutoUpdateChecker.onUpdateInstallStarted.connect(function() {
+                        portableUpdateDialog.standardButtons = Dialog.NoButton
+                        portableUpdateDialog.closePolicy = Popup.NoAutoClose
+                    })
                     if (StreamingPreferences.autoUpdateCheck) {
                         AutoUpdateChecker.start()
                     }
@@ -858,10 +867,19 @@ ApplicationWindow {
 
     NavigableMessageDialog {
         id: portableUpdateDialog
-        standardButtons: Dialog.NoButton
+        standardButtons: Dialog.Cancel
         closePolicy: Popup.CloseOnEscape
         showSpinner: true
         text: qsTr("Preparing update...")
+        onRejected: AutoUpdateChecker.cancelUpdate()
+        onClosed: {
+            standardButtons = Dialog.Cancel
+            closePolicy = Popup.CloseOnEscape
+        }
+    }
+
+    UpdateConfirmationDialog {
+        id: updateConfirmationDialog
     }
 
     BackgroundSourceDialog {

@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QNetworkAccessManager>
+#include <functional>
 
 class QFile;
 class QNetworkReply;
@@ -19,10 +20,17 @@ public:
 
     bool supportsInAppUpdate() const;
     void installUpdate(const QString& url, const QString& expectedDigest = QString());
+    Q_INVOKABLE void cancelUpdate();
+    void setStreamingActiveProvider(std::function<bool()> provider)
+    {
+        m_StreamingActive = std::move(provider);
+    }
 
 signals:
     void onPortableUpdateStatusChanged(QString message);
     void onPortableUpdateFailed(QString message);
+    void onUpdateCancelled();
+    void onUpdateInstallStarted();
 
 private slots:
     void handlePortableUpdateMetaDataChanged();
@@ -50,6 +58,7 @@ private:
     bool runTool(const QString& program, const QStringList& arguments, int timeoutMs) const;
     bool ensureSufficientDiskSpace(qint64 requiredBytes, QString& errorMessage) const;
     bool verifyUpdateArchive(const QString& archivePath, QString& errorMessage) const;
+    bool startSetupUpdate(const QString& archivePath, const QString& scriptPath);
     qint64 estimateRequiredWorkspaceBytes(qint64 archiveBytes) const;
     void resetPortableUpdateState(bool removeWorkspace);
 
@@ -60,4 +69,8 @@ private:
     QString m_PortableUpdateError;
     QByteArray m_ExpectedSha256;
     bool m_MetadataChecked;
+    bool m_InstallStarting = false;
+    std::function<bool()> m_StreamingActive = [] {
+        return false;
+    };
 };

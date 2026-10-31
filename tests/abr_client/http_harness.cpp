@@ -126,7 +126,7 @@ public:
     void handleSslErrors(QNetworkReply*, const QList<QSslError>&) {}
     QNetworkReply* openJsonConnection(QUrl, QString, QJsonObject, bool, int, NvLogLevel);
     QJsonObject openJsonConnectionToObject(QUrl, QString, QJsonObject, bool, int, NvLogLevel);
-    bool getAbrCapabilities(int* = nullptr, QJsonObject* = nullptr);
+    bool getAbrCapabilities(int* = nullptr, QJsonObject* = nullptr, int = 2000);
     QJsonObject configureAbr(bool, int, int, QString, int, QString = {});
     QJsonObject sendAbrFeedback(double, double, double, int, int, int, QString = {});
 };
@@ -198,6 +198,21 @@ int main(int argc, char** argv)
             throw std::runtime_error("Redirect accepted");
         } catch (const GfeHttpResponseException& e) {
             require(e.getStatusCode() == 302, "Redirect status lost");
+        }
+        manager.status = 400;
+        manager.error = QNetworkReply::ProtocolInvalidOperationError;
+        manager.body = QJsonDocument(QJsonObject{ { "error_code", QString(200, QLatin1Char('c')) },
+                                                  { "error", QString(2048, QLatin1Char('e')) } })
+                           .toJson(QJsonDocument::Compact);
+        try {
+            request();
+            throw std::runtime_error("Oversized error body was accepted");
+        } catch (const GfeHttpResponseException& e) {
+            require(e.getResponseBody().size() <= 1024,
+                    "Raw HTTP error body exceeded the storage bound");
+            require(e.getErrorObject().value("error_code").toString().size() <= 96 &&
+                        e.getErrorObject().value("error").toString().size() <= 512,
+                    "Structured HTTP error fields exceeded the storage bounds");
         }
         manager.status = 200;
         manager.error = QNetworkReply::NoError;

@@ -41,6 +41,30 @@ class AbrClientTests(unittest.TestCase):
         harness = harness.replace("// EXCEPTIONS", exceptions).replace("// FEEDBACK_TASK", task)
         self.build_and_run(harness, "feedback-regressions")
 
+    def test_transient_feedback_recovery(self):
+        source = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
+        task = source[source.index("QString abrHttpErrorDetail"):
+                      source.index("QString fileMappingStateName")]
+        harness = Path(__file__).with_name("feedback_harness.cpp").read_text(encoding="utf-8")
+        exceptions = (ROOT / "app/backend/nvhttp.h").read_text(encoding="utf-8")
+        exceptions = exceptions[exceptions.index("class GfeHttpResponseException"):
+                                exceptions.index("class NvHTTP")]
+        self.build_and_run(harness.replace("// EXCEPTIONS", exceptions)
+                           .replace("// FEEDBACK_TASK", task),
+                           "feedback-regressions", args=["transient-red"])
+
+    def test_ambiguous_initial_configure_retry(self):
+        source = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
+        task = source[source.index("QString abrHttpErrorDetail"):
+                      source.index("QString fileMappingStateName")]
+        harness = Path(__file__).with_name("feedback_harness.cpp").read_text(encoding="utf-8")
+        exceptions = (ROOT / "app/backend/nvhttp.h").read_text(encoding="utf-8")
+        exceptions = exceptions[exceptions.index("class GfeHttpResponseException"):
+                                exceptions.index("class NvHTTP")]
+        self.build_and_run(harness.replace("// EXCEPTIONS", exceptions)
+                           .replace("// FEEDBACK_TASK", task),
+                           "feedback-regressions", args=["ambiguous-red"])
+
     def test_json_transport(self):
         header = (ROOT / "app/backend/nvhttp.h").read_text(encoding="utf-8")
         exceptions = header[header.index("class GfeHttpResponseException"):
@@ -59,7 +83,7 @@ class AbrClientTests(unittest.TestCase):
                                                                        "\n" + abr_methods)
         self.build_and_run(harness, "http-regressions")
 
-    def build_and_run(self, source, name, sources=(), headers=()):
+    def build_and_run(self, source, name, sources=(), headers=(), args=()):
         qmake = shutil.which("qmake6") or shutil.which("qmake")
         self.assertIsNotNone(qmake, "Run with existing Qt qmake and compiler on PATH")
         with tempfile.TemporaryDirectory(prefix="moonlight-abr-") as directory:
@@ -99,8 +123,10 @@ class AbrClientTests(unittest.TestCase):
                 executable = next(path.rglob("abr.exe"))
                 command = ["pwsh", "-NoProfile", "-File", str(runner),
                            "-Exe", str(executable), "-Platform", "offscreen"]
+                if args:
+                    command.extend(["-TestArgs", *args])
             else:
-                command = [str(path / "abr")]
+                command = [str(path / "abr"), *args]
             result = subprocess.run(command, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn(name + " passed", result.stdout)

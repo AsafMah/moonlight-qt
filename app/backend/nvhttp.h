@@ -161,7 +161,8 @@ public:
 
     UsbForwarding::Capability getUsbForwardingCapability();
 
-    bool getAbrCapabilities(int* hostMaxBitrateKbps = nullptr, QJsonObject* capabilities = nullptr);
+    bool getAbrCapabilities(int* hostMaxBitrateKbps = nullptr, QJsonObject* capabilities = nullptr,
+                            int timeoutMs = 2000);
 
     QJsonObject configureAbr(bool enabled, int minBitrateKbps, int maxBitrateKbps, QString mode,
                              int timeoutMs = 2000, QString sessionToken = {});

@@ -1235,7 +1235,9 @@ OverlayStatsWindow::tooltipAt(const QPoint& windowPoint) const
             QString value = region.value;
             if (region.metric == Metric::Abr) {
                 if (!m_Extras.abr.detail.isEmpty()) {
-                    value += QStringLiteral("\n") + m_Extras.abr.detail;
+                    const QString detail = m_Extras.abr.detail.simplified();
+                    value += QStringLiteral("\n") +
+                             (detail.size() > 256 ? detail.left(255) + QChar(0x2026) : detail);
                 }
                 if (m_Extras.abr.state == SunshineAbrRuntime::State::HostRejected ||
                     m_Extras.abr.state == SunshineAbrRuntime::State::AuthenticationFailed ||

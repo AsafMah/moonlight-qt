@@ -48,6 +48,8 @@ public:
         m_Snapshot = { requested ? State::Enabling : State::Disabled, {}, bitrateKbps };
         m_InFlight = false;
         m_DisableQueued = false;
+        m_FeedbackRetryable = false;
+        m_ApplyFailureLogged = false;
         return { m_Generation, m_Cancelled, bitrateKbps };
     }
 
@@ -60,6 +62,7 @@ public:
         }
         m_Snapshot.detail.clear();
         m_InFlight = false;
+        m_FeedbackRetryable = false;
     }
 
     Snapshot snapshot() const
@@ -71,12 +74,23 @@ public:
     std::optional<Job> beginFeedback()
     {
         std::lock_guard<std::mutex> lock(m_Mutex);
-        if (m_Cancelled->load() || m_InFlight || m_Snapshot.state != State::Active) {
+        if (m_Cancelled->load() || m_InFlight ||
+            (m_Snapshot.state != State::Active &&
+             !(m_Snapshot.state == State::Degraded && m_FeedbackRetryable))) {
             return std::nullopt;
         }
+
         m_InFlight = true;
         return Job{ m_Generation, m_Cancelled, m_Snapshot.bitrateKbps, m_Snapshot.sessionToken,
                     m_Snapshot.sessionBinding };
+    }
+
+    bool canSendFeedback() const
+    {
+        std::lock_guard<std::mutex> lock(m_Mutex);
+        return !m_Cancelled->load() &&
+               (m_Snapshot.state == State::Active ||
+                (m_Snapshot.state == State::Degraded && m_FeedbackRetryable));
     }
 
     std::optional<Job> takeDisableJob()
@@ -91,7 +105,8 @@ public:
     }
 
     void finish(const Job& job, State state, QString detail = {}, int bitrateKbps = 0,
-                QString sessionToken = {}, bool sessionBinding = false)
+                QString sessionToken = {}, bool sessionBinding = false,
+                bool feedbackRetryable = false)
     {
         std::lock_guard<std::mutex> lock(m_Mutex);
         if (job.generation != m_Generation || job.cancelled->load()) {
@@ -106,7 +121,18 @@ public:
             m_Snapshot.sessionToken = std::move(sessionToken);
             m_Snapshot.sessionBinding = true;
         }
+        m_FeedbackRetryable = state == State::Degraded && feedbackRetryable;
         m_InFlight = false;
+    }
+
+    bool shouldLogApplyFailure()
+    {
+        std::lock_guard<std::mutex> lock(m_Mutex);
+        if (m_ApplyFailureLogged) {
+            return false;
+        }
+        m_ApplyFailureLogged = true;
+        return true;
     }
 
     uint64_t generation() const
@@ -147,7 +173,8 @@ public:
         return sessionBinding && status == 409 && error.value("success") == QJsonValue(false) &&
                error.value("retryable") == QJsonValue(true) &&
                (code == QStringLiteral("no_active_stream") ||
-                code == QStringLiteral("session_starting"));
+                code == QStringLiteral("session_starting") ||
+                code == QStringLiteral("ambiguous_session"));
     }
 
 private:
@@ -157,4 +184,6 @@ private:
     std::shared_ptr<std::atomic_bool> m_Cancelled = std::make_shared<std::atomic_bool>(true);
     bool m_InFlight = false;
     bool m_DisableQueued = false;
+    bool m_FeedbackRetryable = false;
+    bool m_ApplyFailureLogged = false;
 };

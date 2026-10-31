@@ -32,6 +32,8 @@
 #include <QCoreApplication>
 #include <QHostInfo>
 #include <QThread>
+#include <cmath>
+#include <limits>
 
 #ifdef HAVE_FFMPEG
 #include "video/ffmpeg.h"
@@ -464,6 +466,17 @@ QString abrHttpErrorDetail(const GfeHttpResponseException& error)
                                    .arg(message.simplified().left(512));
 }
 
+QString abrNetworkErrorDetail(const QtNetworkReplyException& error)
+{
+    if (error.getError() == QNetworkReply::SslHandshakeFailedError) {
+        return QStringLiteral("tls_certificate_error");
+    }
+    if (error.getError() == QNetworkReply::TimeoutError) {
+        return QStringLiteral("request_timeout");
+    }
+    return QStringLiteral("network_error_%1").arg(static_cast<int>(error.getError()));
+}
+
 bool waitForAbrRetry(const std::shared_ptr<std::atomic_bool>& cancelled, int delayMs)
 {
     if (cancelled->load()) {
@@ -497,10 +510,17 @@ public:
     void run() override
     {
         try {
+            QElapsedTimer deadline;
+            deadline.start();
             NvHTTP http(m_Address, m_HttpsPort, m_ServerCert, true, nullptr, m_Uuid);
             http.setRequestCancellation(m_Job.cancelled);
             QJsonObject capabilities;
-            if (!http.getAbrCapabilities(nullptr, &capabilities)) {
+            const int capabilityTimeoutMs = qMin(2000, int(6000 - deadline.elapsed()));
+            if (capabilityTimeoutMs <= 0) {
+                throw QtNetworkReplyException(QNetworkReply::TimeoutError,
+                                              "ABR configure deadline expired");
+            }
+            if (!http.getAbrCapabilities(nullptr, &capabilities, capabilityTimeoutMs)) {
                 m_Runtime->finish(m_Job, SunshineAbrRuntime::State::Unsupported);
                 return;
             }
@@ -512,11 +532,9 @@ public:
             if (capabilities.value("version").toInt() >= 2 && !bindingFeature) {
                 qWarning() << "Sunshine ABR v2 host did not advertise session binding";
                 m_Runtime->finish(m_Job, SunshineAbrRuntime::State::Degraded,
-                                  QStringLiteral("Invalid ABR capabilities"));
+                                  QStringLiteral("invalid_abr_capabilities"));
                 return;
             }
-            QElapsedTimer deadline;
-            deadline.start();
             QJsonObject response;
             std::optional<GfeHttpResponseException> lastTransientError;
             constexpr int delays[] = { 200, 400, 800, 1000 };
@@ -552,13 +570,15 @@ public:
                     }
                 }
             }
-            if (!response.value("success").toBool(false)) {
-                qWarning() << "Sunshine ABR configure rejected:" << response;
-                m_Runtime->finish(m_Job,
-                                  response.value("success") == QJsonValue(false)
-                                      ? SunshineAbrRuntime::State::HostRejected
-                                      : SunshineAbrRuntime::State::Degraded,
-                                  response.value("error").toString());
+            const bool explicitFailure = response.value("success") == QJsonValue(false);
+            if (explicitFailure ||
+                (sessionBinding && response.value("success") != QJsonValue(true))) {
+                QString detail = response.value("error_code").toString().left(96);
+                if (detail.isEmpty()) {
+                    detail = QStringLiteral("abr_config_rejected");
+                }
+                qWarning() << "Sunshine ABR configure rejected:" << detail;
+                m_Runtime->finish(m_Job, SunshineAbrRuntime::State::HostRejected, detail);
                 return;
             }
             const QString sessionToken = response.value("sessionToken").toString();
@@ -567,11 +587,16 @@ public:
                  response.value("initialBitrate").toInt(0) <= 0)) {
                 qWarning() << "Sunshine ABR configure returned an invalid session binding";
                 m_Runtime->finish(m_Job, SunshineAbrRuntime::State::Degraded,
-                                  QStringLiteral("Invalid ABR session binding"));
+                                  QStringLiteral("invalid_abr_session_binding"));
                 return;
             }
             const int initialBitrate = response.value("initialBitrate").toInt(m_Job.bitrateKbps);
-            m_Runtime->finish(m_Job, SunshineAbrRuntime::State::Active, {}, initialBitrate,
+            const QString reason =
+                response.value("bitrateApplyError").toString().simplified().left(512);
+            if (!reason.isEmpty() && m_Runtime->shouldLogApplyFailure()) {
+                qWarning() << "Sunshine ABR initial bitrate request was not applied:" << reason;
+            }
+            m_Runtime->finish(m_Job, SunshineAbrRuntime::State::Active, reason, initialBitrate,
                               sessionToken, sessionBinding);
         } catch (const GfeHttpResponseException& error) {
             qWarning() << "Sunshine ABR configure failed:" << error.toQString();
@@ -587,7 +612,7 @@ public:
                                   error.getError() == QNetworkReply::SslHandshakeFailedError
                                       ? SunshineAbrRuntime::State::AuthenticationFailed
                                       : SunshineAbrRuntime::State::Degraded,
-                                  error.toQString());
+                                  abrNetworkErrorDetail(error));
             }
         } catch (const std::exception& error) {
             qWarning() << "Sunshine ABR configure failed:" << error.what();
@@ -670,28 +695,60 @@ public:
                 http.sendAbrFeedback(m_PacketLoss, m_RttMs, m_DecodeFps, m_DroppedFrames,
                                      m_Job.bitrateKbps, 2000, m_Job.sessionToken);
 
-            int newBitrate = response.value("newBitrate").toInt(0);
+            const bool explicitFailure = response.value("success") == QJsonValue(false);
+            int newBitrate = 0;
+            const QJsonValue newBitrateValue = response.value("newBitrate");
+            if (newBitrateValue.isDouble()) {
+                const double value = newBitrateValue.toDouble();
+                if (std::isfinite(value) && value > 0 &&
+                    value <= (std::numeric_limits<int>::max)() && std::floor(value) == value) {
+                    newBitrate = static_cast<int>(value);
+                }
+            }
             const bool accepted =
-                m_Job.sessionBinding
-                    ? response.value("success") == QJsonValue(true) &&
-                          response.value("sessionToken") == m_Job.sessionToken &&
-                          response.value("bitrateRequested").isBool()
-                    : response.value("success") != QJsonValue(false) &&
-                          (newBitrate > 0 || response.value("success") == QJsonValue(true));
-            if (!accepted || (response.contains("newBitrate") && newBitrate <= 0)) {
-                qWarning() << "Sunshine ABR feedback rejected:" << response;
-                m_Runtime->finish(m_Job, SunshineAbrRuntime::State::Degraded,
-                                  response.value("error").toString());
+                !explicitFailure &&
+                (!m_Job.sessionBinding || (response.value("success") == QJsonValue(true) &&
+                                           response.value("sessionToken") == m_Job.sessionToken &&
+                                           response.value("bitrateRequested").isBool()));
+            const bool invalidBitrateShape =
+                (response.contains("newBitrate") && newBitrate <= 0) ||
+                (m_Job.sessionBinding && (response.value("bitrateRequested") == QJsonValue(true)
+                                              ? newBitrate <= 0
+                                              : response.contains("newBitrate")));
+            if (!accepted || invalidBitrateShape) {
+                QString detail = response.value("error_code").toString().left(96);
+                if (detail.isEmpty()) {
+                    detail = QStringLiteral("invalid_abr_feedback_response");
+                }
+                qWarning() << "Sunshine ABR feedback rejected:" << detail;
+                m_Runtime->finish(m_Job, SunshineAbrRuntime::State::Degraded, detail);
             } else {
-                m_Runtime->finish(m_Job, SunshineAbrRuntime::State::Active, {}, newBitrate);
+                QString detail;
+                if (response.value("bitrateApplied") == QJsonValue(false)) {
+                    detail = response.value("bitrateApplyError").toString().left(512);
+                    if (detail.isEmpty()) {
+                        detail = response.value("reason").toString().left(512);
+                    }
+                    if (!detail.isEmpty() && m_Runtime->shouldLogApplyFailure()) {
+                        qWarning() << "Sunshine ABR bitrate request was not applied:" << detail;
+                    }
+                }
+                m_Runtime->finish(m_Job, SunshineAbrRuntime::State::Active, detail, newBitrate);
             }
         } catch (const GfeHttpResponseException& e) {
             qWarning() << "Sunshine ABR feedback failed:" << e.toQString();
-            m_Runtime->finish(
-                m_Job,
-                SunshineAbrRuntime::httpFailureState(
-                    e.getStatusCode(), e.getErrorObject().value("error_code").toString()),
-                abrHttpErrorDetail(e));
+            const QJsonObject error = e.getErrorObject();
+            const bool explicitTerminalVerdict = error.value("success") == QJsonValue(false) &&
+                                                 error.value("error_code").isString() &&
+                                                 !error.value("error_code").toString().isEmpty() &&
+                                                 error.value("retryable") == QJsonValue(false);
+            const bool transientServerError =
+                e.getStatusCode() >= 500 &&
+                (!explicitTerminalVerdict || error.value("retryable") == QJsonValue(true));
+            m_Runtime->finish(m_Job,
+                              SunshineAbrRuntime::httpFailureState(
+                                  e.getStatusCode(), error.value("error_code").toString()),
+                              abrHttpErrorDetail(e), 0, {}, false, transientServerError);
         } catch (const QtNetworkReplyException& e) {
             if (!m_Job.cancelled->load()) {
                 qWarning() << "Sunshine ABR feedback failed:" << e.toQString();
@@ -699,7 +756,9 @@ public:
                                   e.getError() == QNetworkReply::SslHandshakeFailedError
                                       ? SunshineAbrRuntime::State::AuthenticationFailed
                                       : SunshineAbrRuntime::State::Degraded,
-                                  e.toQString());
+                                  abrNetworkErrorDetail(e), 0, {}, false,
+                                  e.getError() != QNetworkReply::SslHandshakeFailedError &&
+                                      e.getError() != QNetworkReply::OperationCanceledError);
             }
         } catch (const std::exception& e) {
             qWarning() << "Sunshine ABR feedback failed:" << e.what();
@@ -6305,7 +6364,7 @@ void Session::exec()
 
     constexpr Uint32 ABR_FEEDBACK_INTERVAL_MS = 3000;
     auto processSunshineAbrFeedback = [this]() {
-        if (m_AbrRuntime->snapshot().state != SunshineAbrRuntime::State::Active) {
+        if (!m_AbrRuntime->canSendFeedback()) {
             return;
         }
 

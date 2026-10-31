@@ -659,14 +659,11 @@ UsbForwarding::Capability NvHTTP::getUsbForwardingCapability()
     return *capability;
 }
 
-bool NvHTTP::getAbrCapabilities(int* hostMaxBitrateKbps, QJsonObject* capabilities)
+bool NvHTTP::getAbrCapabilities(int* hostMaxBitrateKbps, QJsonObject* capabilities, int timeoutMs)
 {
-    QJsonObject response = openJsonConnectionToObject(m_BaseUrlHttps,
-                                                      "api/abr/capabilities",
-                                                      QJsonObject(),
-                                                      false,
-                                                      FAST_FAIL_TIMEOUT_MS,
-                                                      NvLogLevel::NVLL_ERROR);
+    QJsonObject response =
+        openJsonConnectionToObject(m_BaseUrlHttps, "api/abr/capabilities", QJsonObject(), false,
+                                   timeoutMs, NvLogLevel::NVLL_ERROR);
     if (hostMaxBitrateKbps != nullptr) {
         *hostMaxBitrateKbps = response.value("hostMaxBitrate").toInt(0);
     }
@@ -973,16 +970,23 @@ NvHTTP::openJsonConnection(QUrl baseUrl,
     // transport/TLS failure (even with partial HTTP headers) into an API verdict.
     if ((reply->error() == QNetworkReply::NoError || reply->error() >= 200) && httpStatus >= 300) {
         const QByteArray responseBody = reply->readAll();
-        const QJsonObject errorObject = QJsonDocument::fromJson(responseBody).object();
+        QJsonObject errorObject = QJsonDocument::fromJson(responseBody).object();
+        for (const QString& field :
+             { QStringLiteral("error_code"), QStringLiteral("error"), QStringLiteral("message") }) {
+            if (errorObject.value(field).isString()) {
+                errorObject[field] = errorObject.value(field).toString().left(
+                    field == QStringLiteral("error_code") ? 96 : 512);
+            }
+        }
         const QString errorText = httpStatus < 400
                                       ? QStringLiteral("Host API redirects are not allowed")
-                                      : QString::fromUtf8(responseBody);
+                                      : QString::fromUtf8(responseBody.left(1024));
         if (logLevel >= NvLogLevel::NVLL_ERROR) {
             qWarning() << command << "JSON request failed with HTTP status" << httpStatus
-                       << errorText;
+                       << errorText.left(1024);
         }
         delete reply;
-        throw GfeHttpResponseException(httpStatus, errorText, responseBody, errorObject);
+        throw GfeHttpResponseException(httpStatus, errorText, responseBody.left(1024), errorObject);
     }
 
     if (reply->error() != QNetworkReply::NoError)

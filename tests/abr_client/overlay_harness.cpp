@@ -57,8 +57,9 @@ int main(int argc, char** argv)
                                     { State::Stopped, "Stopped" } }) {
                     OverlayStatsWindow::Extras extras;
                     extras.abr.state = entry.first;
-                    extras.abr.detail =
-                        QStringLiteral("HTTP 400: No active streaming session for this client");
+                    extras.abr.detail = entry.first == State::Degraded && language.isEmpty()
+                                            ? QString(2048, QLatin1Char('x'))
+                                            : QStringLiteral("HTTP 400: no_active_stream");
                     window.setStats({}, extras);
                     window.render();
                     std::optional<OverlayStatsWindow::TooltipInfo> hit;
@@ -74,13 +75,39 @@ int main(int argc, char** argv)
                     require(hit.has_value(), "Rendered ABR cell not reachable by pointer");
                     const QString translated =
                         QCoreApplication::translate("OverlayStatsWindow", entry.second.toUtf8());
-                    require(language.isEmpty() || entry.first == State::Disabled ||
-                                translated != entry.second,
-                            "ABR state untranslated");
+                    if (language == QStringLiteral("zh_CN")) {
+                        const QHash<QString, QString> expected{
+                            { "Enabling", "启用中" },      { "Active", "已启用" },
+                            { "Unsupported", "不支持" },   { "Rejected", "已拒绝" },
+                            { "Auth failed", "认证失败" }, { "Degraded", "通信异常" },
+                            { "Stopped", "已停止" }
+                        };
+                        if (entry.first != State::Disabled) {
+                            require(translated == expected.value(entry.second),
+                                    "Rendered ABR state has incorrect Simplified Chinese text");
+                        }
+                    }
+                    if (language == QStringLiteral("zh_TW")) {
+                        const QHash<QString, QString> expected{
+                            { "Enabling", "啟用中" },      { "Active", "已啟用" },
+                            { "Unsupported", "不支援" },   { "Rejected", "已拒絕" },
+                            { "Auth failed", "驗證失敗" }, { "Degraded", "通訊異常" },
+                            { "Stopped", "已停止" }
+                        };
+                        if (entry.first != State::Disabled) {
+                            require(translated == expected.value(entry.second),
+                                    "Rendered ABR state has incorrect Traditional Chinese text");
+                        }
+                    }
                     require(hit->value.startsWith(translated),
                             "Rendered status still boolean/stale");
-                    require(hit->value.contains(extras.abr.detail),
-                            "Host reason absent from hover");
+                    if (extras.abr.detail.size() > 256) {
+                        require(hit->value.size() < 600 && hit->value.contains(QChar(0x2026)),
+                                "Long ABR details were not bounded and elided");
+                    } else {
+                        require(hit->value.contains(extras.abr.detail),
+                                "Host reason absent from hover");
+                    }
                     const bool paused = entry.first == State::Degraded ||
                                         entry.first == State::HostRejected ||
                                         entry.first == State::AuthenticationFailed;

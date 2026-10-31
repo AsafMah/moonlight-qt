@@ -69,6 +69,9 @@ jobs:
     - name: Test version derivation
       run: python3 -m unittest discover -s tests/derive_version -p 'test_*.py'
 
+    - name: Check pull renderers report received video
+      run: python3 -m unittest discover -s tests/reconnect_video_callbacks -p 'test_*.py'
+
     - name: Check settings search metadata
       # 设置搜索的索引是运行期从真实控件现采的；这里拦的是元数据漂移
       # （没标题、没分类、用 visible 代替 applicable 等），见脚本头注释。
@@ -297,6 +300,8 @@ jobs:
         call scripts\run-test.bat cursor_shape_classification cursor_shape_classification
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat session_summary session_summary
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        call scripts\run-test.bat reconnect_video_callbacks reconnect_video_callbacks
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat clipboard_payload_routing clipboard_payload_routing
         if errorlevel 1 exit /b %ERRORLEVEL%

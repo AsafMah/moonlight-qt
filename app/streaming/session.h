@@ -155,6 +155,15 @@ public:
         return s_ActiveSession;
     }
 
+    // Pull renderers bypass drSubmitDecodeUnit(). Only host frames, not
+    // decoder self-test samples, should enable auto-reconnect.
+    static void markVideoReceived()
+    {
+        if (s_ActiveSession != nullptr) {
+            s_ActiveSession->m_HasReceivedVideo = true;
+        }
+    }
+
     Overlay::OverlayManager& getOverlayManager()
     {
         return m_OverlayManager;
@@ -508,7 +517,8 @@ private:
     // Graceful reconnect state
     bool m_ConnectionInterrupted;        // set by clConnectionTerminated for recoverable errors
     bool m_SuppressConnectionErrorDialog; // suppress error dialogs during reconnect attempts
-    bool m_HasReceivedVideo;             // true after the first decode unit of the current connection
+    // Set on the decoder thread, read on the connection thread.
+    std::atomic<bool> m_HasReceivedVideo;
     int m_LastTerminationErrorCode;      // stored to show final error if reconnect gives up
 
     bool m_AsyncConnectionSuccess;

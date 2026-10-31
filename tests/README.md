@@ -53,6 +53,14 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 
 ## 仅本地/手动
 
+`reconnect_video_callbacks` runs the real common-c `FakeCallbacks.c` across three
+pull-renderer connections and checks that push callbacks remain intact. Its Python
+gate checks both FFmpeg pull sites and PyroWave's pull thread mark host video,
+not decoder self-test samples, and that retries reset the atomic received flag.
+The native test runs in Windows CI; the Python gates run in `version-tests`.
+The production inline received-video marker is also compiled in a lightweight
+Session shell to check decoder-thread marking, retry reset and the null-session path.
+
 | 目录 | 说明 |
 |---|---|
 | usb_forwarding_tunnel | USB/IP 隧道手动联调探针:需要 10 个 CLI 参数和真实 usbipd 服务端,不能进 CI。用法看 main.cpp 头注释 |

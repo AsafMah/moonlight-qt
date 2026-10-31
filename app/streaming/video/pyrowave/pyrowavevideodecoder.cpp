@@ -498,6 +498,7 @@ int PyrowaveVideoDecoder::decoderThreadProc(void* context)
             continue;
         }
 
+        Session::markVideoReceived();
         LiCompleteVideoFrame(handle, me->processFrame(du));
     }
     return 0;

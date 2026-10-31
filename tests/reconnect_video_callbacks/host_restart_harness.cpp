@@ -9,10 +9,21 @@
 #include <iostream>
 #include <stdexcept>
 #include <utility>
+#include <atomic>
+#include <functional>
+#include "recoverybudget.h"
+
+struct NvApp
+{
+    int id = 7;
+    QString name = "Desktop";
+    bool isAppCollectorGame = false;
+};
 
 constexpr int SDL_LOG_CATEGORY_APPLICATION = 0;
 constexpr int FAST_FAIL_TIMEOUT_MS = 2000;
 constexpr int REQUEST_TIMEOUT_MS = 5000;
+constexpr int ML_ERROR_HOST_RESTART = -5502; // Provisional supplied common-c API.
 void SDL_LogInfo(int, const char*, ...) {}
 void SDL_LogWarn(int, const char*, ...) {}
 
@@ -20,11 +31,13 @@ class GfeHttpResponseException : public std::runtime_error
 {
 public:
     using std::runtime_error::runtime_error;
-    GfeHttpResponseException(int, const QString& message)
-        : std::runtime_error(message.toStdString())
+    GfeHttpResponseException(int code, const QString& message)
+        : std::runtime_error(message.toStdString()), status(code)
     {
     }
     QString toQString() const { return QString::fromUtf8(what()); }
+    int getStatusCode() const { return status; }
+    int status = 503;
 };
 class QtNetworkReplyException : public std::runtime_error
 {
@@ -69,6 +82,8 @@ struct Host
     QVector<QString> calls;
     QVector<int> appIds;
     QVector<int> failures;
+    bool appAvailable = true;
+    NvApp app;
 } host;
 
 class NvHTTP
@@ -83,6 +98,13 @@ public:
     {
         bool isNull() const { return host.missingCert; }
     } m_ServerCert;
+    Cert serverCert() const { return m_ServerCert; }
+    void setRequestControl(std::function<int()>, const std::atomic<bool>*) {}
+    QVector<NvApp> getAppList()
+    {
+        host.calls.append("applist");
+        return host.appAvailable ? QVector<NvApp>{ host.app } : QVector<NvApp>{};
+    }
     QUrl m_BaseUrlHttps{ "https://paired-host:47984" };
     int httpsPort() const { return host.missingPort ? 0 : 47984; }
     static QString getXmlString(QString xml, QString tagName);
@@ -154,10 +176,7 @@ class Session
 public:
     NvComputer computer;
     NvComputer* m_Computer = &computer;
-    struct App
-    {
-        int id = 7;
-    } m_App;
+    NvApp m_App;
     struct Preferences
     {
         int remoteResolutionWidth = 0;
@@ -178,6 +197,18 @@ public:
     QString m_LaunchDisplayName;
     float m_LastClientSdrWhiteNits = 0;
     bool m_SuppressConnectionErrorDialog = true;
+    RecoveryBudget m_RecoveryBudget;
+    std::atomic<bool> m_ConnectionCancel{ false };
+    bool m_ExplicitRestartRecovery = false;
+    bool m_RestartRecoveryEligible = false;
+    bool m_RestartEligibilityLogged = false;
+    QString m_RestartRecoveryFailureText;
+    int m_LastTerminationErrorCode = -5502;
+    void logRestartRecoveryIneligibility()
+    {
+        if (!m_RestartRecoveryEligible)
+            m_RestartEligibilityLogged = true;
+    }
     QString tr(const char* text) { return QString::fromUtf8(text); }
     void displayLaunchError(const QString&) {}
     bool attempt()
@@ -290,6 +321,51 @@ int main(int argc, char** argv)
         session.m_SuppressConnectionErrorDialog = false;
         ok &= require(session.attempt() && host.calls == QVector<QString>{ "launch", "post" },
                       "ordinary initial launch must not add retry preflight");
+    }
+    {
+        host = {};
+        Session session;
+        session.m_ExplicitRestartRecovery = true;
+        ok &= require(
+            session.attempt() &&
+                host.calls == QVector<QString>{ "refresh", "applist", "launch", "post" } &&
+                host.appIds == QVector<int>{ 7 } && session.m_RestartRecoveryEligible,
+            "explicit restart must launch authenticated original Desktop after FREE refresh");
+    }
+    {
+        host = {};
+        host.currentGameId = 7;
+        Session session;
+        session.m_ExplicitRestartRecovery = true;
+        ok &= require(session.attempt() &&
+                          host.calls == QVector<QString>{ "refresh", "applist", "resume", "post" },
+                      "explicit restart must resume the same still-running app");
+    }
+    {
+        host = {};
+        host.appAvailable = false;
+        Session session;
+        session.m_ExplicitRestartRecovery = true;
+        ok &= require(
+            !session.attempt() && host.appIds.isEmpty() && session.m_ConnectionCancel &&
+                !session.m_RestartRecoveryFailureText.isEmpty(),
+            "missing original Desktop must fail explicitly without a launch or more retries");
+    }
+    {
+        host = {};
+        host.app.name = "Desktop Explorer";
+        Session session;
+        session.m_ExplicitRestartRecovery = true;
+        ok &= require(!session.attempt() && host.appIds.isEmpty() && session.m_ConnectionCancel,
+                      "changed original app identity must fail closed");
+    }
+    {
+        host = {};
+        host.currentGameId = 99;
+        Session session;
+        session.m_ExplicitRestartRecovery = true;
+        ok &= require(!session.attempt() && host.appIds.isEmpty() && session.m_ConnectionCancel,
+                      "different app must stop explicit Desktop recovery without takeover");
     }
     if (ok)
         std::cout << "host restart recovery passed\n";

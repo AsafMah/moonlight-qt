@@ -729,6 +729,26 @@ NvHTTP::openConnection(QUrl baseUrl,
                        NvLogLevel logLevel,
                        qint64 maxResponseBytes)
 {
+    auto checkRequestControl = [&] {
+        if (m_RequestCancelled && m_RequestCancelled->load()) {
+            throw QtNetworkReplyException(QNetworkReply::OperationCanceledError,
+                                          "Request cancelled");
+        }
+        if (m_RequestRemainingMs) {
+            const int remainingMs = m_RequestRemainingMs();
+            if (remainingMs <= 0) {
+                throw QtNetworkReplyException(QNetworkReply::TimeoutError,
+                                              "Recovery deadline expired");
+            }
+            timeoutMs = timeoutMs ? qMin(timeoutMs, remainingMs) : remainingMs;
+        }
+        if (m_RequestCancelled && m_RequestCancelled->load()) {
+            throw QtNetworkReplyException(QNetworkReply::OperationCanceledError,
+                                          "Request cancelled");
+        }
+    };
+    checkRequestControl();
+
     // Port must be set
     Q_ASSERT(baseUrl.port(0) != 0);
 
@@ -774,6 +794,7 @@ NvHTTP::openConnection(QUrl baseUrl,
     request.setAttribute(QNetworkRequest::ConnectionCacheExpiryTimeoutSecondsAttribute, 0);
 #endif
 
+    checkRequestControl();
     auto sslErrorsConnection = connect(m_Nam, &QNetworkAccessManager::sslErrors, this, &NvHTTP::handleSslErrors);
     auto pinnedConnection = PairedCertificate::enforce(m_Nam, this, m_ServerCert);
     QNetworkReply* reply = m_Nam->get(request);
@@ -792,6 +813,16 @@ NvHTTP::openConnection(QUrl baseUrl,
     }
     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, &loop, &QEventLoop::quit);
+    QTimer cancellationTimer;
+    if (m_RequestCancelled || m_RequestRemainingMs) {
+        connect(&cancellationTimer, &QTimer::timeout, &loop, [&] {
+            if ((m_RequestCancelled && m_RequestCancelled->load()) ||
+                (m_RequestRemainingMs && m_RequestRemainingMs() <= 0)) {
+                reply->abort();
+            }
+        });
+        cancellationTimer.start(10);
+    }
     if (timeoutMs) {
         QTimer::singleShot(timeoutMs, &loop, &QEventLoop::quit);
     }
@@ -815,6 +846,14 @@ NvHTTP::openConnection(QUrl baseUrl,
 #endif
     disconnect(sslErrorsConnection);
     disconnect(pinnedConnection);
+    if (m_RequestCancelled && m_RequestCancelled->load()) {
+        delete reply;
+        throw QtNetworkReplyException(QNetworkReply::OperationCanceledError, "Request cancelled");
+    }
+    if (m_RequestRemainingMs && m_RequestRemainingMs() <= 0) {
+        delete reply;
+        throw QtNetworkReplyException(QNetworkReply::TimeoutError, "Recovery deadline expired");
+    }
     if (url.scheme() == QStringLiteral("https") &&
         (reply->error() == QNetworkReply::NoError ||
          !reply->sslConfiguration().peerCertificate().isNull()) &&

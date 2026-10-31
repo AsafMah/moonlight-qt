@@ -76,6 +76,7 @@
 #define SDL_CODE_PROCESS_QT_OVERLAY_EVENTS 109
 #endif
 #define SDL_CODE_RESOLUTION_CHANGED 111
+#define SDL_CODE_CONNECTION_INTERRUPTED 112
 
 #include <openssl/rand.h>
 
@@ -614,6 +615,10 @@ void Session::clStageStarting(int stage)
 
 void Session::clStageFailed(int stage, int errorCode)
 {
+    if (s_ActiveSession->m_SuppressConnectionErrorDialog ||
+        s_ActiveSession->m_RecoveryBudget.active() || s_ActiveSession->m_ConnectionCancel) {
+        return;
+    }
     // Perform the port test now, while we're on the async connection thread and not blocking the UI.
     unsigned int portFlags = LiGetPortFlagsFromStage(stage);
     s_ActiveSession->m_PortTestResults = LiTestClientConnectivity(CONN_TEST_SERVER, 443, portFlags);
@@ -631,14 +636,17 @@ void Session::clStageFailed(int stage, int errorCode)
 
 void Session::clConnectionTerminated(int errorCode)
 {
-    unsigned int portFlags = LiGetPortFlagsFromTerminationErrorCode(errorCode);
-    s_ActiveSession->m_PortTestResults = LiTestClientConnectivity(CONN_TEST_SERVER, 443, portFlags);
-
+    if (s_ActiveSession->m_ShouldExit || s_ActiveSession->m_ConnectionCancel) {
+        return;
+    }
     // Decide whether this looks like a transient network interruption that we
     // should try to silently reconnect from, rather than tearing down the
     // session and dropping the user back to the app grid.
     bool recoverable;
     switch (errorCode) {
+    case ML_ERROR_HOST_RESTART:
+        recoverable = s_ActiveSession->m_RestartRecoveryEligible;
+        break;
     case ML_ERROR_GRACEFUL_TERMINATION:
     case ML_ERROR_PROTECTED_CONTENT:
     case ML_ERROR_FRAME_CONVERSION:
@@ -657,25 +665,47 @@ void Session::clConnectionTerminated(int errorCode)
     // SDL window, then terminate before the first frame and otherwise loop forever
     // behind a black screen.
     if (recoverable &&
-        s_ActiveSession->m_HasReceivedVideo &&
-        !s_ActiveSession->m_ShouldExit &&
-        !s_ActiveSession->m_ConnectionInterrupted) {
+        (s_ActiveSession->m_HasReceivedVideo ||
+         (errorCode == ML_ERROR_HOST_RESTART && s_ActiveSession->m_RestartRecoveryEligible)) &&
+        !s_ActiveSession->m_ShouldExit && !s_ActiveSession->m_ConnectionCancel) {
 
         s_ActiveSession->m_LastTerminationErrorCode = errorCode;
-        s_ActiveSession->m_ConnectionInterrupted = true;
+        if (errorCode == ML_ERROR_HOST_RESTART) {
+            s_ActiveSession->m_ExplicitRestartRecovery = true;
+        }
+        s_ActiveSession->m_RecoveryBudget.disarmFrames();
+        s_ActiveSession->m_RecoveryFrameReceived = false;
+        s_ActiveSession->m_RecoveryBudget.begin(RecoveryBudget::nowMs());
+        const bool alreadyInterrupted = s_ActiveSession->m_ConnectionInterrupted.exchange(true);
+        if (alreadyInterrupted || s_ActiveSession->m_ReconnectInProgress) {
+            return;
+        }
 
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Connection interrupted (error %d); attempting to reconnect",
                     errorCode);
 
         // Wake the main loop so it can begin the reconnect flow
-        SDL_Event event;
-        event.type = SDL_QUIT;
-        event.quit.timestamp = SDL_GetTicks();
+        SDL_Event event = {};
+        event.type = SDL_USEREVENT;
+        event.user.code = SDL_CODE_CONNECTION_INTERRUPTED;
         pushEventOrWarn(event);
         return;
     }
 
+    // A delivered stop wins even while a previous restart is being recovered.
+    s_ActiveSession->m_ConnectionCancel = true;
+    s_ActiveSession->m_ConnectionInterrupted = false;
+    s_ActiveSession->m_LastTerminationErrorCode = errorCode;
+    s_ActiveSession->m_RecoveryBudget.disarmFrames();
+    if (s_ActiveSession->m_ReconnectInProgress) {
+        return;
+    }
+    if (!s_ActiveSession->m_RecoveryBudget.active() && !s_ActiveSession->m_ShouldExit) {
+        unsigned int portFlags = LiGetPortFlagsFromTerminationErrorCode(errorCode);
+        s_ActiveSession->m_PortTestResults =
+            LiTestClientConnectivity(CONN_TEST_SERVER, 443, portFlags);
+    }
     // Display the termination dialog if this was not intended
     s_ActiveSession->displayTerminationError(errorCode);
 
@@ -698,6 +728,13 @@ void Session::displayTerminationError(int errorCode)
     case ML_ERROR_GRACEFUL_TERMINATION:
         break;
 
+    case ML_ERROR_HOST_RESTART:
+        m_UnexpectedTermination = true;
+        emit displayLaunchError(
+            m_RestartRecoveryFailureText.isEmpty()
+                ? tr("Couldn't recover the Desktop stream after the host restarted.")
+                : m_RestartRecoveryFailureText);
+        break;
     case ML_ERROR_NO_VIDEO_TRAFFIC:
         m_UnexpectedTermination = true;
 
@@ -1172,7 +1209,7 @@ int Session::drSetup(int videoFormat, int width, int height, int frameRate, void
 
 int Session::drSubmitDecodeUnit(PDECODE_UNIT du)
 {
-    s_ActiveSession->m_HasReceivedVideo = true;
+    markVideoReceived();
 
     // Use a lock since we'll be yanking this decoder out
     // from underneath the session when we initiate destruction.
@@ -4721,6 +4758,21 @@ bool Session::applyPendingStreamQualityChange()
 
 bool Session::tryReconnect(ReconnectReason reason)
 {
+    if (m_ShouldExit || m_ConnectionCancel) {
+        return false;
+    }
+    const bool qualityChange = reason == ReconnectReason::StreamQualityChange;
+    m_RecoveryShowToast = !qualityChange;
+    if (!m_RecoveryBudget.begin(RecoveryBudget::nowMs(), qualityChange ? 30000 : 60000)) {
+        return false;
+    }
+    m_ReconnectInProgress = true;
+    struct ReconnectGuard
+    {
+        std::atomic<bool>& active;
+        ~ReconnectGuard() { active = false; }
+    } guard{ m_ReconnectInProgress };
+    m_RecoveryBudget.disarmFrames();
     // Drop any forwarded USB device so the reconnect starts from a clean state.
     teardownUsbTunnel();
 
@@ -4752,9 +4804,6 @@ bool Session::tryReconnect(ReconnectReason reason)
 
     // Total time budget for reconnect attempts before giving up. A quality
     // change talks to a host that was fine a moment ago, so give up sooner.
-    const bool qualityChange = reason == ReconnectReason::StreamQualityChange;
-    const Uint32 graceMs = (qualityChange ? 30 : 60) * 1000;
-    const Uint32 startTicks = SDL_GetTicks();
     int backoffMs = 1000;
 
     // Suppress connection error dialogs during silent retries
@@ -4784,6 +4833,9 @@ bool Session::tryReconnect(ReconnectReason reason)
         }
 
         if (ev.type == SDL_USEREVENT) {
+            if (ev.user.code == SDL_CODE_CONNECTION_INTERRUPTED) {
+                return false;
+            }
             // A resolution report here comes from the connection being started.
             // Handle it once that connection is up, since drSetup() is still
             // running on the connection thread.
@@ -4812,9 +4864,10 @@ bool Session::tryReconnect(ReconnectReason reason)
         processQtOverlayEvents();
     };
 
-    while (!cancelled && SDL_GetTicks() - startTicks < graceMs) {
+    while (!cancelled && !m_ShouldExit && !m_ConnectionCancel &&
+           m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs()) > 0) {
         // Update the on-screen indicator (re-shown each attempt so it stays up)
-        Uint32 remainingMs = graceMs - (SDL_GetTicks() - startTicks);
+        const int remainingMs = m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs());
         const unsigned int remainingSeconds = (remainingMs + 999) / 1000;
         if (qualityChange) {
             showStreamingToast(tr("Switching to %1 at %2 FPS... (%3s)")
@@ -4831,6 +4884,8 @@ bool Session::tryReconnect(ReconnectReason reason)
         // Run the connection start on a worker thread and pump events while we wait
         m_AsyncConnectionSuccess = false;
         m_HasReceivedVideo = false;
+        m_ConnectionInterrupted = false;
+        m_RecoveryBudget.awaitRecoveredFrame();
         updateDualSenseHapticsControllerTarget();
         AsyncConnectionStartThread thread(this);
         thread.start();
@@ -4842,20 +4897,28 @@ bool Session::tryReconnect(ReconnectReason reason)
                     cancelled = true;
                 }
             }
-            if (cancelled) {
-                // Abort the in-progress connection attempt
-                LiInterruptConnection();
+            if (cancelled || m_ShouldExit) {
+                m_ConnectionCancel = true;
             }
+            interruptConnectionAttemptIfStopped();
             processReconnectQtEvents();
             SDL_Delay(10);
         }
         thread.wait();
+        SDL_Event completionEvent;
+        while (SDL_PollEvent(&completionEvent)) {
+            if (handleReconnectEvent(completionEvent)) {
+                cancelled = true;
+                m_ConnectionCancel = true;
+            }
+        }
 
-        if (cancelled) {
+        if (cancelled || m_ShouldExit || m_ConnectionCancel ||
+            m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs()) <= 0) {
             break;
         }
 
-        if (m_AsyncConnectionSuccess) {
+        if (m_AsyncConnectionSuccess && !m_ConnectionInterrupted) {
             reconnected = true;
             if (m_ClipboardHelper != nullptr) {
                 m_ClipboardHelper->updateHostContext();
@@ -4873,15 +4936,17 @@ bool Session::tryReconnect(ReconnectReason reason)
             m_DualSenseHapticsRenderer->setControllerTarget(-1);
         }
         LiStopConnection();
+        m_RecoveryBudget.disarmFrames();
         stopControllerRumbleAtConnectionBoundary(m_InputHandler);
         if (m_DualSenseHapticsRenderer != nullptr) {
             m_DualSenseHapticsRenderer->reset();
         }
         deferredResolution = QSize();
 
-        Uint32 backoffUntil = SDL_GetTicks() + backoffMs;
-        while (SDL_GetTicks() < backoffUntil &&
-               SDL_GetTicks() - startTicks < graceMs) {
+        const int64_t backoffUntil = RecoveryBudget::nowMs() + backoffMs;
+        while (RecoveryBudget::nowMs() < backoffUntil &&
+               m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs()) > 0 && !m_ShouldExit &&
+               !m_ConnectionCancel) {
             SDL_Event ev;
             while (SDL_PollEvent(&ev)) {
                 if (handleReconnectEvent(ev)) {
@@ -4897,7 +4962,7 @@ bool Session::tryReconnect(ReconnectReason reason)
         }
 
         // Exponential backoff, capped at 8 seconds
-        backoffMs = (backoffMs * 2 > 8000) ? 8000 : backoffMs * 2;
+        backoffMs = RecoveryBudget::nextBackoffMs(backoffMs);
     }
 
     m_SuppressConnectionErrorDialog = false;
@@ -4905,9 +4970,11 @@ bool Session::tryReconnect(ReconnectReason reason)
     if (reconnected) {
         // moonlight-common-c has already called drSetup() with the new video
         // format. Recreate the decoder through the normal reset path.
-        SDL_Event resetEvent = {};
-        resetEvent.type = SDL_RENDER_DEVICE_RESET;
-        pushEventOrWarn(resetEvent);
+        if (m_Window != nullptr) {
+            SDL_Event resetEvent = {};
+            resetEvent.type = SDL_RENDER_DEVICE_RESET;
+            pushEventOrWarn(resetEvent);
+        }
 
         // startConnectionAsync() reset the state for this connection. The host
         // may have reported its initial display size while we were connecting.
@@ -4927,13 +4994,13 @@ bool Session::tryReconnect(ReconnectReason reason)
         // torn down, so don't toggle it off on reconnect.
         m_PendingMicToggle = false;
 
-        if (!qualityChange) {
-            showStreamingToast(tr("Reconnected"), 1500);
-        }
+        // The stream loop can now recreate the decoder. Only its first real
+        // host frame completes the outage and emits the recovered notification.
         return true;
     }
 
-    if (cancelled) {
+    if (cancelled || m_ShouldExit) {
+        m_ConnectionCancel = true;
         // User asked to quit during reconnect; honor it without an error dialog
         m_ShouldExit = true;
         m_UnexpectedTermination = false;
@@ -5137,6 +5204,9 @@ bool Session::startConnectionAsync()
 
     try {
         NvHTTP http(m_Computer);
+        http.setRequestControl(
+            [this] { return m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs()); },
+            &m_ConnectionCancel);
         if (m_SuppressConnectionErrorDialog) {
             // Polling is stopped while streaming. A respawned host can have
             // lost its app state, so choose the retry verb from its fresh state.
@@ -5146,6 +5216,19 @@ bool Session::startConnectionAsync()
         }
         if (hostConnectionInfo.currentGameId != 0 && hostConnectionInfo.currentGameId != m_App.id) {
             throw GfeHttpResponseException(409, "A different app is running on the host");
+        }
+        if (m_ExplicitRestartRecovery) {
+            const auto apps = http.getAppList();
+            const auto original =
+                std::find_if(apps.cbegin(), apps.cend(), [this](const NvApp& app) {
+                    return app.id == m_App.id &&
+                           restartRecoveryAppEligible(app.name.toStdString(),
+                                                      app.isAppCollectorGame, app.id, true);
+                });
+            if (original == apps.cend()) {
+                throw GfeHttpResponseException(404,
+                                               "The original Desktop app is no longer available");
+            }
         }
         const bool resumingSession = hostConnectionInfo.currentGameId != 0;
         RemoteStreamConfig remoteStreamConfig(
@@ -5166,6 +5249,10 @@ bool Session::startConnectionAsync()
                       m_LaunchUseVdd,
                       m_LaunchDisplayName,
                       remoteStreamConfig);
+        m_RestartRecoveryEligible =
+            restartRecoveryAppEligible(m_App.name.toStdString(), m_App.isAppCollectorGame, m_App.id,
+                                       !http.serverCert().isNull() && http.httpsPort() != 0);
+        logRestartRecoveryIneligibility();
 
         try {
             updateHostConnectionInfoFromServerInfo(http.getServerInfo(NvHTTP::NVLL_NONE, true),
@@ -5183,17 +5270,34 @@ bool Session::startConnectionAsync()
                         qPrintable(e.toQString()));
         }
     } catch (const GfeHttpResponseException& e) {
+        logRestartRecoveryIneligibility();
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Connection launch failed: %s",
                     qPrintable(e.toQString()));
-        if (!m_SuppressConnectionErrorDialog) {
+        if (m_ExplicitRestartRecovery && (e.getStatusCode() == 404 || e.getStatusCode() == 409)) {
+            m_RestartRecoveryFailureText =
+                e.getStatusCode() == 404
+                    ? tr("The original Desktop app is no longer available on the host.")
+                    : tr("A different app is running on the host. Desktop recovery was stopped.");
+            m_LastTerminationErrorCode = ML_ERROR_HOST_RESTART;
+            m_ConnectionCancel = true;
+        }
+        if (!m_SuppressConnectionErrorDialog && !m_ConnectionCancel) {
             emit displayLaunchError(tr("Host returned error: %1").arg(e.toQString()));
         }
         return false;
     } catch (const QtNetworkReplyException& e) {
+        logRestartRecoveryIneligibility();
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Connection launch failed: %s",
                     qPrintable(e.toQString()));
-        if (!m_SuppressConnectionErrorDialog) {
+        if (!m_SuppressConnectionErrorDialog && !m_ConnectionCancel) {
             emit displayLaunchError(e.toQString());
+        }
+        return false;
+    } catch (const std::runtime_error& e) {
+        logRestartRecoveryIneligibility();
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Invalid restart app list: %s", e.what());
+        if (!m_SuppressConnectionErrorDialog && !m_ConnectionCancel) {
+            emit displayLaunchError(tr("The host returned an invalid application list."));
         }
         return false;
     }
@@ -5216,7 +5320,8 @@ bool Session::startConnectionAsync()
 
         // getActiveAddressReachability() does network I/O, so we only attempt to check
         // reachability if we've already contacted the PC successfully.
-        switch (m_Computer->getActiveAddressReachability()) {
+        switch (m_RecoveryBudget.active() ? NvComputer::RI_UNKNOWN
+                                          : m_Computer->getActiveAddressReachability()) {
         case NvComputer::RI_LAN:
             // This address is on-link, so treat it as a local address
             // even if it's not in RFC 1918 space or it's an IPv6 address.
@@ -5255,6 +5360,9 @@ bool Session::startConnectionAsync()
 
     prepareVideoCallbacksForConnection(&m_VideoCallbacks);
 
+    if (!prepareConnectionAttemptControl()) {
+        return false;
+    }
     int err = LiStartConnection(&preparedHostInfo.info, &m_StreamConfig, &k_ConnCallbacks,
                                 &m_VideoCallbacks, &m_AudioCallbacks,
                                 NULL, 0, NULL, 0);
@@ -5326,6 +5434,67 @@ bool Session::startConnectionAsync()
     return true;
 }
 
+void Session::logRestartRecoveryIneligibility()
+{
+    if (!m_RestartRecoveryEligible && !m_RestartEligibilityLogged) {
+        m_RestartEligibilityLogged = true;
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Host restart recovery disabled: requires original Desktop, "
+                    "non-collector, positive app ID and successful paired HTTPS launch");
+    }
+}
+
+bool Session::prepareConnectionAttemptControl()
+{
+    // Transfer the remaining outage budget, never a fresh sixty seconds.
+    // Preparation resets only the old attempt; recheck stop/deadline afterward
+    // so cancellation at connection entry survives LiStartConnection().
+    LiPrepareConnectionAttempt(
+        m_RecoveryBudget.active()
+            ? static_cast<uint32_t>(m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs()))
+            : UINT32_MAX);
+    if (interruptConnectionAttemptIfStopped()) {
+        return false;
+    }
+    LiSetHostRestartRecoveryEnabled(m_RestartRecoveryEligible);
+    return true;
+}
+
+bool Session::interruptConnectionAttemptIfStopped()
+{
+    if (m_ConnectionCancel || m_ShouldExit ||
+        m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs()) <= 0) {
+        LiInterruptConnection();
+        return true;
+    }
+    return false;
+}
+
+void Session::processRecoveryStatus()
+{
+    if (m_ShouldExit || m_ConnectionCancel) {
+        return;
+    }
+    if (m_RecoveryFrameReceived.exchange(false)) {
+        m_ExplicitRestartRecovery = false;
+        if (m_RecoveryShowToast) {
+            showStreamingToast(tr("Reconnected"), 1500);
+        }
+    }
+    if (m_RecoveryBudget.active() && m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs()) <= 0) {
+        m_ConnectionCancel = true;
+        m_ShouldExit = true;
+        m_ConnectionInterrupted = false;
+        m_RecoveryBudget.disarmFrames();
+        LiInterruptConnection();
+        displayTerminationError(m_ExplicitRestartRecovery ? ML_ERROR_HOST_RESTART
+                                                          : m_LastTerminationErrorCode.load());
+        SDL_Event event = {};
+        event.type = SDL_QUIT;
+        pushEventOrWarn(event);
+    }
+}
+
 void Session::flushWindowEvents()
 {
     // Pump events to ensure all pending OS events are posted
@@ -5354,6 +5523,8 @@ void Session::setShouldExit(bool quitHostApp)
     }
 
     m_ShouldExit = true;
+    m_ConnectionCancel = true;
+    m_RecoveryBudget.disarmFrames();
 }
 
 void Session::start()
@@ -5438,6 +5609,12 @@ void Session::start()
 
     // Kick off the async connection thread then return to the caller to pump the event loop
     auto thread = new AsyncConnectionStartThread(this);
+    auto watchdog = new QTimer(this);
+    QObject::connect(watchdog, &QTimer::timeout, this,
+                     [this] { interruptConnectionAttemptIfStopped(); });
+    QObject::connect(thread, &QThread::finished, watchdog, &QTimer::stop);
+    QObject::connect(thread, &QThread::finished, watchdog, &QObject::deleteLater);
+    watchdog->start(10);
     QObject::connect(thread, &QThread::finished, this, &Session::exec);
     QObject::connect(thread, &QThread::finished, thread, &QThread::deleteLater);
     thread->start();
@@ -5445,6 +5622,9 @@ void Session::start()
 
 void Session::interrupt()
 {
+    m_ShouldExit = true;
+    m_ConnectionCancel = true;
+    m_RecoveryBudget.disarmFrames();
     // Stop any connection in progress
     LiInterruptConnection();
 
@@ -5648,6 +5828,13 @@ static const Uint32 k_FullScreenEntryTimeoutMs = 1200;
 
 void Session::exec()
 {
+    if (!m_AsyncConnectionSuccess && m_ConnectionInterrupted && !m_ShouldExit &&
+        !m_ConnectionCancel) {
+        m_AsyncConnectionSuccess = tryReconnect();
+        if (!m_AsyncConnectionSuccess && !m_ShouldExit) {
+            displayTerminationError(m_LastTerminationErrorCode);
+        }
+    }
 
     // If the connection failed, clean up and abort the connection.
     if (!m_AsyncConnectionSuccess) {
@@ -6204,6 +6391,7 @@ void Session::exec()
 
     SDL_Event event;
     for (;;) {
+        processRecoveryStatus();
         hideGuiWindowWhenSettled(false);
         processSunshineAbrFeedback();
         if (m_StatsOverlay) {
@@ -6235,6 +6423,10 @@ void Session::exec()
         // and other problems.
         int waitTimeoutMs =
             (m_ClipboardHelper != nullptr && m_ClipboardHelper->isRunning()) ? 100 : 1000;
+        if (m_RecoveryBudget.active()) {
+            waitTimeoutMs =
+                qMin(waitTimeoutMs, qMax(m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs()), 1));
+        }
         if (qtUiNeedsEventProcessing()) {
             waitTimeoutMs = qMin(waitTimeoutMs, static_cast<int>(QT_UI_EVENT_PUMP_INTERVAL_MS));
         }
@@ -6299,6 +6491,18 @@ void Session::exec()
         const bool filterLocalMouseForStylusReplay =
             m_StylusReplayTest && m_StylusReplayTest->shouldFilterLocalMouseInput();
 #endif
+        const bool recoveryNotification =
+            event.type == SDL_USEREVENT && event.user.code == SDL_CODE_CONNECTION_INTERRUPTED;
+        if (recoveryNotification) {
+            event.type = SDL_QUIT;
+        } else if (event.type == SDL_QUIT ||
+                   (m_RecoveryBudget.active() &&
+                    ((event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) ||
+                     (event.type == SDL_WINDOWEVENT &&
+                      event.window.event == SDL_WINDOWEVENT_CLOSE)))) {
+            setShouldExit();
+            event.type = SDL_QUIT;
+        }
         switch (event.type) {
         case SDL_QUIT:
             // If the connection was interrupted by a transient network problem

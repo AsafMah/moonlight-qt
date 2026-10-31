@@ -47,6 +47,8 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | overlay_menu_navigation | 悬浮菜单键盘/鼠标导航(QTest 事件,需 offscreen) | Windows |
 | live_window_mode | Production Session mode transitions and menu dispatch/capture using a fake SDL/Qt shell and the real menu (offscreen) | Windows |
 | menu_session | Production menu dispatch, delayed close/capture ownership, pending mouse mode and manual/focus audio policy with fake SDL | Ubuntu / Windows (unittest + C++) |
+| restart_recovery | Actual termination callback, retry pump and HTTP event loop with fake clock/network; Desktop identity, shared deadline, first host frame and cancellation | Ubuntu / Windows (unittest + C++) |
+| restart_recovery/verify_library_cancellation.py | Real common-c setup cancellation latency using loopback RTSP/STUN and deterministic TCP/DNS/NAT64 hooks; supplied library sources are not edited | Windows (CMake + MSVC) |
 | menu_phase1 | Real menu Phase 1 pins/state gates, confirmation, shortcut editor and narrow-window keyboard/controller scrolling at DPR 1/1.5/2 | Windows (offscreen QtTest) |
 | overlay_layers | Production offscreen bitmap layer composition and ownership | Windows |
 | stream_quality | 串流画质菜单的分辨率/帧率预设生成、配置差异与切换路径判定 | Windows |
@@ -71,7 +73,31 @@ pull-renderer connections and checks that push callbacks remain intact. Its Pyth
 gate checks both FFmpeg pull sites and PyroWave's pull thread mark host video,
 not decoder self-test samples, and that retries reset the atomic received flag.
 The native test runs in Windows CI; the Python gates run in `version-tests`.
-The local `test_host_restart_recovery.py` regression additionally compiles the
+
+`restart_recovery` executes extracted production termination, retry-pump, frame
+marker and HTTP event-loop code. Its network manager creates scripted replies,
+never DNS queries, sockets, TLS handshakes or host requests. A fake monotonic clock
+checks the single 60-second outage budget across setup/repeated restart attempts
+and connection success without a recovered frame; actual Qt timers exercise
+deadline/cancellation of pending HTTP replies. Run
+`python -m unittest discover -s tests\restart_recovery -p 'test_*.py'`
+with Qt and a C++ compiler on PATH. Windows tests use the DLL-safe launcher.
+These are not native stream/RDP tests, and do not establish that common-c's
+blocking DNS/RTSP operations obey cancellation.
+
+`python tests\restart_recovery\verify_library_cancellation.py` separately builds
+the real patched common-c library and replays its owner's cancellation fixtures,
+printing measured interrupt-to-return latency for entry, TCP connect, DNS,
+NAT64, STUN and partial RTSP receive. Every measured cancellation must return
+within 500 ms (entry within 250 ms), below the client integration's one-second
+ceiling. The prepared relative deadline is not renewed by `LiStartConnection`;
+the client passes its remaining outage budget before rechecking cancellation.
+The OS resolver may finish later in a detached, independently owned task, but
+its caller returns and cancelled results are not published. ENet's bounded
+service cadence is not independently latency-tested here. Neither the fixture
+nor clock fakes prove native RDP recovery or non-Windows interoperability.
+
+The `reconnect_video_callbacks\test_host_restart_recovery.py` regression additionally compiles the
 production connection-start HTTP block and authenticated server-info reader
 against a scripted transport. It covers stale busy state after Core respawn,
 `NO_APP_TO_RESUME` races, original app-ID reuse, other-app refusal, authenticated

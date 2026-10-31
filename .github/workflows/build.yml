@@ -75,6 +75,9 @@ jobs:
     - name: Check pull renderers report received video
       run: python3 -m unittest discover -s tests/reconnect_video_callbacks -p 'test_*.py'
 
+    - name: Test restart-intent eligibility, shared deadline and cancellation
+      run: python3 -m unittest discover -s tests/restart_recovery -p 'test_*.py'
+
     - name: Check settings search metadata
       # 设置搜索的索引是运行期从真实控件现采的；这里拦的是元数据漂移
       # （没标题、没分类、用 visible 代替 applicable 等），见脚本头注释。
@@ -313,6 +316,15 @@ jobs:
         rem mocks 里是 SdlGamepadKeyNavigation 的 QML 替身。
         set QML_XHR_ALLOW_FILE_READ=1
         qmltestrunner -input tests\settings_search -import tests\settings_search\mocks
+        if errorlevel 1 exit /b %ERRORLEVEL%
+
+    - name: Measure real common-c connection cancellation latency
+      timeout-minutes: 5
+      shell: cmd
+      run: |
+        for /f "usebackq delims=" %%i in (`scripts\vswhere.exe -latest -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvarsall.bat" AMD64
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        python tests\restart_recovery\verify_library_cancellation.py
         if errorlevel 1 exit /b %ERRORLEVEL%
 
     - name: Test clipboard / cursor / file-mapping / overlay layout logic

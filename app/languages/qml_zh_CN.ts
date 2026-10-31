@@ -3984,6 +3984,22 @@
         <translation>已重连</translation>
     </message>
     <message>
+        <source>Couldn't recover the Desktop stream after the host restarted.</source>
+        <translation>主机重启后无法恢复桌面串流。</translation>
+    </message>
+    <message>
+        <source>The original Desktop app is no longer available on the host.</source>
+        <translation>主机上已无法找到原来的 Desktop 应用。</translation>
+    </message>
+    <message>
+        <source>A different app is running on the host. Desktop recovery was stopped.</source>
+        <translation>主机正在运行其他应用，已停止恢复桌面串流。</translation>
+    </message>
+    <message>
+        <source>The host returned an invalid application list.</source>
+        <translation>主机返回了无效的应用列表。</translation>
+    </message>
+    <message>
         <source>Physical DualSense haptics was selected, but no active USB DualSense four-channel audio endpoint was found yet. Moonlight will keep checking during this stream.</source>
         <translation>已选择实体 DualSense 触觉反馈，但尚未发现活动的 USB DualSense 四声道音频端点。Moonlight 将在本次串流期间继续检测。</translation>
     </message>

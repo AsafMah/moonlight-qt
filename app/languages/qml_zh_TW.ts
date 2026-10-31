@@ -3414,6 +3414,22 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Couldn't recover the Desktop stream after the host restarted.</source>
+        <translation>主機重新啟動後無法恢復桌面串流。</translation>
+    </message>
+    <message>
+        <source>The original Desktop app is no longer available on the host.</source>
+        <translation>主機上已無法找到原來的 Desktop 應用程式。</translation>
+    </message>
+    <message>
+        <source>A different app is running on the host. Desktop recovery was stopped.</source>
+        <translation>主機正在執行其他應用程式，已停止恢復桌面串流。</translation>
+    </message>
+    <message>
+        <source>The host returned an invalid application list.</source>
+        <translation>主機傳回了無效的應用程式清單。</translation>
+    </message>
+    <message>
         <location filename="../streaming/session.cpp" line="3345"/>
         <source>Physical DualSense haptics was selected, but no active USB DualSense four-channel audio endpoint was found yet. Moonlight will keep checking during this stream.</source>
         <translation>已選擇實體 DualSense 觸覺回饋，但尚未找到使用中的 USB DualSense 四聲道音訊端點。Moonlight 將在本次串流期間繼續檢查。</translation>

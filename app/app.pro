@@ -358,6 +358,7 @@ HEADERS += \
     streaming/input/gamepadsensorrate.h \
     streaming/input/keyboardstate.h \
     streaming/session.h \
+    streaming/recoverybudget.h \
     streaming/videocallbacks.h \
     streaming/hostcommandrunner.h \
     streaming/filemappingclient.h \

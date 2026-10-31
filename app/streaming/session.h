@@ -1,5 +1,7 @@
 #pragma once
 
+#include "recoverybudget.h"
+
 #include <QSemaphore>
 #include <QPoint>
 #include <QJsonArray>
@@ -161,6 +163,10 @@ public:
     {
         if (s_ActiveSession != nullptr) {
             s_ActiveSession->m_HasReceivedVideo = true;
+            if (!s_ActiveSession->m_ConnectionCancel &&
+                s_ActiveSession->m_RecoveryBudget.receivedHostFrame(RecoveryBudget::nowMs())) {
+                s_ActiveSession->m_RecoveryFrameReceived = true;
+            }
         }
     }
 
@@ -229,6 +235,10 @@ private:
     void exec();
 
     bool startConnectionAsync();
+    bool prepareConnectionAttemptControl();
+    bool interruptConnectionAttemptIfStopped();
+    void processRecoveryStatus();
+    void logRestartRecoveryIneligibility();
 
     enum class ReconnectReason
     {
@@ -531,14 +541,24 @@ private:
     int m_MouseEmulationRefCount;
     int m_FlushingWindowEventsRef;
     QStringList m_LaunchWarnings;
-    bool m_ShouldExit;
+    std::atomic<bool> m_ShouldExit;
 
     // Graceful reconnect state
-    bool m_ConnectionInterrupted;        // set by clConnectionTerminated for recoverable errors
-    bool m_SuppressConnectionErrorDialog; // suppress error dialogs during reconnect attempts
+    std::atomic<bool>
+        m_ConnectionInterrupted; // set by clConnectionTerminated for recoverable errors
+    std::atomic<bool> m_SuppressConnectionErrorDialog;
     // Set on the decoder thread, read on the connection thread.
     std::atomic<bool> m_HasReceivedVideo;
-    int m_LastTerminationErrorCode;      // stored to show final error if reconnect gives up
+    std::atomic<int> m_LastTerminationErrorCode;
+    RecoveryBudget m_RecoveryBudget;
+    std::atomic<bool> m_ConnectionCancel{ false };
+    std::atomic<bool> m_ReconnectInProgress{ false };
+    std::atomic<bool> m_RestartRecoveryEligible{ false };
+    std::atomic<bool> m_ExplicitRestartRecovery{ false };
+    std::atomic<bool> m_RecoveryFrameReceived{ false };
+    bool m_RecoveryShowToast = false;
+    bool m_RestartEligibilityLogged = false;
+    QString m_RestartRecoveryFailureText;
 
     bool m_AsyncConnectionSuccess;
     float m_LastClientSdrWhiteNits;

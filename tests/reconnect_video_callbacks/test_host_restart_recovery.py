@@ -51,7 +51,8 @@ class HostRestartRecoveryTests(unittest.TestCase):
             (path / "recovery.pro").write_text(
                 "QT = core network\nCONFIG += console c++17 release\n"
                 "CONFIG -= app_bundle debug debug_and_release\n"
-                "TEMPLATE = app\nTARGET = recovery\nSOURCES = main.cpp\n", encoding="utf-8")
+                "TEMPLATE = app\nTARGET = recovery\nSOURCES = main.cpp\n"
+                f'INCLUDEPATH += "{ROOT / "app/streaming"}"\n', encoding="utf-8")
             for command in ([qmake, "recovery.pro"],
                             ["nmake", "/nologo"] if os.name == "nt" else ["make", "-s"]):
                 result = subprocess.run(command, cwd=path, capture_output=True,

@@ -15,6 +15,8 @@
 #include <QVariant>
 
 #include <optional>
+#include <atomic>
+#include <functional>
 
 class NvComputer;
 
@@ -227,6 +229,14 @@ public:
 
     QUrl m_BaseUrlHttp;
     QUrl m_BaseUrlHttps;
+
+    // The callbacks remain valid until this synchronous request owner is destroyed.
+    void setRequestControl(std::function<int()> remainingMs, const std::atomic<bool>* cancelled)
+    {
+        m_RequestRemainingMs = std::move(remainingMs);
+        m_RequestCancelled = cancelled;
+    }
+
 private:
     void
     handleSslErrors(QNetworkReply* reply, const QList<QSslError>& errors);
@@ -260,4 +270,6 @@ private:
     QSslCertificate m_ServerCert;
     bool m_UseTrueUid;
     QString m_Uuid;
+    std::function<int()> m_RequestRemainingMs;
+    const std::atomic<bool>* m_RequestCancelled = nullptr;
 };

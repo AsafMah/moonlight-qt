@@ -36,6 +36,7 @@ QSize OverlayStatsWindow::layoutStrip(QPainter* painter, int requestedWidth) con
         bool graph = false;
         bool heading = false;
         QString inlineLabel;
+        qreal valueWidth = 0;
     };
     struct Group
     {
@@ -148,6 +149,70 @@ QSize OverlayStatsWindow::layoutStrip(QPainter* painter, int requestedWidth) con
     constexpr qreal separation = 13;
     constexpr qreal padding = 4;
     qreal widestItem = 0, widestGroup = 0;
+    // Reserve formatted numeric slots, including unavailable values' units.
+    // Changing telemetry must not move the wrap boundary every refresh.
+    auto reservedValue = [&](const Item& item) -> QString {
+        if (!item.metric) {
+            return item.label == tr("0.1% low")  ? QStringLiteral("999")
+                   : item.label == tr("Network") ? QStringLiteral("99.9 ms")
+                                                 : QString();
+        }
+        switch (*item.metric) {
+        case Metric::Fps:
+            return m_Snapshot.targetFps >= 100
+                       ? (m_Preset == Preset::Minimal ? QStringLiteral("999")
+                                                      : QStringLiteral("999/999/999"))
+                       : (m_Preset == Preset::Minimal ? QStringLiteral("99")
+                                                      : QStringLiteral("99/99/99"));
+        case Metric::OnePercentLow:
+            return m_Snapshot.targetFps >= 100 ? QStringLiteral("999") : QStringLiteral("99");
+        case Metric::Rtt:
+            return QStringLiteral("999 ± 999 ms");
+        case Metric::Latency:
+            return QStringLiteral("~99 ms");
+        case Metric::Host:
+        case Metric::Decode:
+        case Metric::Queue:
+        case Metric::Render:
+            return QStringLiteral("99.9 ms");
+        case Metric::Jitter:
+            return QStringLiteral("99.99 ms");
+        case Metric::Loss:
+            return QStringLiteral("100.00%");
+        case Metric::PacerDrops:
+            return QStringLiteral("100.0%");
+        case Metric::Bitrate:
+            return m_Extras.targetBitrateKbps > 0 ? QStringLiteral("999.9 / 999 Mbps")
+                                                  : QStringLiteral("999.9 Mbps");
+        case Metric::Resolution:
+            return QStringLiteral("%1x%2@999 %3")
+                .arg(m_Snapshot.width)
+                .arg(m_Snapshot.height)
+                .arg(m_Snapshot.codec);
+        default:
+            return {};
+        }
+    };
+    qreal digitWidth = 0;
+    for (char digit = '0'; digit <= '9'; ++digit) {
+        digitWidth = std::max(digitWidth, values.horizontalAdvance(QChar(digit)));
+    }
+    auto reservedWidth = [&](const QString& text) {
+        qreal width = 0;
+        QString value = text;
+        QString unit;
+        if (value.endsWith(QStringLiteral(" ms"))) {
+            value.chop(3);
+            unit = QStringLiteral("ms");
+        } else if (value.endsWith(QStringLiteral(" Mbps"))) {
+            value.chop(5);
+            unit = QStringLiteral("Mbps");
+        }
+        for (QChar c : value) {
+            width += c.isDigit() ? digitWidth : values.horizontalAdvance(c);
+        }
+        return width + (unit.isEmpty() ? 0 : small.horizontalAdvance(unit) + 1);
+    };
     for (auto& g : groups) {
         for (auto& item : g.items) {
             item.inlineLabel = item.label;
@@ -186,33 +251,43 @@ QSize OverlayStatsWindow::layoutStrip(QPainter* painter, int requestedWidth) con
                     break;
                 }
             }
-            const qreal valueWidth = std::max(values.horizontalAdvance(item.value),
-                                              values.horizontalAdvance(stableText(item.value)));
+            const qreal valueWidth =
+                std::max(values.horizontalAdvance(item.value),
+                         values.horizontalAdvance(stableText(item.value))) +
+                (item.unit.isEmpty() ? 0 : small.horizontalAdvance(item.unit) + 1);
+            item.valueWidth = std::max(valueWidth, reservedWidth(reservedValue(item)));
+            // An exceptional value can grow its slot, never shrink it on
+            // the next refresh. Explicit geometry changes reset the budget.
+            const QString key =
+                item.metric ? metricId(*item.metric) : QStringLiteral("detail:") + item.label;
+            auto& width = m_StripValueWidths[key];
+            width = std::max(width, item.valueWidth);
+            item.valueWidth = width;
             const qreal labelWidth =
                 (item.heading ? labels : compactLabels).horizontalAdvance(item.inlineLabel);
-            item.width = labelWidth + (item.inlineLabel.isEmpty() ? 0 : gap) + valueWidth;
-            if (!item.unit.isEmpty()) {
-                item.width += small.horizontalAdvance(item.unit) + 1;
-            }
+            item.width = labelWidth + (item.inlineLabel.isEmpty() ? 0 : gap) + item.valueWidth;
             if (item.graph) {
                 item.width += 128;
             }
-            widestItem = std::max(
-                widestItem, std::max(compactLabels.horizontalAdvance(item.label),
-                                     item.graph ? qreal(128)
-                                                : valueWidth + small.horizontalAdvance(item.unit) +
-                                                      (item.unit.isEmpty() ? 0 : 1)));
+            widestItem = std::max(widestItem, std::max(compactLabels.horizontalAdvance(item.label),
+                                                       item.graph ? qreal(128) : item.valueWidth));
             g.width += item.width + gap;
         }
         g.width -= gap;
         widestGroup = std::max(widestGroup, g.width);
     }
-    const int maxWidth = m_MaximumBodySize.isValid() ? m_MaximumBodySize.width() : MaxPanelWidth;
+    qreal singleRowWidth = padding * 2 + separation * (groups.size() - 1);
+    for (const auto& g : groups) {
+        singleRowWidth += g.width;
+    }
+    const int defaultWidth = std::max(defaultPanelWidth(m_Preset), qCeil(singleRowWidth));
+    const int maxWidth = m_MaximumBodySize.isValid() ? m_MaximumBodySize.width()
+                                                     : std::max(MaxPanelWidth, defaultWidth);
     const int desired = requestedWidth > 0                                    ? requestedWidth
                         : m_BodySize.isValid() && m_Preset != Preset::Minimal ? m_BodySize.width()
                         : m_Preset == Preset::Minimal  ? qCeil(widestGroup + padding * 2)
                         : m_Preset == Preset::Detailed ? 720
-                                                       : defaultPanelWidth(m_Preset);
+                                                       : defaultWidth;
     const qreal limit = std::max(widestItem + padding * 2, qreal(std::min(desired, maxWidth)));
     const bool stacked = limit < widestGroup + padding * 2;
     qreal x = padding, used = padding;
@@ -229,11 +304,7 @@ QSize OverlayStatsWindow::layoutStrip(QPainter* painter, int requestedWidth) con
         }
         for (auto& item : g.items) {
             if (stacked) {
-                item.width = std::max(compactLabels.horizontalAdvance(item.label),
-                                      std::max(values.horizontalAdvance(item.value),
-                                               values.horizontalAdvance(stableText(item.value))) +
-                                          small.horizontalAdvance(item.unit) +
-                                          (item.unit.isEmpty() ? 0 : 1));
+                item.width = std::max(compactLabels.horizontalAdvance(item.label), item.valueWidth);
                 if (item.graph) {
                     item.width = std::max(item.width, qreal(128));
                 }

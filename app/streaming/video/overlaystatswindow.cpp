@@ -173,6 +173,9 @@ void OverlayStatsWindow::setStats(const StatsSnapshot& snapshot, const Extras& e
 
 void OverlayStatsWindow::setPreset(Preset preset)
 {
+    if (m_Preset != preset) {
+        m_StripValueWidths.clear();
+    }
     m_Preset = preset;
 }
 
@@ -183,6 +186,9 @@ void OverlayStatsWindow::setMetrics(const QVector<Metric>& metrics)
 
 void OverlayStatsWindow::setScalePercent(int percent)
 {
+    if (m_ScalePercent != clampScalePercent(percent)) {
+        m_StripValueWidths.clear();
+    }
     m_ScalePercent = clampScalePercent(percent);
     const OverlayFonts fonts = overlayFonts(m_ScalePercent);
     m_LabelFont = fonts.label;
@@ -1305,7 +1311,7 @@ void OverlayStatsWindow::resizeTo(const QPoint& pointer)
         body.rheight() -= qRound(delta.y());
     }
 
-    m_BodySize = body;
+    setBodySize(body);
     m_BodySize = metricBodySize(); // clamped
 
     // The dragged edges move; the opposite ones stay put

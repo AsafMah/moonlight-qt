@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QHash>
+
 #include "overlayrasterwindow.h"
 #include "overlaystatslayout.h"
 #include "overlaystatspreset.h"
@@ -70,8 +72,20 @@ public:
     // Size of a panel preset's body at 100% scale, or an invalid size for the
     // default (default width, as tall as the content). Ignored by the other
     // presets, which always fit their content.
-    void setBodySize(const QSize& size) { m_BodySize = size; }
-    void setMaximumBodySize(const QSize& size) { m_MaximumBodySize = size; }
+    void setBodySize(const QSize& size)
+    {
+        if (m_BodySize != size) {
+            m_StripValueWidths.clear();
+            m_BodySize = size;
+        }
+    }
+    void setMaximumBodySize(const QSize& size)
+    {
+        if (m_MaximumBodySize != size) {
+            m_StripValueWidths.clear();
+            m_MaximumBodySize = size;
+        }
+    }
     void setMovementBounds(const QRect& bounds) { m_MovementBounds = bounds; }
     QPoint bodyPosition() const;
     bool isResizable() const { return StatsOverlay::presetIsResizable(m_Preset); }
@@ -205,6 +219,7 @@ private:
     StatsOverlay::PanelContent panelContent(QVector<Cell>& cells) const;
     QSize panelBodySize() const;
     QSize metricBodySize() const;
+    mutable QHash<QString, qreal> m_StripValueWidths;
     void paintPanel(QPainter* painter, const StatsOverlay::PanelLayout& layout,
                     const StatsOverlay::PanelContent& content, const QVector<Cell>& cells) const;
     void paintFrameTimeGraph(QPainter* painter, const QRect& area) const;

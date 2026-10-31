@@ -25,6 +25,8 @@
 
 using namespace StatsOverlay;
 
+extern "C" uint64_t LiGetMicroseconds();
+
 namespace {
 
 bool require(bool condition, const QString& message, QTextStream& err)
@@ -1272,6 +1274,234 @@ bool testStripCoverageAndTelemetry(QTextStream& err)
                   QStringLiteral("unavailable telemetry must not show cached sample values"), err);
     return ok;
 }
+bool testLiveStripWrapStability(QTextStream& err)
+{
+    bool ok = true;
+    StatsSnapshot low = sample();
+    low.rttMs = 8;
+    low.rttVarianceMs = 1;
+    StatsSnapshot high = low;
+    high.rttMs = 12;
+    high.rttVarianceMs = 3;
+    RenderWindow probe;
+    probe.setPreset(Preset::Compact);
+    probe.setScalePercent(100);
+    probe.setStats(low, {});
+    probe.setBodySize(QSize(3000, 25));
+    const int rowHeight = probe.preferredSize().height();
+    // Discover the real-font boundary, rather than pinning platform glyph widths.
+    int left = 250, right = 3000;
+    while (left < right) {
+        const int width = (left + right) / 2;
+        probe.setBodySize(QSize(width, 25));
+        if (probe.preferredSize().height() == rowHeight) {
+            right = width;
+        } else {
+            left = width + 1;
+        }
+    }
+    const int boundary = left;
+    err << "Live NET fixture: one-row boundary=" << boundary << " at 100%\n";
+    const QString output = qEnvironmentVariable("MOONLIGHT_OVERLAY_TEST_OUTPUT_DIR");
+    QVector<QImage> sequence;
+    for (int scale : { 75, 80, 100, 150 }) {
+        for (int width : { boundary - 2, boundary, boundary + 2, 1452, 400, 250 }) {
+            RenderWindow window;
+            window.setPreset(Preset::Compact);
+            window.setScalePercent(scale);
+            window.setBodySize(QSize(width, 25));
+            window.setStats(low, {});
+            const QSize initial = window.preferredSize();
+            for (int update = 0; update < 12; ++update) {
+                const StatsSnapshot& snapshot = update % 2 ? high : low;
+                window.setStats(snapshot, {});
+                const auto text = window.recordedText();
+                ok &= require(window.preferredSize() == initial,
+                              QStringLiteral("live NET w%1 s%2 update%3 changed %4x%5 to %6x%7")
+                                  .arg(width)
+                                  .arg(scale)
+                                  .arg(update)
+                                  .arg(initial.width())
+                                  .arg(initial.height())
+                                  .arg(window.preferredSize().width())
+                                  .arg(window.preferredSize().height()),
+                              err);
+                std::set<Metric> metrics;
+                for (const auto& item : text) {
+                    const auto hit = window.tooltipAt(item.bounds.center().toPoint());
+                    if (hit) {
+                        metrics.insert(hit->metric);
+                        if (hit->metric == Metric::Rtt) {
+                            ok &=
+                                require(hit->value == (update % 2 ? QStringLiteral("12 ± 3 ms")
+                                                                  : QStringLiteral("8 ± 1 ms")),
+                                        QStringLiteral("live NET must retain the full value"), err);
+                        }
+                    }
+                    ok &= require(QRectF(QPointF(), window.size())
+                                      .adjusted(-1, -1, 1, 1)
+                                      .contains(item.bounds),
+                                  QStringLiteral("live NET clips %1").arg(item.text), err);
+                }
+                for (Metric metric : compactMetrics()) {
+                    ok &= require(metrics.count(metric) == 1,
+                                  QStringLiteral("live NET loses metric %1").arg(metricId(metric)),
+                                  err);
+                }
+                if (scale == 80 && width == 1452 && update < 3) {
+                    err << "NET sequence update" << update << ": " << window.preferredSize().width()
+                        << 'x' << window.preferredSize().height() << '\n';
+                    sequence.append(window.render());
+                }
+            }
+            window.setBodySize(QSize(250, 25));
+            const QSize narrow = window.preferredSize();
+            window.setBodySize(QSize(3000, 25));
+            ok &= require(window.preferredSize().height() < narrow.height(),
+                          QStringLiteral("user resizing must still reflow live stats"), err);
+        }
+    }
+    if (!output.isEmpty()) {
+        QImage sheet(1400, 300, QImage::Format_RGB32);
+        sheet.fill(QColor("#24282d"));
+        QPainter painter(&sheet);
+        QFont caption;
+        caption.setPixelSize(14);
+        painter.setFont(caption);
+        for (int i = 0; i < sequence.size(); ++i) {
+            painter.setPen(Qt::white);
+            painter.drawText(
+                8, i * 95 + 18,
+                QStringLiteral("Update %1: NET %2 — same width/scale")
+                    .arg(i + 1)
+                    .arg(i == 1 ? QStringLiteral("12 ± 3 ms") : QStringLiteral("8 ± 1 ms")));
+            painter.drawImage(8, i * 95 + 28, sequence[i]);
+        }
+        painter.end();
+        ok &= require(sheet.save(QDir(output).filePath("live-net-sequence.png")),
+                      QStringLiteral("save repeated live NET sequence"), err);
+    }
+    return ok;
+}
+
+bool testLiveStripSlotsAndController(QTextStream& err)
+{
+    bool ok = true;
+    StatsSnapshot low = sample(), high = low, missing = low;
+    low.targetFps = high.targetFps = missing.targetFps = 120;
+    low.receivedFps = low.decodedFps = low.renderedFps = low.totalFps = 99;
+    high.receivedFps = high.decodedFps = high.renderedFps = high.totalFps = 100;
+    low.rttMs = low.rttVarianceMs = 9;
+    high.rttMs = high.rttVarianceMs = 99;
+    low.jitterMs = 9.99;
+    high.jitterMs = 10.0;
+    low.bitrateMbps = 99.9;
+    high.bitrateMbps = 100.0;
+    low.networkLossPercent = low.pacerDropPercent = 9.99;
+    high.networkLossPercent = high.pacerDropPercent = 100;
+    low.latency.hostMs = low.latency.decodeMs = low.latency.queueMs = low.latency.renderMs = 9.9;
+    high.latency.hostMs = high.latency.decodeMs = high.latency.queueMs = high.latency.renderMs =
+        10.0;
+    high.frameTimes.onePercentLowFps = 100;
+    missing.valid = false;
+    missing.hasRtt = missing.latency.hasHost = missing.latency.hasQueue = false;
+    for (Preset preset : { Preset::Minimal, Preset::Compact, Preset::Detailed }) {
+        for (int width : { 250, 400, 1452, 2000 }) {
+            RenderWindow window;
+            window.setPreset(preset);
+            window.setBodySize(QSize(width, 25));
+            window.setStats(low, {});
+            const QSize initial = window.preferredSize();
+            for (int update = 0; update < 9; ++update) {
+                window.setStats(update % 3 == 0 ? low : update % 3 == 1 ? high : missing, {});
+                for (qreal dpr : { 1.0, 1.5, 2.0 }) {
+                    const auto text = window.recordedText(nullptr, dpr);
+                    ok &= require(window.preferredSize() == initial,
+                                  QStringLiteral("live slots preset%1 w%2 update%3 reflow")
+                                      .arg(static_cast<int>(preset))
+                                      .arg(width)
+                                      .arg(update),
+                                  err);
+                    for (const auto& item : text) {
+                        ok &= require(QRectF(QPointF(), window.size() * dpr)
+                                          .adjusted(-1, -1, 1, 1)
+                                          .contains(item.bounds),
+                                      QStringLiteral("live slots clip '%1'").arg(item.text), err);
+                    }
+                }
+            }
+        }
+    }
+    {
+        RenderWindow window;
+        window.setPreset(Preset::Compact);
+        window.setBodySize(QSize(250, 25));
+        window.setStats(low, {});
+        const QSize normal = window.preferredSize();
+        StatsSnapshot extreme = low;
+        extreme.rttMs = extreme.rttVarianceMs = 123456;
+        window.setStats(extreme, {});
+        const QSize expanded = window.preferredSize();
+        window.setStats(low, {});
+        ok &= require(window.preferredSize() == expanded,
+                      QStringLiteral("exceptional numeric widths must not shrink on refresh"), err);
+        // Repeated controller-style setters are not deliberate layout changes.
+        window.setPreset(Preset::Compact);
+        window.setScalePercent(80);
+        window.setBodySize(QSize(250, 25));
+        ok &= require(window.preferredSize() == expanded,
+                      QStringLiteral("idempotent style setters must retain numeric budgets"), err);
+        window.setBodySize(QSize(251, 25));
+        window.setBodySize(QSize(250, 25));
+        ok &= require(window.preferredSize() == normal,
+                      QStringLiteral("explicit resize must reset exceptional width budgets"), err);
+        window.setScalePercent(100);
+        ok &= require(window.preferredSize() != normal,
+                      QStringLiteral("explicit scale must still change geometry"), err);
+        window.setPreset(Preset::Minimal);
+        ok &= require(window.preferredSize().height() < expanded.height(),
+                      QStringLiteral("preset changes must still reflow"), err);
+    }
+    QTemporaryDir directory;
+    if (!require(directory.isValid(), QStringLiteral("temporary live stats settings"), err)) {
+        return false;
+    }
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
+    QCoreApplication::setApplicationName(QStringLiteral("OverlayLiveWrap"));
+    Overlay::OverlayManager manager;
+    StreamStatsModel model;
+    auto window = std::make_unique<RenderWindow>();
+    auto* view = window.get();
+    OverlayStatsController controller(manager, model, nullptr, OverlayWindowMode::Detached, true,
+                                      std::move(window));
+    StatsOverlaySettings settings;
+    const QString key = displayKey(QGuiApplication::primaryScreen()->name());
+    settings.setDisplaySize(key, Preset::Compact, QSize(1452, 25));
+    controller.setParentGeometryProvider([] { return QRect(0, 0, 1920, 1080); });
+    controller.setPreset(Preset::Compact);
+    StatsWindow stats;
+    stats.width = 3840;
+    stats.height = 2160;
+    stats.codec = QStringLiteral("HEVC");
+    stats.targetFps = 60;
+    stats.totalFps = stats.receivedFps = stats.decodedFps = stats.renderedFps = 60;
+    QSize preferred, outer;
+    for (int update = 0; update < 12; ++update) {
+        stats.rttMs = update % 2 ? 12 : 8;
+        stats.rttVarianceMs = update % 2 ? 3 : 1;
+        model.publishWindow(stats, {}, LiGetMicroseconds());
+        controller.syncWithStreamWindow(true);
+        if (update == 0) {
+            preferred = view->preferredSize();
+            outer = view->size();
+        }
+        ok &= require(view->preferredSize() == preferred && view->size() == outer,
+                      QStringLiteral("controller live refresh must not feed back into row layout"),
+                      err);
+    }
+    return ok;
+}
+
 bool testDetachedColdRestore(QTextStream& err)
 {
     QTemporaryDir directory;
@@ -1397,6 +1627,8 @@ bool runWindowRenderTests(QTextStream& err)
     ok &= testLocalizedMoveControls(err);
     ok &= testCompactSavedHeightReflow(err);
     ok &= testStripCoverageAndTelemetry(err);
+    ok &= testLiveStripWrapStability(err);
+    ok &= testLiveStripSlotsAndController(err);
     ok &= testDetachedColdRestore(err);
     return ok;
 }

@@ -18,6 +18,7 @@
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <QTranslator>
+#include <QProcess>
 
 #include <cmath>
 
@@ -65,9 +66,17 @@ public:
     void drawTextItem(const QPointF& point, const QTextItem& item) override
     {
         const QTransform transform = state->transform();
-        text.append({ item.text(), item.font().pixelSize() * transform.m11(),
-                      transform.mapRect(QRectF(point.x(), point.y() - item.ascent(), item.width(),
-                                               item.ascent() + item.descent())),
+        const QRectF bounds = transform.mapRect(QRectF(
+            point.x(), point.y() - item.ascent(), item.width(), item.ascent() + item.descent()));
+        // Qt splits a single label into runs when CJK needs a fallback font.
+        if (!text.isEmpty() && text.last().baseline.y() == point.y() &&
+            text.last().color == state->pen().color() &&
+            std::abs(text.last().bounds.right() - bounds.left()) < 0.1) {
+            text.last().text += item.text();
+            text.last().bounds = text.last().bounds.united(bounds);
+            return;
+        }
+        text.append({ item.text(), item.font().pixelSize() * transform.m11(), bounds,
                       state->pen().color(), item.font(), point, transform });
     }
 
@@ -78,7 +87,7 @@ public:
 class TextDevice : public QPaintDevice
 {
 public:
-    explicit TextDevice(const QSize& size) : m_Size(size) {}
+    explicit TextDevice(const QSize& size, qreal dpr = 1) : m_Size(size * dpr), m_Dpr(dpr) {}
     QPaintEngine* paintEngine() const override { return &recorder; }
     mutable TextRecorder recorder;
 
@@ -98,9 +107,9 @@ protected:
         case PdmDepth:
             return 32;
         case PdmDevicePixelRatio:
-            return 1;
+            return qRound(m_Dpr);
         case PdmDevicePixelRatioScaled:
-            return devicePixelRatioFScale();
+            return qRound(m_Dpr * devicePixelRatioFScale());
         default:
             return 0;
         }
@@ -108,6 +117,7 @@ protected:
 
 private:
     QSize m_Size;
+    qreal m_Dpr;
 };
 
 class RenderWindow : public OverlayStatsWindow
@@ -126,10 +136,10 @@ public:
         return image;
     }
 
-    QVector<PaintedText> recordedText(QVector<QImage>* shadows = nullptr)
+    QVector<PaintedText> recordedText(QVector<QImage>* shadows = nullptr, qreal dpr = 1)
     {
         resize(preferredSize());
-        TextDevice device(size());
+        TextDevice device(size(), dpr);
         QPainter painter(&device);
         paintOverlay(painter);
         painter.end();
@@ -601,7 +611,7 @@ bool testResizeGrabZones(QTextStream& err)
         bool moved = false;
         window.setResizeFinishedCallback([&](const QPoint&, const QSize&) { resized = true; });
         window.setDragFinishedCallback([&](const QPoint&) { moved = true; });
-        const QPoint point = zone == 0   ? QPoint(window.width() / 2, bodyHeight + 9)
+        const QPoint point = zone == 0   ? QPoint(window.width() / 2, window.height() - 8)
                              : zone == 1 ? QPoint(10, bodyHeight / 2)
                                          : QPoint(window.width() / 2, bodyHeight / 2);
         const QPoint global = window.position() + point;
@@ -733,8 +743,9 @@ bool testMoveControlsVisible(QTextStream& err)
             return QCoreApplication::translate("OverlayStatsWindow", text);
         };
         QVector<QRectF> bounds;
-        for (const QString& label :
-             { tr("Detach"), tr("Details: %1").arg(tr("Compact")), tr("Done") }) {
+        for (const QString& label : { tr("Detach"), tr("Details: %1").arg(tr("Compact")),
+                                      tr("Custom: Off"), tr("Opacity -"), tr("Opacity +"),
+                                      tr("Size -"), tr("Size +"), tr("Reset"), tr("Done") }) {
             const auto found = std::find_if(text.begin(), text.end(), [&](const PaintedText& item) {
                 return item.text == label;
             });
@@ -912,6 +923,41 @@ bool testMoveControlLifecycle(QTextStream& err)
     ok &= require(controller.isDetached() && controller.isEditing(),
                   QStringLiteral("double-clicking Detach must toggle exactly once"), err);
     ok &= clickControl(*view, QStringLiteral("Re-attach"), err);
+    controller.setPreset(Preset::Detailed);
+    const auto customMetrics = settings.metricList();
+    ok &= clickControl(*view, QStringLiteral("Custom: Off"), err);
+    ok &= require(controller.preset() == Preset::Custom && controller.isEditing(),
+                  QStringLiteral("Custom must update the live editor"), err);
+    ok &= doubleClickControl(*view, QStringLiteral("Custom: On"), err);
+    ok &= require(
+        controller.preset() == Preset::Detailed && settings.metricList() == customMetrics,
+        QStringLiteral("Custom must return to the previous level without changing metrics"), err);
+    const int scale = settings.scalePercent();
+    const int opacity = settings.opacityPercent();
+    ok &= clickControl(*view, QStringLiteral("Size +"), err);
+    ok &= clickControl(*view, QStringLiteral("Opacity +"), err);
+    ok &=
+        require(settings.scalePercent() == scale + 5 && settings.opacityPercent() == opacity + 5 &&
+                    controller.isEditing(),
+                QStringLiteral("size and opacity controls must update persisted live style"), err);
+    ok &= clickControl(*view, QStringLiteral("Size -"), err);
+    ok &= clickControl(*view, QStringLiteral("Opacity -"), err);
+    settings.setAttachedPosition(QStringLiteral("other"), QPoint(123, 456));
+    settings.setDisplaySize(QStringLiteral("other"), Preset::Detailed, QSize(700, 500));
+    settings.setDisplaySize(key, Preset::Detailed, QSize(520, 200));
+    ok &= clickControl(*view, QStringLiteral("Reset"), err);
+    ok &= require(
+        controller.preset() == Preset::Detailed && controller.isEditing() &&
+            !controller.isDetached() && !settings.attachedPosition(key) &&
+            !settings.displaySize(key, Preset::Detailed).isValid() &&
+            settings.detachedPosition(key) == QPoint(350, 220) &&
+            settings.attachedPosition(QStringLiteral("other")) == QPoint(123, 456) &&
+            settings.displaySize(QStringLiteral("other"), Preset::Detailed) == QSize(700, 500) &&
+            settings.scalePercent() == DefaultScalePercent &&
+            settings.opacityPercent() == DefaultOpacityPercent &&
+            settings.metricList() == customMetrics,
+        QStringLiteral("Reset must preserve other placements, preset, attachment and metrics"),
+        err);
     controller.setPreset(Preset::Compact);
     controller.setPreset(Preset::Off);
     ok &= clickControl(*view, QStringLiteral("Done"), err);
@@ -920,14 +966,28 @@ bool testMoveControlLifecycle(QTextStream& err)
                   QStringLiteral("Done must hide Off preview and end capture ownership once"), err);
 
     controller.setPointerEditMode(true);
-    controller.beginEditing();
+    controller.setPreset(Preset::Compact);
+    view->render();
+    const QPointF local(50, 12);
+    QMouseEvent press(QEvent::MouseButtonPress, local, view->position() + local, Qt::LeftButton,
+                      Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(view, &press);
+    QMouseEvent release(QEvent::MouseButtonRelease, local, view->position() + local, Qt::LeftButton,
+                        Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(view, &release);
+    ok &= require(
+        view->isVisible() && controller.isEditing() && press.isAccepted() && release.isAccepted() &&
+            !view->isDragging(),
+        QStringLiteral("held Right Alt click must enter edit without activating a control"), err);
     ok &= clickControl(*view, QStringLiteral("Details: Compact"), err);
     ok &= require(controller.preset() == Preset::Detailed,
                   QStringLiteral("reopening Off editor must preview the retained preset"), err);
     controller.setPreset(Preset::Off);
     controller.setPointerEditMode(false);
-    ok &= require(!controller.isEditing() && !view->isVisible() && editEnds == 2,
-                  QStringLiteral("leaving persistent Right Alt mode must close Off editor"), err);
+    ok &= require(
+        controller.isEditing() && view->isVisible() && editEnds == 1,
+        QStringLiteral("Right Alt release must not close an editor that owns the pointer"), err);
+    controller.endEditing();
     controller.setPointerEditMode(true);
     controller.beginEditing();
     controller.syncWithStreamWindow(false);
@@ -944,7 +1004,7 @@ bool testMoveControlsFitStream(QTextStream& err)
     }
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
     QCoreApplication::setApplicationName(QStringLiteral("OverlayMoveControlsFit"));
-    const QRect stream(0, 0, 1280, 720);
+    QRect stream(0, 0, 1280, 720);
     const QString key = displayKey(QGuiApplication::primaryScreen()->name());
     StatsOverlaySettings settings;
     settings.setScalePercent(80);
@@ -986,6 +1046,19 @@ bool testMoveControlsFitStream(QTextStream& err)
         ok &= require(painted.contains(label),
                       QStringLiteral("move-mode control '%1' is not painted").arg(label), err);
     }
+    stream = QRect(20, 30, 640, 360);
+    controller.syncWithStreamWindow(true);
+    ok &= require(stream.contains(view->geometry()) &&
+                      stream.contains(QRect(view->position(), view->preferredSize())),
+                  QStringLiteral("shrinking stream: window %1x%2 at %3,%4; preferred %5x%6")
+                      .arg(view->width())
+                      .arg(view->height())
+                      .arg(view->x())
+                      .arg(view->y())
+                      .arg(view->preferredSize().width())
+                      .arg(view->preferredSize().height()),
+                  err);
+    ok &= clickControl(*view, QStringLiteral("Done"), err);
     controller.endEditing();
     return ok;
 }
@@ -1015,7 +1088,165 @@ bool testLocalizedMoveControls(QTextStream& err)
     return ok;
 }
 
+bool testCompactSavedHeightReflow(QTextStream& err)
+{
+    bool ok = true;
+    const QStringList labels{ "Res",  "Rx/De/Rd", "1% low", "Lat",   "Rate", "RTT",  "Jit",
+                              "Loss", "Host",     "Dec",    "Queue", "Rend", "Drops" };
+    const QStringList values{ "3840x2160@60 HEVC",
+                              "60/60/60",
+                              "59",
+                              "~8 ms",
+                              "37.6 Mbps",
+                              "1 ± 1 ms",
+                              "1.34 ms",
+                              "0.00%",
+                              "5.2 ms",
+                              "0.8 ms",
+                              "0.4 ms",
+                              "1.1 ms",
+                              "0.0%" };
+    for (int width : { 1600, 1450, 1300, 1150, 1000, 900, 750, 600, 500, 400, 300, 250 }) {
+        RenderWindow window;
+        window.setStats(sample(), {});
+        window.setPreset(Preset::Compact);
+        window.setScalePercent(80);
+        window.setBodySize(QSize(width, 25));
+        const auto text = window.recordedText();
+        auto hasText = [&](const QString& wanted) {
+            return std::any_of(text.begin(), text.end(), [&](const PaintedText& item) {
+                return wanted.compare(item.text, Qt::CaseInsensitive) == 0;
+            });
+        };
+        for (const QString& label : labels) {
+            ok &= require(
+                hasText(label),
+                QStringLiteral("saved-height Compact width%1 drops label %2").arg(width).arg(label),
+                err);
+        }
+        for (const QString& value : values) {
+            ok &= require(
+                hasText(value),
+                QStringLiteral("saved-height Compact width%1 drops value %2").arg(width).arg(value),
+                err);
+        }
+        ok &= require(
+            !hasText(QStringLiteral("Frame time")) && !hasText(QStringLiteral("Estimated latency")),
+            QStringLiteral("Compact reflow must not inherit Custom graph selections"), err);
+        for (const PaintedText& item : text) {
+            ok &= require(
+                QRectF(QPointF(), window.size()).adjusted(-1, -1, 1, 1).contains(item.bounds),
+                QStringLiteral("reflow text leaves body: %1").arg(item.text), err);
+        }
+        for (qreal dpr : { 1.0, 1.5, 2.0 }) {
+            const QImage image = window.render(dpr);
+            const auto nativeText = window.recordedText(nullptr, dpr);
+            for (const QString& wanted : labels + values) {
+                ok &= require(
+                    std::any_of(nativeText.begin(), nativeText.end(),
+                                [&](const PaintedText& item) {
+                                    return wanted.compare(item.text, Qt::CaseInsensitive) == 0 &&
+                                           QRectF(image.rect())
+                                               .adjusted(-1, -1, 1, 1)
+                                               .contains(item.bounds);
+                                }),
+                    QStringLiteral("Compact w%1 DPR%2 clips %3").arg(width).arg(dpr).arg(wanted),
+                    err);
+            }
+            ok &= require(image.devicePixelRatio() == dpr,
+                          QStringLiteral("reflow raster has wrong DPR"), err);
+            const QString output = qEnvironmentVariable("MOONLIGHT_OVERLAY_TEST_OUTPUT_DIR");
+            if (!output.isEmpty()) {
+                ok &=
+                    require(image.save(QDir(output).filePath(
+                                QStringLiteral("compact-reflow-w%1-d%2.png").arg(width).arg(dpr))),
+                            QStringLiteral("save reflow proof"), err);
+            }
+        }
+    }
+    return ok;
+}
+
+bool testDetachedColdRestore(QTextStream& err)
+{
+    QTemporaryDir directory;
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
+    QCoreApplication::setApplicationName(QStringLiteral("OverlayDetachedRestart"));
+    Overlay::OverlayManager manager;
+    StreamStatsModel model;
+    const QRect stream(0, 0, 1280, 720);
+    {
+        auto window = std::make_unique<RenderWindow>();
+        auto* view = window.get();
+        OverlayStatsController first(manager, model, nullptr, OverlayWindowMode::Detached, true,
+                                     std::move(window));
+        first.setParentGeometryProvider([&] { return stream; });
+        first.setDetached(true);
+        first.beginEditing();
+        view->setPosition(QPoint(222, 111));
+        QCoreApplication::processEvents();
+        first.resetLayout();
+    }
+    QSettings().sync();
+    const auto coldProcess = [&](bool detached) {
+        QProcess child;
+        child.start(QCoreApplication::applicationFilePath(),
+                    { QStringLiteral("--check-detached"), directory.path(),
+                      detached ? QStringLiteral("true") : QStringLiteral("false") });
+        return require(child.waitForFinished(30000) && child.exitStatus() == QProcess::NormalExit &&
+                           child.exitCode() == 0,
+                       QStringLiteral("cold process detachment restore failed: %1")
+                           .arg(QString::fromUtf8(child.readAllStandardError())),
+                       err);
+    };
+    const QString key = displayKey(QGuiApplication::primaryScreen()->name());
+    bool ok = require(StatsOverlaySettings().detachedPosition(key) != QPoint(222, 111),
+                      QStringLiteral("Reset must cancel pending saves before destruction"), err);
+    ok &= coldProcess(true);
+    {
+        OverlayStatsController unsupported(manager, model, nullptr, OverlayWindowMode::Detached,
+                                           true);
+        ok &= require(!unsupported.usesCompositorWindow() && StatsOverlaySettings().detached(),
+                      QStringLiteral("compositor fallback must preserve detached preference"), err);
+    }
+    auto window = std::make_unique<RenderWindow>();
+    auto* view = window.get();
+    OverlayStatsController reopened(manager, model, nullptr, OverlayWindowMode::Detached, true,
+                                    std::move(window));
+    reopened.setParentGeometryProvider([&] { return stream; });
+    ok &=
+        require(reopened.isDetached() && view->isStandalone(),
+                QStringLiteral("detachment must survive a cold controller/settings restart"), err);
+    reopened.setDetached(false);
+    QSettings().sync();
+    ok &= coldProcess(false);
+    {
+        OverlayStatsController attached(manager, model, nullptr, OverlayWindowMode::Detached, true,
+                                        std::make_unique<RenderWindow>());
+        ok &= require(!attached.isDetached(), QStringLiteral("explicit re-attach must persist too"),
+                      err);
+    }
+    return ok;
+}
+
 } // namespace
+
+bool checkDetachedRestart(const QString& settingsPath, bool detached, QTextStream& err)
+{
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsPath);
+    QCoreApplication::setOrganizationName(QStringLiteral("MoonlightTests"));
+    QCoreApplication::setApplicationName(QStringLiteral("OverlayDetachedRestart"));
+    Overlay::OverlayManager manager;
+    StreamStatsModel model;
+    auto window = std::make_unique<RenderWindow>();
+    auto* view = window.get();
+    OverlayStatsController controller(manager, model, nullptr, OverlayWindowMode::Detached, true,
+                                      std::move(window));
+    return require(controller.isDetached() == detached && view->isStandalone() == detached &&
+                       !view->isVisible(),
+                   QStringLiteral("restore the attachment configuration before first show"), err);
+}
 
 bool runWindowRenderTests(QTextStream& err)
 {
@@ -1033,5 +1264,7 @@ bool runWindowRenderTests(QTextStream& err)
     ok &= testMoveControlLifecycle(err);
     ok &= testMoveControlsFitStream(err);
     ok &= testLocalizedMoveControls(err);
+    ok &= testCompactSavedHeightReflow(err);
+    ok &= testDetachedColdRestore(err);
     return ok;
 }

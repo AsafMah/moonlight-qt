@@ -216,7 +216,6 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
         }
     }
     if (hasDesktopEnvironment) {
-        m_MouseReleaseClock.start();
         m_ShortcutDispatcher.setHoldHandler(
             QString::fromLatin1(ShortcutActions::RightAltMouseRelease),
             [this](bool held) { handleMouseReleaseHold(held); });
@@ -801,8 +800,12 @@ void SdlInputHandler::notifyFocusLost()
 
     // A hold in progress never sees its key-up now, so it must not capture
     // the mouse again later
+    const bool wasFree = m_MouseReleaseGesture.isFree();
     m_MouseReleaseGesture.focusLost();
-    m_MouseHoldReleased = m_MouseReleaseGesture.isPersistent();
+    m_MouseHoldReleased = false;
+    if (wasFree && m_MouseReleaseModeCallback) {
+        m_MouseReleaseModeCallback(false);
+    }
     m_ShortcutMatcher.reset();
 
     // Raise all keys that are currently pressed. If we don't do this, certain keys
@@ -824,8 +827,8 @@ void SdlInputHandler::notifyFocusGained()
 void SdlInputHandler::holdReleaseMouse(bool held)
 {
     if (held) {
-        m_MouseHoldReleased = true;
         if (isCaptureActive()) {
+            m_MouseHoldReleased = true;
             setCaptureActive(false);
         }
         return;
@@ -835,7 +838,7 @@ void SdlInputHandler::holdReleaseMouse(bool held)
         return;
     }
     m_MouseHoldReleased = false;
-    if (m_Window != nullptr && (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_INPUT_FOCUS)) {
+    if (hasInputFocus()) {
         setCaptureActive(true);
     }
 }
@@ -843,41 +846,23 @@ void SdlInputHandler::holdReleaseMouse(bool held)
 void SdlInputHandler::handleMouseReleaseHold(bool held)
 {
     const bool wasFree = m_MouseReleaseGesture.isFree();
-    const bool wasPersistent = m_MouseReleaseGesture.isPersistent();
-    m_MouseReleaseGesture.hold(held, m_MouseReleaseClock.elapsed());
-    applyMouseReleaseGesture(wasFree, wasPersistent);
+    m_MouseReleaseGesture.hold(held);
+    applyMouseReleaseGesture(wasFree);
 }
 
-bool SdlInputHandler::handleMouseReleaseEscape(SDL_KeyboardEvent* event)
+void SdlInputHandler::applyMouseReleaseGesture(bool wasFree)
 {
-    if (event->keysym.scancode != SDL_SCANCODE_ESCAPE) {
-        return false;
-    }
-    const bool wasFree = m_MouseReleaseGesture.isFree();
-    const bool wasPersistent = m_MouseReleaseGesture.isPersistent();
-    const bool consumed = m_MouseReleaseGesture.escape(event->state == SDL_PRESSED);
-    applyMouseReleaseGesture(wasFree, wasPersistent);
-    return consumed;
-}
-
-void SdlInputHandler::applyMouseReleaseGesture(bool wasFree, bool wasPersistent)
-{
-    const bool persistent = m_MouseReleaseGesture.isPersistent();
-    if (persistent != wasPersistent && m_MouseReleaseModeCallback) {
-        // Close editors before restoring capture, and never let an editor
-        // independently own capture while persistent mode is active.
-        m_MouseReleaseModeCallback(persistent);
-    }
-    if (wasFree != m_MouseReleaseGesture.isFree() || (!wasPersistent && persistent)) {
-        holdReleaseMouse(m_MouseReleaseGesture.isFree());
+    const bool free = m_MouseReleaseGesture.isFree();
+    if (wasFree != free) {
+        if (m_MouseReleaseModeCallback) {
+            m_MouseReleaseModeCallback(free);
+        }
+        holdReleaseMouse(free);
     }
 }
 
 bool SdlInputHandler::cancelMouseHoldRelease()
 {
-    if (m_MouseReleaseGesture.isPersistent()) {
-        return false;
-    }
     const bool wasReleased = m_MouseHoldReleased;
     m_MouseHoldReleased = false;
     return wasReleased;
@@ -891,6 +876,11 @@ bool SdlInputHandler::isCaptureActive()
 
     // Some platforms don't support SDL_SetRelativeMouseMode
     return m_FakeMouseCaptureActive;
+}
+
+bool SdlInputHandler::hasInputFocus() const
+{
+    return m_Window != nullptr && (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_INPUT_FOCUS);
 }
 
 bool SdlInputHandler::isSystemKeyCaptureEnabledForWindow()

@@ -95,17 +95,24 @@ disposable GitHub-hosted runners. It never launches Moonlight.
 1/1.5/2 device-pixel ratios, verifies readable Compact labels, all 13 metrics, flush-top
 placement/editing, 55% metric chips with transparent gaps and soft shadows,
 generous resize zones, exact free dragging with 4 px magnets, conditional edit-on-click,
-and preserves explicit settings when defaults change. Set
+and preserves explicit settings when defaults change. Compact reflows all 13 labels and
+values at 12 widths and DPR 1/1.5/2 even with a stale 25 px saved height; narrow Compact
+does not inherit Custom graphs. Real controller/window clicks cover every edit control,
+Custom return, live cycling, local Reset and attachment round-trips. A fresh subprocess
+verifies detached/attached flags before the first show, not just a cached settings object.
+Set
 `MOONLIGHT_OVERLAY_TEST_OUTPUT_DIR` to save PNGs for visual inspection; it does not start
 a stream or send desktop input.
 
 `shortcuts` covers the Right Alt checkbox, legacy bare-Right-Alt opt-in, the existing
-matcher's AltGr suppression, and deterministic hold/double-tap/Esc/focus behavior.
-`overlay_menu_navigation` also tests persistent-release editing: clicks do not fire
-actions, the body drags, edges resize with fixed opposite edges, wheel zooms and
-Ctrl+wheel changes opacity through the persistence callback. These use only their
-own offscreen windows; OS-level capture and real-stream key delivery still require
-verification on the receiving client.
+matcher's AltGr suppression, and momentary hold/repeat/focus behavior. Taps never latch.
+`system_key_capture` compiles the production input methods and Session overlay callbacks
+against fake native input. It exercises both orders of editor Done/key-up, menu ownership
+transfer, initially-free input, and focus loss without grabbing desktop input. Right Alt
+arms only perf-overlay editing; menu clicks remain ordinary actions and key-up leaves the
+menu open. `overlay_menu_navigation` retains separate explicit menu-editing coverage and
+normal-action coverage after disarming. These use only offscreen windows or fake SDL;
+OS-level capture and real-stream key delivery still require verification on the client.
 
 `overlay_menu_navigation` enforces shortcut-registry/menu parity with only the
 menu-toggle and physical Right Alt hold excluded. It checks actual row invocation,

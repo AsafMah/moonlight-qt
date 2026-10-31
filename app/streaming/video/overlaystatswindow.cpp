@@ -49,11 +49,6 @@ const int kCellPadX = PanelSpacing::CellPadX;
 const int kLabelGap = PanelSpacing::LabelGap;
 // Width of the band along the edges that resizes in edit mode, in window pixels
 const int kResizeMargin = 12;
-// Move-mode controls, in layout order
-const int kDetachControl = 0;
-const int kPresetControl = 1;
-// Armed by a swallowed double-click so its release is consumed without acting
-const int kConsumedClick = 3;
 
 void drawOverlayText(QPainter* painter, const QRect& rect, int flags, const QString& text)
 {
@@ -530,7 +525,8 @@ bool OverlayStatsWindow::panelHas(Metric metric) const
         !m_Snapshot.presentTiming.measured) {
         return false;
     }
-    return m_Preset == Preset::Detailed || m_Metrics.contains(metric);
+    return m_Preset == Preset::Detailed ||
+           (m_Preset == Preset::Custom && m_Metrics.contains(metric));
 }
 
 // ---------------------------------------------------------------------------
@@ -713,11 +709,28 @@ QSize OverlayStatsWindow::panelBodySize() const
         size = layoutPanel(content, QSize(width, 0), measurer).size;
     }
 
+    if (m_Preset == Preset::Compact) {
+        // A saved short height must not discard metrics after the bar wraps.
+        size = layoutPanel(content, QSize(size.width(), 0), measurer).size;
+        size.setHeight(std::min(size.height(), maximum.height()));
+    }
+
     // The move-mode controls and hint sit below the body and must stay inside
     // the same bounds, however narrow the panel makes them wrap
     if (m_Editing && m_MaximumBodySize.isValid()) {
-        const int footer =
-            layoutEditControls(nullptr, 0, size.width()) + editHintHeight(size.width());
+        auto footerHeight = [&] {
+            return layoutEditControls(nullptr, 0, size.width()) + editHintHeight(size.width());
+        };
+        int footer = footerHeight();
+        // A very narrow saved panel can make the toolbar taller than the
+        // stream. Widen it temporarily rather than put Done offscreen.
+        while (minimum.height() + footer > maximum.height() && size.width() < maximum.width()) {
+            size.setWidth(std::min(size.width() + kPad * 4, maximum.width()));
+            footer = footerHeight();
+        }
+        if (m_Preset == Preset::Compact) {
+            size = layoutPanel(content, QSize(size.width(), 0), measurer).size;
+        }
         const int limit = std::max(minimum.height(), m_MaximumBodySize.height() - footer);
         size.setHeight(std::min(size.height(), limit));
     }
@@ -944,8 +957,10 @@ QString OverlayStatsWindow::editHintText() const
                            "Ctrl+wheel to adjust transparency · Esc when done")
                       : tr("Drag to move · Wheel to zoom · Ctrl+wheel to adjust transparency · "
                            "Esc when done");
-    return m_Standalone ? hint + QLatin1Char('\n') + tr("Detached windows may increase latency.")
-                        : hint;
+    const QString status = tr("Size: %1% · Opacity: %2%").arg(m_ScalePercent).arg(m_OpacityPercent);
+    return status + QLatin1Char('\n') + hint +
+           (m_Standalone ? QLatin1Char('\n') + tr("Detached windows may increase latency.")
+                         : QString());
 }
 
 int OverlayStatsWindow::layoutEditControls(QPainter* painter, int y, int width) const
@@ -968,8 +983,17 @@ int OverlayStatsWindow::layoutEditControls(QPainter* painter, int y, int width) 
         preset = tr("Custom");
         break;
     }
-    const std::array<QString, 3> labels = { m_Standalone ? tr("Re-attach") : tr("Detach"),
-                                            tr("Details: %1").arg(preset), tr("Done") };
+    const std::array<QString, ControlCount> labels = {
+        m_Standalone ? tr("Re-attach") : tr("Detach"),
+        tr("Details: %1").arg(preset),
+        m_Preset == Preset::Custom ? tr("Custom: On") : tr("Custom: Off"),
+        tr("Opacity -"),
+        tr("Opacity +"),
+        tr("Size -"),
+        tr("Size +"),
+        tr("Reset"),
+        tr("Done")
+    };
     const QFontMetrics metrics(m_LabelFont);
     const int left = kAccentBar + kPad;
     const int available = std::max(width - left - kPad, 1);
@@ -989,12 +1013,14 @@ int OverlayStatsWindow::layoutEditControls(QPainter* painter, int y, int width) 
         const QRect rect(x, top, buttonWidth, buttonHeight);
         if (painter != nullptr) {
             m_EditControls[i] = rect;
-            const bool highlighted = m_PressedControl == int(i) || m_HoverControl == int(i);
+            const bool enabled = editControlEnabled(int(i));
+            const bool highlighted =
+                enabled && (m_PressedControl == int(i) || m_HoverControl == int(i));
             painter->fillRect(rect, highlighted ? kLine : kSurface2);
             painter->setPen(highlighted ? kAccent : kTextDim);
             painter->drawRect(rect.adjusted(0, 0, -1, -1));
             painter->setFont(m_LabelFont);
-            painter->setPen(kText);
+            painter->setPen(enabled ? kText : kTextFaint);
             drawOverlayText(painter, rect.adjusted(8, 6, -8, -6),
                             Qt::AlignCenter | Qt::TextWrapAnywhere, labels[i]);
         }
@@ -1002,6 +1028,22 @@ int OverlayStatsWindow::layoutEditControls(QPainter* painter, int y, int width) 
         rowHeight = std::max(rowHeight, buttonHeight);
     }
     return top + rowHeight + kPad - y;
+}
+
+bool OverlayStatsWindow::editControlEnabled(int control) const
+{
+    switch (control) {
+    case OpacityDownControl:
+        return m_OpacityPercent > MinOpacityPercent;
+    case OpacityUpControl:
+        return m_OpacityPercent < MaxOpacityPercent;
+    case SizeDownControl:
+        return m_ScalePercent > MinScalePercent;
+    case SizeUpControl:
+        return m_ScalePercent < MaxScalePercent;
+    default:
+        return control >= 0 && control < ControlCount;
+    }
 }
 
 int OverlayStatsWindow::editControlAt(const QPoint& local) const
@@ -1294,11 +1336,16 @@ void OverlayStatsWindow::mousePressEvent(QMouseEvent* event)
     if (m_EditOnClick && !m_Editing && event->button() == Qt::LeftButton &&
         m_BeginEditingCallback) {
         m_BeginEditingCallback();
+        // The toolbar may now occupy the click's original position.
+        m_PressedControl = ControlCount;
+        event->accept();
+        return;
     }
 
     if (event->button() == Qt::LeftButton) {
         m_PressedControl = editControlAt(localPosition(event));
         if (m_PressedControl >= 0) {
+            m_PressedControlRect = m_EditControls[m_PressedControl];
             repaintNow();
             event->accept();
             return;
@@ -1377,10 +1424,36 @@ void OverlayStatsWindow::mouseReleaseEvent(QMouseEvent* event)
         m_PressedControl = -1;
         event->accept();
         repaintNow();
-        if (editControlAt(localPosition(event)) == pressed) {
-            const auto callback = pressed == kDetachControl   ? m_ToggleDetachedCallback
-                                  : pressed == kPresetControl ? m_CyclePresetCallback
-                                                              : m_EndEditingCallback;
+        if (editControlAt(localPosition(event)) == pressed && editControlEnabled(pressed) &&
+            m_EditControls[pressed] == m_PressedControlRect) {
+            std::function<void()> callback;
+            switch (pressed) {
+            case DetachControl:
+                callback = m_ToggleDetachedCallback;
+                break;
+            case PresetControl:
+                callback = m_CyclePresetCallback;
+                break;
+            case CustomControl:
+                callback = m_ToggleCustomCallback;
+                break;
+            case ResetControl:
+                callback = m_ResetCallback;
+                break;
+            case DoneControl:
+                callback = m_EndEditingCallback;
+                break;
+            case OpacityDownControl:
+            case OpacityUpControl:
+            case SizeDownControl:
+            case SizeUpControl:
+                if (m_WheelCallback) {
+                    m_WheelCallback(pressed == OpacityDownControl || pressed == SizeDownControl ? -1
+                                                                                                : 1,
+                                    pressed == OpacityDownControl || pressed == OpacityUpControl);
+                }
+                break;
+            }
             if (callback) {
                 callback();
             }
@@ -1409,14 +1482,14 @@ void OverlayStatsWindow::mouseReleaseEvent(QMouseEvent* event)
 void OverlayStatsWindow::mouseDoubleClickEvent(QMouseEvent* event)
 {
     const int control = editControlAt(localPosition(event));
-    if (control == kPresetControl) {
+    if (control == PresetControl || (control >= OpacityDownControl && control <= SizeUpControl)) {
         // Every click of a cycle control counts, so rapid clicks keep cycling
         mousePressEvent(event);
         return;
     }
     if (control >= 0) {
         // The first click already acted; a second would silently undo a toggle
-        m_PressedControl = kConsumedClick;
+        m_PressedControl = ControlCount;
         event->accept();
         return;
     }

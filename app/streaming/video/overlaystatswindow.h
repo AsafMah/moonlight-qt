@@ -129,6 +129,11 @@ public:
         m_ToggleDetachedCallback = std::move(cb);
     }
     void setCyclePresetCallback(std::function<void()> cb) { m_CyclePresetCallback = std::move(cb); }
+    void setToggleCustomCallback(std::function<void()> cb)
+    {
+        m_ToggleCustomCallback = std::move(cb);
+    }
+    void setResetCallback(std::function<void()> cb) { m_ResetCallback = std::move(cb); }
     // Called whenever the window moves, however it was moved
     void setMovedCallback(MovedCallback cb) { m_MovedCallback = std::move(cb); }
 
@@ -144,6 +149,20 @@ protected:
     bool event(QEvent* event) override;
 
 private:
+    enum EditControl
+    {
+        DetachControl,
+        PresetControl,
+        CustomControl,
+        OpacityDownControl,
+        OpacityUpControl,
+        SizeDownControl,
+        SizeUpControl,
+        ResetControl,
+        DoneControl,
+        ControlCount,
+    };
+
     struct Cell
     {
         StatsOverlay::Metric metric = StatsOverlay::Metric::Fps;
@@ -192,6 +211,7 @@ private:
     void paintEditHint(QPainter* painter, int y, int width) const;
     int layoutEditControls(QPainter* painter, int y, int width) const;
     int editControlAt(const QPoint& local) const;
+    bool editControlEnabled(int control) const;
     void paintResizeGrip(QPainter* painter, const QSize& body) const;
 
     // Takes mouse input: edit mode, or always when standalone
@@ -244,7 +264,10 @@ private:
     MovedCallback m_MovedCallback;
     std::function<void()> m_ToggleDetachedCallback;
     std::function<void()> m_CyclePresetCallback;
-    mutable std::array<QRect, 3> m_EditControls;
+    std::function<void()> m_ToggleCustomCallback;
+    std::function<void()> m_ResetCallback;
+    mutable std::array<QRect, ControlCount> m_EditControls;
     int m_PressedControl = -1;
+    QRect m_PressedControlRect;
     int m_HoverControl = -1;
 };

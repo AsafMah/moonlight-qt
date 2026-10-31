@@ -252,14 +252,13 @@ public:
     void notifyFocusGained();
 
     bool isCaptureActive();
+    bool hasInputFocus() const;
 
-    // The Right Alt gesture owns a free mouse, temporarily or persistently.
+    // Right Alt is held, or capture is waiting for its release.
     bool isMouseHoldReleased() const
     {
         return m_MouseHoldReleased || m_MouseReleaseGesture.isFree();
     }
-    bool isMouseReleasePersistent() const { return m_MouseReleaseGesture.isPersistent(); }
-    bool handleMouseReleaseEscape(SDL_KeyboardEvent* event);
     void setMouseReleaseModeCallback(std::function<void(bool)> callback)
     {
         m_MouseReleaseModeCallback = std::move(callback);
@@ -491,9 +490,8 @@ private:
     // Only the gesture (or an explicit editor handoff) restores its capture.
     void holdReleaseMouse(bool held);
     void handleMouseReleaseHold(bool held);
-    void applyMouseReleaseGesture(bool wasFree, bool wasPersistent);
+    void applyMouseReleaseGesture(bool wasFree);
     MouseReleaseGesture m_MouseReleaseGesture;
-    QElapsedTimer m_MouseReleaseClock;
     std::function<void(bool)> m_MouseReleaseModeCallback;
     bool m_MouseHoldReleased = false;
     bool m_KeyboardCaptureActive;

@@ -36,7 +36,7 @@ class OverlayManager;
  *
  * While the stream does not have the mouse (edit mode, the pointer released,
  * or a hold-to-release key), hovering a metric shows a tooltip about it. The
- * overlay stays click-through outside edit/persistent-release selection mode.
+ * overlay stays click-through outside editing or hold-to-select mode.
  * Ordinary tooltips poll PointerProvider rather than taking mouse events.
  *
  * While detached, the overlay is a top-level window that the user can drag
@@ -87,6 +87,8 @@ public:
     void toggle();
     // cycle-overlay-preset: Off -> Minimal -> Compact -> Detailed -> Custom
     void cyclePreset();
+    void toggleCustom();
+    void resetLayout();
     void setDetached(bool detached);
     void setOpacityPercent(int percent);
 
@@ -152,6 +154,7 @@ private:
     bool m_StreamVisible = true;
     bool m_Editing = false;
     StatsOverlay::Preset m_Preset;
+    StatsOverlay::Preset m_LastNonCustomPreset = StatsOverlay::Preset::Compact;
     StatsOverlay::Anchor m_Anchor = StatsOverlay::Anchor::TopLeft;
     std::optional<QPoint> m_AttachedPosition;
     QVector<StatsOverlay::Metric> m_Metrics;

@@ -8,6 +8,7 @@
 using namespace StatsOverlay;
 
 bool runWindowRenderTests(QTextStream& err);
+bool checkDetachedRestart(const QString& settingsPath, bool detached, QTextStream& err);
 
 namespace {
 bool require(bool condition, const QString& message, QTextStream& err)
@@ -232,6 +233,13 @@ int main(int argc, char* argv[])
     QGuiApplication app(argc, argv);
     QTextStream out(stdout);
     QTextStream err(stderr);
+
+    if (app.arguments().size() == 4 && app.arguments().at(1) == QLatin1String("--check-detached")) {
+        return checkDetachedRestart(app.arguments().at(2),
+                                    app.arguments().at(3) == QLatin1String("true"), err)
+                   ? 0
+                   : 1;
+    }
 
     bool ok = true;
     ok &= testPresets(err);

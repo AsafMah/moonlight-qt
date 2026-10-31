@@ -323,7 +323,8 @@ PanelLayout build(const PanelContent& content, int width, const Drops& drops, in
         const bool useShort = attempt.shortLabels && !cell.shortLabel.isEmpty();
         const QString& label = useShort ? cell.shortLabel : cell.label;
         items.append({ i, useShort, m.width(TextRole::Label, label),
-                       m.width(TextRole::Value, stableText(cell.value)) });
+                       std::max(m.width(TextRole::Value, cell.value),
+                                m.width(TextRole::Value, stableText(cell.value))) });
     }
     if (layout.hiddenCount > 0) {
         items.append({ -1, false, m.width(TextRole::Label, layout.moreText), 0 });
@@ -400,7 +401,8 @@ PanelLayout buildCompactStrip(const PanelContent& content, int width, const Text
         const bool useShortLabel = !cell.shortLabel.isEmpty();
         const QString& label = useShortLabel ? cell.shortLabel : cell.label;
         const int labelWidth = m.width(TextRole::Label, label);
-        const int valueWidth = m.width(TextRole::Value, stableText(cell.value));
+        const int valueWidth = std::max(m.width(TextRole::Value, cell.value),
+                                        m.width(TextRole::Value, stableText(cell.value)));
         labelWidths.append(labelWidth);
         valueWidths.append(valueWidth);
         shortLabels.append(useShortLabel);
@@ -524,6 +526,16 @@ PanelLayout layoutPanel(const PanelContent& content, const QSize& size,
     }
 
     const Drops none = dropsFor(content, {}, 0);
+    if (content.compactStrip) {
+        PanelLayout stacked =
+            build(content, width, none, GraphHeight, { CellStyle::Stacked, true, false }, measurer);
+        if (stacked.fits && (size.height() <= 0 || stacked.size.height() <= size.height())) {
+            if (size.height() > 0) {
+                stacked.size.setHeight(size.height());
+            }
+            return stacked;
+        }
+    }
 
     if (size.height() <= 0) {
         // As tall as needed: only the label style can change
@@ -590,6 +602,11 @@ QSize minimumPanelSize(const PanelContent& content, const TextMeasurer& measurer
     for (const PanelCell& cell : content.cells) {
         const QString& label = cell.shortLabel.isEmpty() ? cell.label : cell.shortLabel;
         width = std::max(width, chrome + measurer.width(TextRole::Label, label));
+        if (content.compactStrip) {
+            width = std::max(
+                width, chrome + std::max(measurer.width(TextRole::Value, cell.value),
+                                         measurer.width(TextRole::Value, stableText(cell.value))));
+        }
     }
     width = std::max(width, chrome + measurer.width(TextRole::Label, moreText(99)));
     if (content.header) {

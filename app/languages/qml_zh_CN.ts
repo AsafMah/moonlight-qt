@@ -4308,7 +4308,18 @@
     </message>
 </context>
 <context>
+    <name>ShortcutSettingsGroupBox</name>
+    <message>
+        <source>Hold to release the mouse. While held, click the performance overlay to edit it; menu clicks work normally. Let go to recapture unless an editor or menu owns the mouse. Right Alt and AltGr are not sent to the host.</source>
+        <translation>按住以释放鼠标。按住时点击性能浮层可进入编辑模式，菜单仍可正常点击。松开后重新捕获鼠标，编辑器或菜单正在使用鼠标时除外。Right Alt 和 AltGr 不会发送到主机。</translation>
+    </message>
+</context>
+<context>
     <name>ShortcutSettingsCard</name>
+    <message>
+        <source>Hold to release the mouse. While held, click the performance overlay to edit it; menu clicks work normally. Let go to recapture unless an editor or menu owns the mouse. Right Alt and AltGr are not sent to the host.</source>
+        <translation>按住以释放鼠标。按住时点击性能浮层可进入编辑模式，菜单仍可正常点击。松开后重新捕获鼠标，编辑器或菜单正在使用鼠标时除外。Right Alt 和 AltGr 不会发送到主机。</translation>
+    </message>
     <message>
         <source>Keyboard shortcuts</source>
         <translation>键盘快捷键</translation>
@@ -5035,6 +5046,16 @@
 </context>
 <context>
     <name>OverlayStatsWindow</name>
+    <message><source>Drag to move · Drag the edges to resize · Wheel to zoom · Ctrl+wheel to adjust transparency · Esc when done</source><translation>拖动以移动 · 拖动边缘以调整大小 · 滚轮缩放 · Ctrl+滚轮调整透明度 · Esc 完成</translation></message>
+    <message><source>Drag to move · Wheel to zoom · Ctrl+wheel to adjust transparency · Esc when done</source><translation>拖动以移动 · 滚轮缩放 · Ctrl+滚轮调整透明度 · Esc 完成</translation></message>
+    <message><source>Custom: On</source><translation>自定义：开</translation></message>
+    <message><source>Custom: Off</source><translation>自定义：关</translation></message>
+    <message><source>Opacity -</source><translation>不透明度 -</translation></message>
+    <message><source>Opacity +</source><translation>不透明度 +</translation></message>
+    <message><source>Size -</source><translation>大小 -</translation></message>
+    <message><source>Size +</source><translation>大小 +</translation></message>
+    <message><source>Reset</source><translation>重置</translation></message>
+    <message><source>Size: %1% · Opacity: %2%</source><translation>大小：%1% · 不透明度：%2%</translation></message>
     <message><source>Detach</source><translation>分离</translation></message>
     <message><source>Re-attach</source><translation>重新附加</translation></message>
     <message><source>Details: %1</source><translation>详细程度：%1</translation></message>

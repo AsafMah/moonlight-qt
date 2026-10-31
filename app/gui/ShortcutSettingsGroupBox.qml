@@ -117,7 +117,7 @@ GroupBox {
             checked: ShortcutModel.rightAltReleaseEnabled
             onToggled: ShortcutModel.rightAltReleaseEnabled = checked
             ToolTip.visible: hovered
-            ToolTip.text: qsTr("Hold to release; let go to recapture. Double-tap for persistent mouse-free editing, then double-tap again or press Esc to exit. Right Alt and AltGr are not sent to the host.")
+            ToolTip.text: qsTr("Hold to release the mouse. While held, click the performance overlay to edit it; menu clicks work normally. Let go to recapture unless an editor or menu owns the mouse. Right Alt and AltGr are not sent to the host.")
         }
 
         Repeater {

@@ -64,6 +64,9 @@ OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayM
       m_Visible(initiallyVisible), m_Preset(m_Settings.presetValue())
 {
     m_Clock.start();
+    if (m_Preset != Preset::Custom) {
+        m_LastNonCustomPreset = m_Preset;
+    }
 
     m_Window = window                        ? window.release()
                : compositorWindowSupported() ? new OverlayStatsWindow(parent, windowMode)
@@ -79,8 +82,13 @@ OverlayStatsController::OverlayStatsController(Overlay::OverlayManager& overlayM
         m_Window->setBeginEditingCallback([this] { beginEditing(); });
         m_Window->setToggleDetachedCallback([this] { setDetached(!m_Detached); });
         m_Window->setCyclePresetCallback([this] { cyclePreset(); });
+        m_Window->setToggleCustomCallback([this] { toggleCustom(); });
+        m_Window->setResetCallback([this] { resetLayout(); });
         createTooltip();
         applyStyle();
+        if (m_Settings.detached()) {
+            setDetached(true);
+        }
     }
 
     applyVisibility();
@@ -155,6 +163,9 @@ void OverlayStatsController::setPreset(Preset preset)
     } else {
         m_Visible = true;
         m_Preset = preset;
+        if (preset != Preset::Custom) {
+            m_LastNonCustomPreset = preset;
+        }
         if (!m_DisplayKey.isEmpty()) {
             m_Settings.setDisplayPreset(m_DisplayKey, preset);
         }
@@ -174,6 +185,27 @@ void OverlayStatsController::cyclePreset()
     setPreset(nextPreset(preset()));
 }
 
+void OverlayStatsController::toggleCustom()
+{
+    setPreset(preset() == Preset::Custom ? m_LastNonCustomPreset : Preset::Custom);
+}
+
+void OverlayStatsController::resetLayout()
+{
+    m_DetachedSaveDue = false;
+    m_Settings.resetDisplayLayout(m_DisplayKey, m_Preset, m_Detached);
+    m_Settings.setScalePercent(DefaultScalePercent);
+    m_Settings.setOpacityPercent(DefaultOpacityPercent);
+    if (m_Detached) {
+        m_DetachedPlaced = false;
+    } else {
+        m_AttachedPosition.reset();
+        m_Anchor = Anchor::TopLeft;
+    }
+    applyStyle();
+    refreshNow();
+}
+
 void OverlayStatsController::setDetached(bool detached)
 {
     if (m_Window == nullptr || detached == m_Detached) {
@@ -190,6 +222,7 @@ void OverlayStatsController::setDetached(bool detached)
     m_Tooltip = nullptr;
 
     m_Detached = detached;
+    m_Settings.setDetached(detached);
     m_DetachedPlaced = false;
     if (detached) {
         m_DetachedPositionKnown =
@@ -266,9 +299,6 @@ void OverlayStatsController::toggleEditing()
 
 void OverlayStatsController::setPointerEditMode(bool enabled)
 {
-    if (!enabled) {
-        endEditing();
-    }
     if (m_Window) {
         m_Window->setEditOnClick(enabled);
     }
@@ -422,6 +452,10 @@ void OverlayStatsController::updateDisplay()
     m_Anchor = state.hasAnchor ? state.anchor : Anchor::TopLeft;
     m_AttachedPosition = m_Settings.attachedPosition(key);
     m_Preset = state.hasPreset ? state.preset : m_Settings.presetValue();
+    if (m_Preset != Preset::Custom) {
+        m_LastNonCustomPreset = m_Preset;
+    }
+    m_DetachedPlaced = false;
     applyStyle();
 }
 
@@ -483,7 +517,7 @@ void OverlayStatsController::reposition()
 
     // Numbers change width every refresh. Growing only keeps the window from
     // twitching; applyStyle() resets it when the layout really changes.
-    m_WindowSize = m_WindowSize.expandedTo(m_Window->preferredSize());
+    m_WindowSize = m_WindowSize.expandedTo(m_Window->preferredSize()).boundedTo(parentRect.size());
 
     // Detached windows must follow the stream's monitor explicitly; a native
     // Wayland child inherits its parent's screen
@@ -523,6 +557,9 @@ void OverlayStatsController::repositionDetached(const QRect& parentRect)
     }
 
     m_WindowSize = m_WindowSize.expandedTo(m_Window->preferredSize());
+    if (windowScreen != nullptr) {
+        m_WindowSize = m_WindowSize.boundedTo(windowScreen->availableGeometry().size());
+    }
 
     if (m_DetachedPlaced) {
         // The user owns the position from here on; only the size follows the

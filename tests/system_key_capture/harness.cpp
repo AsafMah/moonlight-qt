@@ -12,7 +12,7 @@ constexpr Uint32 SDL_WINDOW_BORDERLESS = 4, SDL_WINDOW_MINIMIZED = 8;
 constexpr Uint32 SDL_WINDOW_FULLSCREEN_DESKTOP = SDL_WINDOW_FULLSCREEN | 16;
 constexpr int SDL_ENABLE = 1, SDL_MOUSEMOTION = 1, SDL_SCANCODE_ESCAPE = 41, SDL_PRESSED = 1;
 constexpr int SDL_LOG_CATEGORY_APPLICATION = 0;
-void SDL_LogInfo(int, const char*) {}
+void SDL_LogInfo(int, const char*, ...) {}
 int warnings = 0;
 void SDL_LogWarn(int, const char*, ...)
 {
@@ -149,6 +149,21 @@ struct SDL_KeyboardEvent
     } keysym;
     int state;
 };
+class SdlInputHandler;
+struct StatsWindow
+{
+    bool armed = false;
+    std::function<void(bool)> editCallback;
+    void setPointerEditMode(bool enabled) { armed = enabled; }
+    void setEditModeCallback(std::function<void(bool)> cb) { editCallback = std::move(cb); }
+};
+struct MenuWindow
+{
+    bool editing = false, visible = false;
+    void setPointerEditMode(bool enabled) { editing = enabled; }
+    bool isMenuVisible() const { return visible; }
+    void closeMenu() { visible = false; }
+};
 class Session
 {
 public:
@@ -158,6 +173,16 @@ public:
     QtWindow* m_WaylandStreamWindow = nullptr;
     StreamingPreferences preferences;
     StreamingPreferences* m_Preferences = &preferences;
+    SdlInputHandler* m_InputHandler = nullptr;
+    StatsWindow stats;
+    MenuWindow menu;
+    StatsWindow* m_StatsOverlay = &stats;
+    MenuWindow* m_MenuPanel = &menu;
+    bool m_WasCapturedBeforeMenu = false, m_WasCapturedBeforeStatsEdit = false;
+    bool isStreamingWindowVisible() const { return true; }
+    const char* tr(const char* text) { return text; }
+    void showStreamingToast(const char*, int) {}
+    void wireOverlayCallbacks();
     bool isStreamingWindowFullscreen() const;
     bool isStreamingWindowBorderlessOnDisplay() const;
     bool isStreamingWindowMinimized() const
@@ -183,6 +208,7 @@ public:
     SdlInputHandler()
     {
         session.m_Window = &window;
+        session.m_InputHandler = this;
         Session::active = &session;
         currentWindow = &window;
         relativeMouseMode = true;
@@ -195,17 +221,13 @@ public:
     void* m_RemoteCursor = nullptr;
     MouseReleaseGesture m_MouseReleaseGesture;
     std::function<void(bool)> m_MouseReleaseModeCallback;
-    struct
-    {
-        qint64 now = 0;
-        qint64 elapsed() const { return now; }
-    } m_MouseReleaseClock;
     void applyCapturedCursorState() {}
     bool isMouseInVideoRegion(int, int) { return false; }
     void handleMouseMotionEvent(SDL_MouseMotionEvent*) {}
     void cancelNativeTouchpadContacts() {}
     void updatePointerRegionLock() {}
     bool isCaptureActive();
+    bool hasInputFocus() const;
     bool isSystemKeyCaptureActive();
     bool isSystemKeyCaptureEnabledForWindow();
     void updateKeyboardGrabState();
@@ -213,11 +235,26 @@ public:
     void setCaptureActive(bool active);
     void holdReleaseMouse(bool held);
     void handleMouseReleaseHold(bool held);
-    void applyMouseReleaseGesture(bool wasFree, bool wasPersistent);
-    bool handleMouseReleaseEscape(SDL_KeyboardEvent* event);
+    void applyMouseReleaseGesture(bool wasFree);
+    bool cancelMouseHoldRelease();
+    void notifyFocusLost();
+    void setMouseReleaseModeCallback(std::function<void(bool)> cb)
+    {
+        m_MouseReleaseModeCallback = std::move(cb);
+    }
+    struct
+    {
+        int count() const { return 0; }
+    } m_KeysDown;
+    struct
+    {
+        void reset() {}
+    } m_ShortcutMatcher;
+    void raiseAllKeys() {}
 };
 
 // INPUT_METHODS
+// OVERLAY_CALLBACKS
 
 int failures = 0;
 void check(bool condition, const char* message)
@@ -346,31 +383,69 @@ int main(int argc, char** argv)
               "fullscreen recaptured during Right Alt hold");
         input.window.flags = SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_BORDERLESS;
         input.updateKeyboardGrabState();
-        input.m_MouseReleaseClock.now = 1000;
         input.handleMouseReleaseHold(false);
         check(input.isSystemKeyCaptureActive(),
               "Right Alt release did not apply current borderless policy");
-        for (qint64 time : { 2000, 2150 }) {
-            input.m_MouseReleaseClock.now = time;
+        for (int tap = 0; tap < 8; ++tap) {
             input.handleMouseReleaseHold(true);
-            input.m_MouseReleaseClock.now += 50;
             input.handleMouseReleaseHold(false);
+            check(input.captured, "repeated taps must not latch free mode");
         }
-        check(input.m_MouseReleaseGesture.isPersistent(), "double-tap fixture did not latch");
-        input.window.flags = SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_FULLSCREEN;
-        input.updateKeyboardGrabState();
-        input.setCaptureActive(true);
-        check(!input.isCaptureActive() && !input.window.keyboardGrab,
-              "persistent free mode was recaptured");
-        SDL_KeyboardEvent escape{ { SDL_SCANCODE_ESCAPE }, SDL_PRESSED };
-        check(input.handleMouseReleaseEscape(&escape), "Escape did not exit persistent mode");
-        check(input.isSystemKeyCaptureActive(), "Escape did not restore fullscreen capture");
-        input.m_MouseReleaseClock.now = 3000;
         input.handleMouseReleaseHold(true);
         input.window.flags &= ~SDL_WINDOW_INPUT_FOCUS;
-        input.m_MouseReleaseClock.now = 4000;
         input.handleMouseReleaseHold(false);
         check(!input.isCaptureActive(), "Right Alt release recaptured an unfocused stream");
+    } else if (std::strcmp(argv[1], "overlay") == 0) {
+        for (bool captured : { true, false }) {
+            for (bool doneBeforeKeyUp : { true, false }) {
+                SdlInputHandler owner;
+                owner.session.wireOverlayCallbacks();
+                owner.setCaptureActive(captured);
+                owner.handleMouseReleaseHold(true);
+                check(owner.session.stats.armed && !owner.captured,
+                      "hold must arm perf click-to-edit and release capture immediately");
+                check(!owner.session.menu.editing, "hold must not arm menu editing");
+                owner.session.m_WasCapturedBeforeMenu = captured;
+                owner.session.stats.editCallback(true);
+                check(!owner.m_MouseHoldReleased,
+                      "editor must unconditionally take hold restore ownership from menu");
+                if (doneBeforeKeyUp) {
+                    owner.session.stats.editCallback(false);
+                    check(!owner.captured, "Done during hold must defer recapture until key-up");
+                }
+                owner.handleMouseReleaseHold(false);
+                check(!owner.session.stats.armed, "key-up must disarm future edit clicks");
+                if (!doneBeforeKeyUp) {
+                    check(!owner.captured, "key-up recaptured while editor owns pointer");
+                    owner.session.stats.editCallback(false);
+                }
+                check(owner.captured == captured, "editor changed initially-free capture state");
+            }
+        }
+        SdlInputHandler owner;
+        owner.session.wireOverlayCallbacks();
+        owner.session.menu.visible = true;
+        owner.handleMouseReleaseHold(true);
+        owner.handleMouseReleaseHold(false);
+        check(owner.session.menu.visible && !owner.session.menu.editing,
+              "hold must leave menu visible and its clicks as normal actions");
+        owner.handleMouseReleaseHold(true);
+        owner.window.flags &= ~SDL_WINDOW_INPUT_FOCUS;
+        owner.notifyFocusLost();
+        check(!owner.session.stats.armed && !owner.m_MouseHoldReleased,
+              "focus loss must clear hold arming and deferred capture");
+        owner.window.flags |= SDL_WINDOW_INPUT_FOCUS;
+        owner.handleMouseReleaseHold(false);
+        check(!owner.captured, "stale key-up after focus loss recaptured input");
+        owner.session.menu.visible = false;
+        owner.setCaptureActive(true);
+        owner.handleMouseReleaseHold(true);
+        owner.session.stats.editCallback(true);
+        owner.window.flags &= ~SDL_WINDOW_INPUT_FOCUS;
+        owner.notifyFocusLost();
+        owner.session.stats.editCallback(false);
+        check(!owner.captured,
+              "Done on an unfocused editor must not recapture another app's mouse");
     } else {
         return 2;
     }

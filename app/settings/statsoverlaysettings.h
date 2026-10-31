@@ -68,6 +68,8 @@ public:
 
     int opacityPercent() const;
     void setOpacityPercent(int percent);
+    bool detached() const;
+    void setDetached(bool detached);
 
     QStringList metrics() const;
     QVector<StatsOverlay::Metric> metricList() const;
@@ -111,6 +113,7 @@ public:
     // stream on this display; nothing when it was never moved
     std::optional<QPoint> detachedPosition(const QString& displayKey) const;
     void setDetachedPosition(const QString& displayKey, const QPoint& position);
+    void resetDisplayLayout(const QString& displayKey, StatsOverlay::Preset preset, bool detached);
 
     // Translated name of a metric for the settings page
     static QString metricName(StatsOverlay::Metric metric);

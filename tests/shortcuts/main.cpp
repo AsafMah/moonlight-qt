@@ -395,55 +395,22 @@ bool testRightAltCheckbox(QTextStream& err)
 bool testMouseReleaseGesture(QTextStream& err)
 {
     MouseReleaseGesture gesture;
-    gesture.hold(true, 0);
-    bool ok = require(gesture.isFree() && !gesture.isPersistent(),
+    gesture.hold(true);
+    bool ok = require(gesture.isFree(),
                       QStringLiteral("holding Right Alt must free the mouse immediately"), err);
-    gesture.hold(false, 50);
+    gesture.hold(false);
     ok &= require(!gesture.isFree(), QStringLiteral("a single release must recapture"), err);
-    gesture.hold(true, 150);
-    gesture.hold(false, 200);
-    ok &= require(gesture.isFree() && gesture.isPersistent(),
-                  QStringLiteral("double tap must latch free mode after key-up"), err);
+    for (int tap = 0; tap < 8; ++tap) {
+        gesture.hold(true);
+        gesture.hold(true); // Key repeat is not a second gesture.
+        gesture.hold(false);
+        ok &= require(!gesture.isFree(),
+                      QStringLiteral("Right Alt taps must never latch editing or free mode"), err);
+    }
+    gesture.hold(true);
     gesture.focusLost();
-    ok &= require(
-        gesture.isPersistent() && gesture.isFree(),
-        QStringLiteral("persistent release must survive focus changes until explicit exit"), err);
-    gesture.hold(true, 1000);
-    gesture.hold(false, 1050);
-    ok &= require(gesture.isPersistent(), QStringLiteral("one tap must not unlatch mode"), err);
-    gesture.hold(true, 1150);
-    gesture.hold(false, 1200);
-    ok &= require(!gesture.isFree(), QStringLiteral("another double tap must recapture"), err);
-    gesture.hold(true, 2000);
-    gesture.hold(false, 2050);
-    gesture.hold(true, 2100);
-    gesture.hold(false, 2150);
-    ok &= require(gesture.escape(true) && !gesture.isFree() && gesture.escape(false) &&
-                      !gesture.escape(false),
-                  QStringLiteral("Esc must exit and swallow exactly its press/release pair"), err);
-    gesture.hold(true, 3000);
-    gesture.hold(false, 3050);
-    gesture.hold(true, 3100);
-    gesture.hold(false, 3100 + MouseReleaseGesture::TapDurationMs + 1);
-    ok &= require(!gesture.isPersistent(),
-                  QStringLiteral("a real hold must not complete a double tap"), err);
-    gesture.hold(true, 4000);
-    gesture.hold(false, 4050);
-    gesture.hold(true, 4050 + MouseReleaseGesture::DoubleTapGapMs + 1);
-    gesture.hold(false, 4500);
-    ok &= require(!gesture.isPersistent(), QStringLiteral("late taps must not latch"), err);
-    gesture.reset();
-    gesture.hold(false, 5000);
+    gesture.hold(false);
     ok &= require(!gesture.isFree(), QStringLiteral("focus loss must cancel without relatching"),
-                  err);
-    gesture.reset();
-    gesture.hold(true, 0);
-    gesture.hold(false, MouseReleaseGesture::TapDurationMs);
-    gesture.hold(true, MouseReleaseGesture::TapDurationMs + MouseReleaseGesture::DoubleTapGapMs);
-    gesture.hold(false,
-                 MouseReleaseGesture::TapDurationMs * 2 + MouseReleaseGesture::DoubleTapGapMs);
-    ok &= require(gesture.isPersistent(),
-                  QStringLiteral("exact tap-duration and double-tap-gap limits must be inclusive"),
                   err);
     return ok;
 }

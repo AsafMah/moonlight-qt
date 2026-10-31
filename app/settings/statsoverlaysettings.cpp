@@ -9,6 +9,7 @@
 #define SER_PRESET "preset"
 #define SER_SCALE "scale"
 #define SER_OPACITY "opacity"
+#define SER_DETACHED "detached"
 #define SER_METRICS "metrics"
 #define SER_DISPLAYS "displays"
 #define SER_ANCHOR "anchor"
@@ -90,6 +91,27 @@ void StatsOverlaySettings::setOpacityPercent(int percent)
 
     QSettings().setValue(key(SER_OPACITY), percent);
     emit opacityPercentChanged();
+}
+
+bool StatsOverlaySettings::detached() const
+{
+    return QSettings().value(key(SER_DETACHED), false).toBool();
+}
+
+void StatsOverlaySettings::setDetached(bool detached)
+{
+    QSettings().setValue(key(SER_DETACHED), detached);
+}
+
+void StatsOverlaySettings::resetDisplayLayout(const QString& displayKey, Preset preset,
+                                              bool detached)
+{
+    setDisplaySize(displayKey, preset, QSize());
+    if (detached) {
+        QSettings().remove(displayGroup(displayKey) + QStringLiteral("/" SER_DETACHED_POS));
+    } else {
+        setDisplayAnchor(displayKey, Anchor::TopLeft);
+    }
 }
 
 QVector<Metric> StatsOverlaySettings::metricList() const

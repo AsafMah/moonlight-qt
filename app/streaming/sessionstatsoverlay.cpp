@@ -9,22 +9,9 @@
 void Session::setupStatsOverlayShortcuts()
 {
     ShortcutDispatcher& dispatcher = m_InputHandler->getShortcutDispatcher();
-    m_InputHandler->setMouseReleaseModeCallback([this](bool persistent) {
-        if (persistent) {
-            m_WasCapturedBeforeStatsEdit = false;
-            m_WasCapturedBeforeMenu = false;
-            showStreamingToast(tr("Mouse free: click the overlay or menu to edit. "
-                                  "Double-tap Right Alt or press Esc to finish."),
-                               3500);
-        }
+    m_InputHandler->setMouseReleaseModeCallback([this](bool held) {
         if (m_StatsOverlay) {
-            m_StatsOverlay->setPointerEditMode(persistent);
-        }
-        if (m_MenuPanel) {
-            m_MenuPanel->setPointerEditMode(persistent);
-            if (!persistent && m_MenuPanel->isMenuVisible()) {
-                m_MenuPanel->closeMenu();
-            }
+            m_StatsOverlay->setPointerEditMode(held);
         }
     });
 
@@ -68,24 +55,22 @@ void Session::createStatsOverlay(OverlayWindowMode windowMode)
 
     m_StatsOverlay->setEditModeCallback([this](bool editing) {
         if (editing) {
-            if (m_InputHandler->isMouseReleasePersistent()) {
-                m_WasCapturedBeforeStatsEdit = false;
-                return;
-            }
             // The pointer has to be free to drag the overlay. If the overlay
             // menu started this, take over its pending capture restore so the
             // menu's close animation does not recapture mid-edit.
             // A hold to release the mouse ends here too, or letting go of
             // its key would capture the pointer in the middle of a drag.
-            m_WasCapturedBeforeStatsEdit =
-                m_WasCapturedBeforeStatsEdit || m_WasCapturedBeforeMenu ||
-                m_InputHandler->cancelMouseHoldRelease() || m_InputHandler->isCaptureActive();
+            const bool heldCapture = m_InputHandler->cancelMouseHoldRelease();
+            m_WasCapturedBeforeStatsEdit = m_WasCapturedBeforeStatsEdit ||
+                                           m_WasCapturedBeforeMenu || heldCapture ||
+                                           m_InputHandler->isCaptureActive();
             m_WasCapturedBeforeMenu = false;
             m_InputHandler->setCaptureActive(false);
             showStreamingToast(tr("Drag the overlay to move it. Press Esc when done."), 2500);
         } else if (m_WasCapturedBeforeStatsEdit) {
             m_WasCapturedBeforeStatsEdit = false;
-            if (isStreamingWindowVisible() && !(m_MenuPanel && m_MenuPanel->isMenuVisible())) {
+            if (isStreamingWindowVisible() && m_InputHandler->hasInputFocus() &&
+                !(m_MenuPanel && m_MenuPanel->isMenuVisible())) {
                 m_InputHandler->setCaptureActive(true);
             }
         }

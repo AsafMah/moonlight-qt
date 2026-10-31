@@ -29,11 +29,13 @@ class SystemKeyCaptureTests(unittest.TestCase):
             "void SdlInputHandler::updateKeyboardGrabState(",
             "bool SdlInputHandler::isSystemKeyCaptureActive(",
             "bool SdlInputHandler::isCaptureActive(",
+            "bool SdlInputHandler::hasInputFocus(",
             "void SdlInputHandler::setCaptureActive(",
             "void SdlInputHandler::holdReleaseMouse(",
             "void SdlInputHandler::handleMouseReleaseHold(",
             "void SdlInputHandler::applyMouseReleaseGesture(",
-            "bool SdlInputHandler::handleMouseReleaseEscape(",
+            "bool SdlInputHandler::cancelMouseHoldRelease(",
+            "void SdlInputHandler::notifyFocusLost(",
         ))
         signature = "bool SdlInputHandler::isSystemKeyCaptureEnabledForWindow("
         if signature in source:
@@ -53,6 +55,16 @@ class SystemKeyCaptureTests(unittest.TestCase):
         session_methods += (function(session, signature) if signature in session else
                             "bool Session::isStreamingWindowBorderlessOnDisplay() const { return false; }")
         harness = harness.replace("// SESSION_METHODS", session_methods)
+        overlay = (ROOT / "app/streaming/sessionstatsoverlay.cpp").read_text(encoding="utf-8")
+        callbacks = []
+        for owner, method in (("m_InputHandler", "setMouseReleaseModeCallback"),
+                              ("m_StatsOverlay", "setEditModeCallback")):
+            callbacks.append(re.search(
+                rf"{owner}->{method}\(\[this\]\(bool \w+\) \{{.*?\n    \}}\);",
+                overlay, re.S).group())
+        harness = harness.replace("// OVERLAY_CALLBACKS",
+                                  "void Session::wireOverlayCallbacks() {\n" +
+                                  "\n".join(callbacks) + "\n}\n")
         compiler = shutil.which("cl" if os.name == "nt" else "c++")
         if compiler is None:
             raise AssertionError("Run from a C++ compiler environment")
@@ -85,6 +97,9 @@ class SystemKeyCaptureTests(unittest.TestCase):
 
     def test_borderless_policy_and_right_alt_transitions(self):
         self.run_case("borderless")
+
+    def test_overlay_capture_handoff_and_menu_click_arming(self):
+        self.run_case("overlay")
 
     def test_window_events_refresh_capture_before_renderer_early_exits(self):
         source = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")

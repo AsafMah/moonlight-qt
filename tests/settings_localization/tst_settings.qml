@@ -55,6 +55,10 @@ TestCase {
         compare(qsTranslate("LegacySettingsPage", "Borderless windows must cover their monitor."), "无边框窗口必须覆盖整个显示器。")
         compare(qsTranslate("OverlayMenuPanel", "Toggle System Key Capture"), "切换系统快捷键捕获")
         compare(qsTranslate("OverlayMenuPanel", "Cycle Preset"), "循环切换预设")
+        compare(qsTranslate("OverlayStatsWindow", "Custom: On"), "自定义：开")
+        compare(qsTranslate("OverlayStatsWindow", "Opacity +"), "不透明度 +")
+        compare(qsTranslate("OverlayStatsWindow", "Size: %1% · Opacity: %2%").arg(80).arg(55),
+                "大小：80% · 不透明度：55%")
         compare(qsTranslate("AboutSettingsPage", "About"), "关于")
         compare(qsTranslate("SettingsSearchField", "Search settings"), "搜索设置")
         compare(qsTranslate("SettingsSearchResults", "Search results"), "搜索结果")

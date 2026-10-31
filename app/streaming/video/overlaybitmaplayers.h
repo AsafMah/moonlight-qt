@@ -16,7 +16,8 @@ namespace Overlay {
 // over the stream forces desktop composition; drawing into the swapchain keeps
 // independent flip. Renderers draw the layers back to front in this order,
 // after the video and the legacy text overlays.
-enum class BitmapLayer {
+enum class BitmapLayer
+{
     StatsPanel,
     StatsTooltip,
     Toast,
@@ -24,7 +25,8 @@ enum class BitmapLayer {
 };
 constexpr int BitmapLayerCount = 4;
 
-struct BitmapLayerImage {
+struct BitmapLayerImage
+{
     // QImage::Format_ARGB32 (straight alpha) in device pixels
     QImage image;
     // Placement in the stream window's client area, where (0, 0)-(1, 1) covers
@@ -32,14 +34,16 @@ struct BitmapLayerImage {
     QRectF bounds;
 };
 
-struct BitmapLayerSnapshot {
+struct BitmapLayerSnapshot
+{
     // Null when the layer has nothing to draw
     std::shared_ptr<const BitmapLayerImage> content;
     // Changes on every publish or clear of this layer
     quint64 generation = 0;
 };
 
-enum class BitmapLayerSupport {
+enum class BitmapLayerSupport
+{
     // No renderer has registered yet
     Unknown,
     Supported,
@@ -74,7 +78,7 @@ public:
 private:
     mutable QMutex m_Mutex;
     std::array<BitmapLayerSnapshot, BitmapLayerCount> m_Layers;
-    std::atomic<quint64> m_Generation { 0 };
+    std::atomic<quint64> m_Generation{ 0 };
     BitmapLayerSupport m_Support = BitmapLayerSupport::Unknown;
     std::function<void(BitmapLayerSupport)> m_SupportChanged;
 };

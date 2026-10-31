@@ -89,8 +89,7 @@ void testStraightAlphaContract()
     const QRgb pixel = snapshot.content->image.pixel(1, 1);
     require(snapshot.content->image.format() == QImage::Format_ARGB32,
             "renderers receive straight-alpha ARGB32");
-    require(qAlpha(pixel) == 128 && qRed(pixel) >= 254 && qGreen(pixel) == 0 &&
-                qBlue(pixel) == 0,
+    require(qAlpha(pixel) == 128 && qRed(pixel) >= 254 && qGreen(pixel) == 0 && qBlue(pixel) == 0,
             "premultiplied color must be un-premultiplied once");
 
     // The publisher keeps using its image; the published copy must not change
@@ -188,9 +187,9 @@ void testLateRendererSeesCurrentContent()
 void testConcurrentSnapshotsAreConsistent()
 {
     BitmapLayerStore store;
-    std::atomic<bool> done { false };
-    std::atomic<int> torn { 0 };
-    std::atomic<int> regressions { 0 };
+    std::atomic<bool> done{ false };
+    std::atomic<int> torn{ 0 };
+    std::atomic<int> regressions{ 0 };
 
     // The publisher encodes the same counter in the pixel and the rect; a
     // reader must never pair one publication's pixels with another's rect

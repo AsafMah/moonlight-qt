@@ -1155,15 +1155,13 @@ void OverlayMenuPanel::buildMenuLevels()
     MenuLevel bitrate;
     bitrate.title = tr("Bitrate");
     bitrate.openAction = MenuAction::OpenBitrate;
-    bitrate.items.push_back({QString(), QString(), MenuItemType::Slider,
-                             MenuAction::MenuActionMax, 0, true, false, true});
-    static const int kBitratePresets[] = {
-        1000, 2000, 5000, 10000, 20000, 30000, 50000, 100000
-    };
+    bitrate.items.push_back({ QString(), QString(), MenuItemType::Slider, MenuAction::MenuActionMax,
+                              0, true, false, true });
+    static const int kBitratePresets[] = { 1000, 2000, 5000, 10000, 20000, 30000, 50000, 100000 };
     for (int kbps : kBitratePresets) {
-        bitrate.items.push_back({formatBitrateKbps(kbps), QString(), MenuItemType::Action,
-                                 MenuAction::SetBitrate, 0, true, false, false,
-                                 QString::number(kbps)});
+        bitrate.items.push_back({ formatBitrateKbps(kbps), QString(), MenuItemType::Action,
+                                  MenuAction::SetBitrate, 0, true, false, false,
+                                  QString::number(kbps) });
     }
     m_MenuLevels.push_back(std::move(bitrate));
 
@@ -1173,14 +1171,14 @@ void OverlayMenuPanel::buildMenuLevels()
     placement.openAction = MenuAction::OpenMenuPosition;
     placement.items.push_back({ tr("Detach menu"), QString(), MenuItemType::Action,
                                 MenuAction::ToggleMenuDetached, 0, true, false, true });
-    placement.items.push_back({tr("Top edge"), QString(), MenuItemType::Action,
-                               MenuAction::SetMenuPlacementTop, 0, true, false, false});
-    placement.items.push_back({tr("Right edge"), QString(), MenuItemType::Action,
-                               MenuAction::SetMenuPlacementRight, 0, true, false, false});
-    placement.items.push_back({tr("Left edge"), QString(), MenuItemType::Action,
-                               MenuAction::SetMenuPlacementLeft, 0, true, false, false});
-    placement.items.push_back({tr("Floating button"), QString(), MenuItemType::Action,
-                               MenuAction::SetMenuPlacementButton, 0, true, false, false});
+    placement.items.push_back({ tr("Top edge"), QString(), MenuItemType::Action,
+                                MenuAction::SetMenuPlacementTop, 0, true, false, false });
+    placement.items.push_back({ tr("Right edge"), QString(), MenuItemType::Action,
+                                MenuAction::SetMenuPlacementRight, 0, true, false, false });
+    placement.items.push_back({ tr("Left edge"), QString(), MenuItemType::Action,
+                                MenuAction::SetMenuPlacementLeft, 0, true, false, false });
+    placement.items.push_back({ tr("Floating button"), QString(), MenuItemType::Action,
+                                MenuAction::SetMenuPlacementButton, 0, true, false, false });
     placement.items.push_back({ tr("Disabled"), QString(), MenuItemType::Action,
                                 MenuAction::SetMenuPlacementDisabled, 0, true, false, true });
     m_MenuLevels.push_back(std::move(placement));
@@ -1208,18 +1206,15 @@ void OverlayMenuPanel::buildMenuLevels()
         usb.title = tr("USB Devices");
         usb.openAction = MenuAction::OpenRemoteUsbDevices;
         if (m_RemoteUsbDevices.empty()) {
-            const QString emptyDetail =
-                m_RemoteUsbState == RemoteUsbState::Discovering
-                    ? tr("Scanning") : tr("No devices found");
-            usb.items.push_back({tr("USB Devices"), emptyDetail,
-                                 MenuItemType::Action,
-                                 MenuAction::MenuActionMax, 0, false, false,
-                                 false});
-        }
-        else {
+            const QString emptyDetail = m_RemoteUsbState == RemoteUsbState::Discovering
+                                            ? tr("Scanning")
+                                            : tr("No devices found");
+            usb.items.push_back({ tr("USB Devices"), emptyDetail, MenuItemType::Action,
+                                  MenuAction::MenuActionMax, 0, false, false, false });
+        } else {
             for (const RemoteUsbDevice& device : m_RemoteUsbDevices) {
-                const bool active = !m_RemoteUsbActiveDeviceId.isEmpty() &&
-                                    device.id == m_RemoteUsbActiveDeviceId;
+                const bool active =
+                    !m_RemoteUsbActiveDeviceId.isEmpty() && device.id == m_RemoteUsbActiveDeviceId;
                 QString detail = device.detail;
                 if (active) {
                     switch (m_RemoteUsbState) {
@@ -1238,29 +1233,22 @@ void OverlayMenuPanel::buildMenuLevels()
                 }
                 const bool busy = m_RemoteUsbState == RemoteUsbState::Opening ||
                                   m_RemoteUsbState == RemoteUsbState::Stopping;
-                const bool hasOpenDevice =
-                    m_RemoteUsbState == RemoteUsbState::Open &&
-                    !m_RemoteUsbActiveDeviceId.isEmpty();
+                const bool hasOpenDevice = m_RemoteUsbState == RemoteUsbState::Open &&
+                                           !m_RemoteUsbActiveDeviceId.isEmpty();
                 if (m_RemoteUsbNeedsActivation && device.supported) {
                     detail = tr("Select to activate");
                     if (!device.detail.isEmpty()) {
                         detail += QStringLiteral(" · ") + device.detail;
                     }
                 }
-                const bool canRelease = active &&
-                    (m_RemoteUsbState == RemoteUsbState::Opening ||
-                     m_RemoteUsbState == RemoteUsbState::Open);
-                usb.items.push_back({device.label, detail,
-                                     MenuItemType::Action,
-                                     canRelease
-                                         ? MenuAction::ReleaseRemoteUsbDevice
-                                         : MenuAction::SelectRemoteUsbDevice,
-                                     0,
-                                     canRelease || (device.supported && !busy &&
-                                         (!hasOpenDevice || active)),
-                                     active,
-                                     false,
-                                     device.id});
+                const bool canRelease = active && (m_RemoteUsbState == RemoteUsbState::Opening ||
+                                                   m_RemoteUsbState == RemoteUsbState::Open);
+                usb.items.push_back(
+                    { device.label, detail, MenuItemType::Action,
+                      canRelease ? MenuAction::ReleaseRemoteUsbDevice
+                                 : MenuAction::SelectRemoteUsbDevice,
+                      0, canRelease || (device.supported && !busy && (!hasOpenDevice || active)),
+                      active, false, device.id });
             }
         }
         m_MenuLevels.push_back(std::move(usb));
@@ -1797,7 +1785,8 @@ void OverlayMenuPanel::activateItem(MenuItem item)
 
 void OverlayMenuPanel::updateBitrateState(int bitrateKbps)
 {
-    if (m_MenuLevels.empty()) return;
+    if (m_MenuLevels.empty())
+        return;
 
     if (m_BitrateCommitTimer.isActive()) {
         // A scrub is still pending commit; it will land shortly and update
@@ -1830,7 +1819,8 @@ QString OverlayMenuPanel::formatBitrateKbps(int kbps)
 
 void OverlayMenuPanel::refreshBitrateDetails()
 {
-    if (m_MenuLevels.empty()) return;
+    if (m_MenuLevels.empty())
+        return;
 
     // Current bitrate as detail text on the Bitrate entry of its tab
     if (MenuItem* entry = findRootItem(MenuAction::OpenBitrate)) {
@@ -1844,7 +1834,8 @@ void OverlayMenuPanel::refreshBitrateDetails()
         for (auto& item : m_MenuLevels[bitrateLevel].items) {
             if (item.action == MenuAction::SetBitrate) {
                 item.detail = (item.payload.toInt() == m_BitrateKbps)
-                                  ? QString::fromUtf8("\342\234\223") : QString();
+                                  ? QString::fromUtf8("\342\234\223")
+                                  : QString();
             }
         }
     }
@@ -1869,7 +1860,8 @@ void OverlayMenuPanel::setBitrateKbps(int bitrateKbps)
 {
     bitrateKbps = qBound(kBitrateMinKbps, bitrateKbps, kBitrateMaxKbps);
     bitrateKbps = sliderPositionToBitrate(bitrateToSliderPosition(bitrateKbps));
-    if (bitrateKbps == m_BitrateKbps) return;
+    if (bitrateKbps == m_BitrateKbps)
+        return;
 
     m_BitrateKbps = bitrateKbps;
     refreshBitrateDetails();
@@ -1894,7 +1886,8 @@ void OverlayMenuPanel::adjustBitrateStep(int direction, int multiplier)
 void OverlayMenuPanel::commitBitrateNow()
 {
     m_BitrateCommitTimer.stop();
-    if (m_BitrateKbps == m_CommittedBitrateKbps) return;
+    if (m_BitrateKbps == m_CommittedBitrateKbps)
+        return;
 
     m_CommittedBitrateKbps = m_BitrateKbps;
     if (m_BitrateChangeCallback) {

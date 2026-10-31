@@ -10,8 +10,8 @@ namespace {
 bool validBounds(const QRectF& bounds)
 {
     return std::isfinite(bounds.x()) && std::isfinite(bounds.y()) &&
-           std::isfinite(bounds.width()) && std::isfinite(bounds.height()) &&
-           bounds.width() > 0 && bounds.height() > 0;
+           std::isfinite(bounds.width()) && std::isfinite(bounds.height()) && bounds.width() > 0 &&
+           bounds.height() > 0;
 }
 } // namespace
 

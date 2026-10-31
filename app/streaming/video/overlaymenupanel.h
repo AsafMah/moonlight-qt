@@ -126,6 +126,8 @@ public:
         SelectStreamFps,
         ApplyStreamQuality,
         SaveStreamQualityAsDefault,
+        RetryLiveResolution,
+        ReconnectStreamQuality,
         // Live session totals (SessionStatsProvider). Marks the submenu entry
         // and its read-only rows; never dispatched.
         OpenSessionStats,
@@ -158,6 +160,11 @@ public:
         OpenQuickPins,
         ToggleQuickPin,
         ToggleRightAltRelease,
+        OpenStreamConfiguration,
+        SelectStreamCodec,
+        SelectStreamHdr,
+        SelectStreamAudio,
+        ApplyStreamConfiguration,
         MenuActionMax
     };
 
@@ -249,6 +256,17 @@ public:
         int fps = 0;
         QSize nativeResolution;
         int displayHz = 0;
+        bool hostSupportsLiveResolution = false;
+        QSize hostDisplaySize;
+        bool resolutionOperationBusy = false;
+        bool liveRequestPending = false;
+        QSize pendingResolution;
+        QString resultMessage;
+        bool canRetryLiveResolution = false;
+        bool retryLiveResolutionEnabled = false;
+        bool canReconnectStreamQuality = false;
+        QSize failedResolution;
+        int failedFps = 0;
     };
     // A requested resolution/FPS. saveAsDefault also stores it in the
     // streaming preferences; otherwise it lasts for this session only.
@@ -257,8 +275,33 @@ public:
         QSize resolution;
         int fps = 0;
         bool saveAsDefault = false;
+        bool forceReconnect = false;
+        bool forceLive = false;
     };
     using StreamQualityCallback = std::function<void(const StreamQualityRequest&)>;
+
+    struct StreamConfigurationState
+    {
+        QString currentCodec;
+        QString currentHdr;
+        QString currentAudio;
+        int requestedCodec = 0;
+        int requestedHdrMode = 0; // 0=off, 1=PQ, 2=HLG
+        int requestedAudioConfig = 0;
+        bool pending = false;
+        int pendingCodec = 0;
+        int pendingHdrMode = 0;
+        int pendingAudioConfig = 0;
+        bool pyrowaveSelected = false;
+        QString resultMessage;
+    };
+    struct StreamConfigurationRequest
+    {
+        int codec = 0;
+        int hdrMode = 0;
+        int audioConfig = 0;
+    };
+    using StreamConfigurationCallback = std::function<void(const StreamConfigurationRequest&)>;
 
     explicit OverlayMenuPanel(QWindow* parent = nullptr,
                               OverlayWindowMode windowMode = OverlayWindowMode::Detached);
@@ -282,6 +325,10 @@ public:
     void setStreamQualityCallback(StreamQualityCallback cb)
     {
         m_StreamQualityCallback = std::move(cb);
+    }
+    void setStreamConfigurationCallback(StreamConfigurationCallback cb)
+    {
+        m_StreamConfigurationCallback = std::move(cb);
     }
 
     // Inline rows (label, value) on Session. Polled when shown and about once
@@ -402,6 +449,7 @@ public:
     static std::optional<StatsOverlay::Preset> statsPresetForAction(MenuAction action);
     // Resets the pending Stream Quality choice to what the stream runs at.
     void updateStreamQualityState(const StreamQualityState& state);
+    void updateStreamConfigurationState(const StreamConfigurationState& state);
     void updateGamepadMouseState(bool enabled);
     void updateFileMappingState(FileMappingState state, const QString& detail);
     // Enables Cancel Sending Files while files are on their way to the host.
@@ -603,6 +651,8 @@ private:
     void refreshShortcuts();
     MenuLevel buildStreamQualityLevel() const;
     bool handleStreamQualityItem(const MenuItem& item); // true when consumed
+    MenuLevel buildStreamConfigurationLevel() const;
+    bool handleStreamConfigurationItem(const MenuItem& item); // true when consumed
     void navigateToLevel(int level);
     // Tab roots and sub-levels, looked up by identity
     bool isTabRootLevel(int level) const;
@@ -714,6 +764,7 @@ private:
     BitrateChangeCallback m_BitrateChangeCallback;
     PayloadActionCallback m_PayloadActionCallback;
     StreamQualityCallback m_StreamQualityCallback;
+    StreamConfigurationCallback m_StreamConfigurationCallback;
 
     // Stream Quality level: running state, the pending choice, and the level
     // index in m_MenuLevels, refreshed on every build from levelForOpenAction().
@@ -721,6 +772,10 @@ private:
     QSize m_PendingStreamResolution;
     int m_PendingStreamFps = 0;
     int m_StreamQualityLevel = -1;
+    StreamConfigurationState m_StreamConfiguration;
+    int m_PendingCodec = 0;
+    int m_PendingHdrMode = 0;
+    int m_PendingAudioConfig = 0;
 
     // Last updateMenuPositionState() choice, re-applied after a rebuild
     std::optional<MenuAction> m_ActivePlacementAction;

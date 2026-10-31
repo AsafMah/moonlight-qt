@@ -817,7 +817,7 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
 }
 
 void FFmpegVideoDecoder::publishStatsWindow(VIDEO_STATS& recent, VIDEO_STATS& completed,
-                                            double bitrateMbps)
+                                            double bitrateMbps, uint64_t bitrateTimestampUs)
 {
     StatsWindow window = VideoStatsBridge::toStatsWindow(recent);
 
@@ -825,6 +825,7 @@ void FFmpegVideoDecoder::publishStatsWindow(VIDEO_STATS& recent, VIDEO_STATS& co
     window.codec =
         VideoStatsBridge::videoFormatName(m_VideoFormat, LiGetCurrentHostDisplayHdrMode());
     window.bitrateMbps = bitrateMbps;
+    window.bitrateTimestampUs = bitrateTimestampUs;
     if (m_VideoDecoderCtx != nullptr && m_VideoDecoderCtx->codec != nullptr) {
         window.width = m_VideoDecoderCtx->width;
         window.height = m_VideoDecoderCtx->height;
@@ -2317,9 +2318,10 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
         // Publish to the stats model first, since the overlay text reads it back.
         // The bitrate is the wire-level rate of the video RTP stream (with FEC);
         // stringifyVideoStats() below reuses this reading.
-        const double bitrateMbps =
-            m_BandwidthMeter.update(LiGetRTPVideoBytesReceived(), LiGetMicroseconds());
-        publishStatsWindow(lastTwoWndStats, m_ActiveWndVideoStats, bitrateMbps);
+        const uint64_t nowUs = LiGetMicroseconds();
+        const double bitrateMbps = m_BandwidthMeter.update(LiGetRTPVideoBytesReceived(), nowUs);
+        publishStatsWindow(lastTwoWndStats, m_ActiveWndVideoStats, bitrateMbps,
+                           m_BandwidthMeter.lastSampleTimeUs());
 
         // Update overlay stats if it's enabled
         if (Session::get()->getOverlayManager().isOverlayEnabled(Overlay::OverlayDebug)) {

@@ -62,8 +62,10 @@ struct StatsWindow
     double decodedFps = 0;
     double renderedFps = 0;
 
-    // Video bitrate in Mbps from whatever source the decoder has; NaN if none
+    // Received video-socket rate in Mbps, including FEC and video packet/encryption overhead.
+    // This is not the host encoder bitrate budget; NaN if no valid sample.
     double bitrateMbps = std::nan("");
+    uint64_t bitrateTimestampUs = 0; // Time of the last valid bandwidth sample
 
     // Cumulative RTP packet counters for the video stream (since stream start)
     uint32_t videoPackets = 0;
@@ -160,6 +162,7 @@ struct StatsSnapshot
     double pacerDropPercent = 0;   // decoded frames dropped by the Pacer
     uint32_t queueSamples = 0;     // rendered frames with a measured Pacer queue time
     double bitrateMbps = std::nan("");
+    uint64_t bitrateTimestampUs = 0;
     uint32_t videoPackets = 0;
     uint32_t fecPackets = 0;
     int64_t fecRecoveredFrames = -1;

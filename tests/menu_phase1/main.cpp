@@ -64,6 +64,161 @@ private slots:
         QCOMPARE(p.focusedRow(), p.rowOfAction(A::OpenMouseMode));
         QVERIFY(p.rowDetail(p.rowOfAction(A::OpenMouseMode)).contains("Desktop"));
     }
+    void streamConfigurationPendingApply()
+    {
+        OverlayMenuPanel p;
+        OverlayMenuPanel::StreamConfigurationState state;
+        state.currentCodec = "HEVC 10-bit HDR";
+        state.currentHdr = "HDR10/PQ";
+        state.currentAudio = "6 channels";
+        state.requestedCodec = 0;
+        state.requestedHdrMode = 1;
+        state.requestedAudioConfig = 0;
+        p.updateStreamConfigurationState(state);
+
+        OverlayMenuPanel::StreamConfigurationRequest sent;
+        bool applied = false;
+        p.setStreamConfigurationCallback([&](const auto& request) {
+            sent = request;
+            applied = true;
+        });
+
+        open(p);
+        p.showTab(T::Stream);
+        click(p, A::OpenStreamConfiguration);
+        QVERIFY(p.rowDetail(p.rowOfAction(A::SelectStreamCodec, "0")).contains("Requested"));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::MenuActionMax)).contains("HEVC 10-bit HDR"));
+        click(p, A::SelectStreamCodec, "4");
+        click(p, A::SelectStreamHdr, "2");
+        click(p, A::SelectStreamAudio, "3");
+        QVERIFY(p.rowEnabled(p.rowOfAction(A::ApplyStreamConfiguration)));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::ApplyStreamConfiguration)).contains("Pending"));
+        click(p, A::ApplyStreamConfiguration);
+        QVERIFY(applied);
+        QCOMPARE(sent.codec, 4);
+        QCOMPARE(sent.hdrMode, 2);
+        QCOMPARE(sent.audioConfig, 3);
+        QVERIFY(!p.isMenuVisible());
+
+        state.pyrowaveSelected = true;
+        p.updateStreamConfigurationState(state);
+        open(p);
+        p.showTab(T::Stream);
+        click(p, A::OpenStreamConfiguration);
+        QVERIFY(!p.rowEnabled(p.rowOfAction(A::SelectStreamCodec, "0")));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::SelectStreamCodec, "0"))
+                    .contains("PyroWave remains selected"));
+
+        state.pyrowaveSelected = false;
+        state.pending = true;
+        state.pendingCodec = 4;
+        state.pendingHdrMode = 2;
+        state.pendingAudioConfig = 3;
+        p.updateStreamConfigurationState(state);
+        open(p);
+        p.showTab(T::Stream);
+        click(p, A::OpenStreamConfiguration);
+        QVERIFY(!p.rowEnabled(p.rowOfAction(A::ApplyStreamConfiguration)));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::ApplyStreamConfiguration)).contains("Pending"));
+        QVERIFY(!p.rowEnabled(p.rowOfAction(A::SelectStreamCodec, "0")));
+    }
+    void streamConfigurationNarrowLayoutAndFocus()
+    {
+        for (QSize size : { QSize(320, 240), QSize(640, 360) }) {
+            for (int scale : { 100, 125, 150 }) {
+                OverlayMenuPanel p;
+                OverlayMenuPanel::StreamConfigurationState state;
+                state.currentCodec = "HEVC 10-bit HDR";
+                state.currentHdr = "HDR10/PQ";
+                state.currentAudio = "6 channels";
+                state.requestedCodec = 0;
+                state.requestedHdrMode = 1;
+                state.requestedAudioConfig = 0;
+                p.updateStreamConfigurationState(state);
+                p.setStyle(OverlayMenu::Layout::Compact, scale, 100);
+                open(p, size);
+                QVERIFY(p.showTab(T::Stream));
+                click(p, A::OpenStreamConfiguration);
+
+                const int codecRow = p.rowOfAction(A::SelectStreamCodec, "4");
+                const int hdrRow = p.rowOfAction(A::SelectStreamHdr, "2");
+                const int audioRow = p.rowOfAction(A::SelectStreamAudio, "3");
+                for (int row :
+                     { codecRow, hdrRow, audioRow, p.rowOfAction(A::ApplyStreamConfiguration) }) {
+                    QVERIFY(row >= 0);
+                    p.ensureRowVisible(row);
+                    QVERIFY(p.rowViewportGeometry().contains(p.rowGeometry(row)));
+                }
+
+                p.ensureRowVisible(codecRow);
+                const QRect codecGeometry = p.rowGeometry(codecRow);
+                QTest::mouseClick(&p, Qt::LeftButton, Qt::NoModifier, codecGeometry.center());
+                QVERIFY(
+                    p.rowDetail(p.rowOfAction(A::SelectStreamCodec, "4")).contains(QChar(0x2713)));
+                const int focusedCodecRow = p.rowOfAction(A::SelectStreamCodec, "4");
+                QCOMPARE(p.focusedRow(), focusedCodecRow);
+
+                state.pending = true;
+                state.pendingCodec = 4;
+                state.pendingHdrMode = 2;
+                state.pendingAudioConfig = 3;
+                p.updateStreamConfigurationState(state);
+                QCOMPARE(p.focusedRow(), p.rowOfAction(A::SelectStreamCodec, "4"));
+                QVERIFY(p.rowViewportGeometry().contains(p.rowGeometry(p.focusedRow())));
+                QVERIFY(!p.rowEnabled(p.rowOfAction(A::ApplyStreamConfiguration)));
+
+                p.showTab(T::Quick);
+                p.showTab(T::Stream);
+                click(p, A::OpenStreamConfiguration);
+                const int pendingApplyRow = p.rowOfAction(A::ApplyStreamConfiguration);
+                p.ensureRowVisible(pendingApplyRow);
+                QVERIFY(p.rowViewportGeometry().contains(p.rowGeometry(pendingApplyRow)));
+                QVERIFY(p.rowDetail(pendingApplyRow).contains("Pending"));
+                p.closeMenu();
+                QTest::qWait(160);
+            }
+        }
+    }
+    void streamQualityLiveCostAndFailureActions()
+    {
+        OverlayMenuPanel p;
+        OverlayMenuPanel::StreamQualityState state;
+        state.resolution = QSize(1920, 1080);
+        state.fps = 60;
+        state.hostSupportsLiveResolution = true;
+        state.hostDisplaySize = QSize(1920, 1080);
+        p.updateStreamQualityState(state);
+
+        open(p);
+        p.showTab(T::Stream);
+        click(p, A::OpenStreamQuality);
+        QVERIFY(
+            p.rowDetail(p.rowOfAction(A::SelectStreamResolution, "2560x1440")).contains("Live"));
+        click(p, A::SelectStreamResolution, "2560x1440");
+        QVERIFY(p.rowEnabled(p.rowOfAction(A::ApplyStreamQuality)));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::ApplyStreamQuality)).contains("Live"));
+
+        state.liveRequestPending = true;
+        state.pendingResolution = QSize(2560, 1440);
+        p.updateStreamQualityState(state);
+        QVERIFY(!p.rowEnabled(p.rowOfAction(A::ApplyStreamQuality)));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::ApplyStreamQuality)).contains("Pending"));
+
+        state.liveRequestPending = false;
+        state.resultMessage = "Host did not apply 1440p";
+        state.canRetryLiveResolution = true;
+        state.retryLiveResolutionEnabled = true;
+        state.canReconnectStreamQuality = true;
+        state.failedResolution = QSize(2560, 1440);
+        state.failedFps = 60;
+        p.updateStreamQualityState(state);
+        QVERIFY(p.rowEnabled(p.rowOfAction(A::RetryLiveResolution)));
+        QVERIFY(p.rowEnabled(p.rowOfAction(A::ReconnectStreamQuality)));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::ReconnectStreamQuality)).contains("Reconnect"));
+        state.retryLiveResolutionEnabled = false;
+        p.updateStreamQualityState(state);
+        QVERIFY(!p.rowEnabled(p.rowOfAction(A::RetryLiveResolution)));
+    }
     void canonicalPinsAndGates()
     {
         OverlayMenuPanel p;

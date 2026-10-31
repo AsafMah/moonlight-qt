@@ -32,6 +32,10 @@ public:
      */
     double update(std::uint64_t totalBytes, std::uint64_t nowUs);
 
+    // Time of the last produced rate sample; unchanged when update() reuses a
+    // previous value for a short or stale interval.
+    std::uint64_t lastSampleTimeUs() const { return m_LastSampleTimeUs; }
+
     /**
      * @brief Clears the baseline so the next update() starts a fresh window.
      */
@@ -43,5 +47,6 @@ private:
     bool m_HasBaseline;
     std::uint64_t m_PreviousBytes;
     std::uint64_t m_PreviousTimeUs;
+    std::uint64_t m_LastSampleTimeUs;
     double m_LastMbps;
 };

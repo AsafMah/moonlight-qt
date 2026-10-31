@@ -11,6 +11,7 @@ INCLUDEPATH += \
 
 SOURCES += \
     main.cpp \
+    ../../app/streaming/bandwidth.cpp \
     ../../app/streaming/stats/statsmath.cpp \
     ../../app/streaming/stats/streamstatsmodel.cpp
 
@@ -18,3 +19,5 @@ HEADERS += \
     ../../app/streaming/stats/statsmath.h \
     ../../app/streaming/stats/statssnapshot.h \
     ../../app/streaming/stats/streamstatsmodel.h
+HEADERS += \
+    ../../app/streaming/bandwidth.h

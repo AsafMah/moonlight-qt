@@ -1,6 +1,7 @@
 #include "overlaymenupanel.h"
 #include "uifont.h"
 #include "streaming/streamquality.h"
+#include "settings/streamingpreferences.h"
 
 #include <QScreen>
 #include <QGuiApplication>
@@ -117,6 +118,7 @@ constexpr TabAssignment kTabAssignments[] = {
     { MenuAction::Quit, MenuTab::Quick },
     { MenuAction::QuitAndExit, MenuTab::Quick },
     { MenuAction::OpenStreamQuality, MenuTab::Stream },
+    { MenuAction::OpenStreamConfiguration, MenuTab::Stream },
     { MenuAction::OpenBitrate, MenuTab::Stream },
     { MenuAction::ToggleAudioMute, MenuTab::Stream },
     { MenuAction::ToggleMicrophone, MenuTab::Stream },
@@ -797,7 +799,14 @@ OverlayMenuPanel::MenuTab OverlayMenuPanel::tabForAction(MenuAction action)
     case MenuAction::SelectStreamFps:
     case MenuAction::ApplyStreamQuality:
     case MenuAction::SaveStreamQualityAsDefault:
+    case MenuAction::RetryLiveResolution:
+    case MenuAction::ReconnectStreamQuality:
+    case MenuAction::SelectStreamCodec:
+    case MenuAction::SelectStreamHdr:
+    case MenuAction::SelectStreamAudio:
+    case MenuAction::ApplyStreamConfiguration:
     case MenuAction::SetBitrate:
+    case MenuAction::OpenStreamConfiguration:
         return MenuTab::Stream;
     case MenuAction::SetWindowModeWindowed:
     case MenuAction::SetWindowModeBorderless:
@@ -979,6 +988,9 @@ void OverlayMenuPanel::buildMenuLevels()
                             : QString(),
                         MenuItemType::SubMenu, MenuAction::OpenStreamQuality, 0, true, false,
                         false });
+    entries.push_back(
+        { tr("Codec, HDR & audio"), tr("Current: %1").arg(m_StreamConfiguration.currentCodec),
+          MenuItemType::SubMenu, MenuAction::OpenStreamConfiguration, 0, true, false, false });
     entries.push_back({ tr("Overlay level & edit"), QString(), MenuItemType::SubMenu,
                         MenuAction::OpenStatsOverlay, 0, true, false, false });
     entries.push_back({ tr("Bitrate"), QString(), MenuItemType::SubMenu, MenuAction::OpenBitrate, 0,
@@ -1343,6 +1355,7 @@ void OverlayMenuPanel::buildMenuLevels()
 
     // === Stream Quality (resolution / FPS for this session) ===
     m_MenuLevels.push_back(buildStreamQualityLevel());
+    m_MenuLevels.push_back(buildStreamConfigurationLevel());
 
     MenuLevel mouseMode;
     mouseMode.title = tr("Mouse mode");
@@ -2714,13 +2727,71 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamQualityLevel() const
     const bool known = m_StreamQuality.resolution.isValid() && m_StreamQuality.fps > 0;
     const bool changed = known && (m_PendingStreamResolution != m_StreamQuality.resolution ||
                                    m_PendingStreamFps != m_StreamQuality.fps);
+    StreamQuality::LiveResolutionState liveState{
+        m_StreamQuality.hostSupportsLiveResolution,
+        m_StreamQuality.hostDisplaySize,
+        m_StreamQuality.resolution,
+        m_StreamQuality.resolutionOperationBusy,
+    };
+    const StreamQuality::Settings current{ m_StreamQuality.resolution.width(),
+                                           m_StreamQuality.resolution.height(), m_StreamQuality.fps,
+                                           m_BitrateKbps };
+    StreamQuality::Settings pending = current;
+    pending.width = m_PendingStreamResolution.width();
+    pending.height = m_PendingStreamResolution.height();
+    pending.fps = m_PendingStreamFps;
+    const StreamQuality::Path pendingPath = StreamQuality::choosePath(
+        StreamQuality::diff(current, pending), liveState, m_PendingStreamResolution);
+    const bool operationBusy =
+        m_StreamQuality.liveRequestPending || m_StreamQuality.resolutionOperationBusy;
 
     // Apply row first, so the pending choice and its confirmation stay in view.
     level.items.push_back(
-        { changed ? tr("Switch to %1").arg(summary(m_PendingStreamResolution, m_PendingStreamFps))
-                  : tr("Switch stream"),
-          changed ? QString() : tr("Pick a resolution or frame rate"), MenuItemType::Action,
-          MenuAction::ApplyStreamQuality, 0, changed, false, true });
+        { m_StreamQuality.liveRequestPending
+              ? tr("Applying %1")
+                    .arg(summary(m_StreamQuality.pendingResolution, m_StreamQuality.fps))
+          : changed ? tr("Switch to %1").arg(summary(m_PendingStreamResolution, m_PendingStreamFps))
+                    : tr("Switch stream"),
+          m_StreamQuality.liveRequestPending ? tr("Pending: %1 · current: %2")
+                                                   .arg(sizeText(m_StreamQuality.pendingResolution),
+                                                        sizeText(m_StreamQuality.resolution))
+          : changed       ? (pendingPath == StreamQuality::Path::LiveResolution
+                                 ? tr("Live · brief video reset; host may refuse")
+                             : pendingPath == StreamQuality::Path::Busy
+                                 ? tr("Busy · another stream change is in progress")
+                                 : tr("Reconnect"))
+          : operationBusy ? tr("Another stream change is in progress")
+                          : tr("Pick a resolution or frame rate"),
+          MenuItemType::Action, MenuAction::ApplyStreamQuality, 0,
+          changed && !operationBusy && pendingPath != StreamQuality::Path::Busy, false, true });
+
+    if (m_StreamQuality.liveRequestPending) {
+        level.items.push_back({ tr("Live resolution request"),
+                                tr("Pending: %1 · current: %2")
+                                    .arg(sizeText(m_StreamQuality.pendingResolution),
+                                         sizeText(m_StreamQuality.resolution)),
+                                MenuItemType::Info, MenuAction::MenuActionMax, 0, false, false,
+                                false });
+    }
+    if (!m_StreamQuality.resultMessage.isEmpty()) {
+        level.items.push_back({ m_StreamQuality.resultMessage, QString(), MenuItemType::Info,
+                                MenuAction::MenuActionMax, 0, false, false, false });
+    }
+    if (m_StreamQuality.canRetryLiveResolution) {
+        const QString retryDetail = m_StreamQuality.retryLiveResolutionEnabled
+                                        ? tr("Live · brief video reset; host may refuse")
+                                        : tr("Live is unavailable; choose Reconnect");
+        level.items.push_back({ tr("Retry live resolution"), retryDetail, MenuItemType::Action,
+                                MenuAction::RetryLiveResolution, 0,
+                                m_StreamQuality.retryLiveResolutionEnabled, false, false });
+    }
+    if (m_StreamQuality.canReconnectStreamQuality) {
+        level.items.push_back(
+            { tr("Reconnect to %1")
+                  .arg(summary(m_StreamQuality.failedResolution, m_StreamQuality.failedFps)),
+              tr("Reconnect · stops and resumes this stream"), MenuItemType::Action,
+              MenuAction::ReconnectStreamQuality, 0, true, false, false });
+    }
 
     const auto resolutions = StreamQuality::resolutionPresets(m_StreamQuality.nativeResolution,
                                                               m_StreamQuality.resolution);
@@ -2728,10 +2799,18 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamQualityLevel() const
         const StreamQuality::ResolutionPreset& preset = resolutions[i];
         const QString label =
             preset.native ? tr("Native display") : StreamQuality::resolutionName(preset.size);
-        const QString note = preset.current ? tr("Current") : sizeText(preset.size);
+        const StreamQuality::Settings target{ preset.size.width(), preset.size.height(),
+                                              m_PendingStreamFps, m_BitrateKbps };
+        const StreamQuality::Path path =
+            StreamQuality::choosePath(StreamQuality::diff(current, target), liveState, preset.size);
+        const QString note = preset.current ? tr("Current")
+                             : path == StreamQuality::Path::LiveResolution
+                                 ? tr("Live · brief reset; host may refuse")
+                             : path == StreamQuality::Path::Busy ? tr("Busy")
+                                                                 : tr("Reconnect");
         level.items.push_back(
             { label, detailText(preset.size == m_PendingStreamResolution, note),
-              MenuItemType::Action, MenuAction::SelectStreamResolution, 0, true, false,
+              MenuItemType::Action, MenuAction::SelectStreamResolution, 0, !operationBusy, false,
               i == resolutions.size() - 1,
               QStringLiteral("%1x%2").arg(preset.size.width()).arg(preset.size.height()) });
     }
@@ -2743,11 +2822,11 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamQualityLevel() const
         const QString note = preset.current ? tr("Current")
                              : preset.display
                                  ? tr("Display", "FPS preset at the display refresh rate")
-                                 : QString();
-        level.items.push_back({ tr("%1 FPS").arg(preset.fps),
-                                detailText(preset.fps == m_PendingStreamFps, note),
-                                MenuItemType::Action, MenuAction::SelectStreamFps, 0, true, false,
-                                i == frameRates.size() - 1, QString::number(preset.fps) });
+                                 : tr("Reconnect");
+        level.items.push_back(
+            { tr("%1 FPS").arg(preset.fps), detailText(preset.fps == m_PendingStreamFps, note),
+              MenuItemType::Action, MenuAction::SelectStreamFps, 0, !operationBusy, false,
+              i == frameRates.size() - 1, QString::number(preset.fps) });
     }
 
     // Bitrate changes apply to the running stream, so they reuse the Bitrate level.
@@ -2760,10 +2839,235 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamQualityLevel() const
     return level;
 }
 
+OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamConfigurationLevel() const
+{
+    const QString check = QString::fromUtf8("\342\234\223");
+    auto detailText = [&check](bool selected, const QString& note) {
+        if (!selected) {
+            return note;
+        }
+        return note.isEmpty() ? check : check + QStringLiteral(" ") + note;
+    };
+    auto codecName = [](int codec) {
+        switch (codec) {
+        case StreamingPreferences::VCC_AUTO:
+            return tr("Automatic");
+        case StreamingPreferences::VCC_FORCE_H264:
+            return tr("H.264");
+        case StreamingPreferences::VCC_FORCE_HEVC:
+        case StreamingPreferences::VCC_FORCE_HEVC_HDR_DEPRECATED:
+            return tr("HEVC");
+        case StreamingPreferences::VCC_FORCE_AV1:
+            return tr("AV1");
+        case StreamingPreferences::VCC_FORCE_PYROWAVE:
+            return tr("PyroWave");
+        default:
+            return tr("Unknown");
+        }
+    };
+    auto hdrName = [](int mode) {
+        switch (mode) {
+        case 0:
+            return tr("Off");
+        case StreamingPreferences::HDR_PQ:
+            return tr("PQ");
+        case StreamingPreferences::HDR_HLG:
+            return tr("HLG");
+        default:
+            return tr("Unknown");
+        }
+    };
+    auto audioName = [](int config) {
+        switch (config) {
+        case StreamingPreferences::AC_STEREO:
+            return tr("Stereo");
+        case StreamingPreferences::AC_51_SURROUND:
+            return tr("5.1");
+        case StreamingPreferences::AC_71_SURROUND:
+            return tr("7.1");
+        case StreamingPreferences::AC_714_SURROUND:
+            return tr("7.1.4");
+        default:
+            return tr("Unknown");
+        }
+    };
+
+    MenuLevel level;
+    level.title = tr("Codec, HDR & audio");
+    level.openAction = MenuAction::OpenStreamConfiguration;
+
+    const bool changed = !m_StreamConfiguration.pending &&
+                         (m_PendingCodec != m_StreamConfiguration.requestedCodec ||
+                          m_PendingHdrMode != m_StreamConfiguration.requestedHdrMode ||
+                          m_PendingAudioConfig != m_StreamConfiguration.requestedAudioConfig);
+    level.items.push_back({ m_StreamConfiguration.pending ? tr("Applying stream settings")
+                            : changed                     ? tr("Apply pending stream settings")
+                                                          : tr("Apply stream settings"),
+                            m_StreamConfiguration.pending
+                                ? tr("Pending: %1 · %2 · %3")
+                                      .arg(codecName(m_StreamConfiguration.pendingCodec),
+                                           hdrName(m_StreamConfiguration.pendingHdrMode),
+                                           audioName(m_StreamConfiguration.pendingAudioConfig))
+                            : changed
+                                ? tr("Pending: %1 · %2 · %3")
+                                      .arg(codecName(m_PendingCodec), hdrName(m_PendingHdrMode),
+                                           audioName(m_PendingAudioConfig))
+                                : tr("Reconnects this stream; does not save defaults"),
+                            MenuItemType::Action, MenuAction::ApplyStreamConfiguration, 0,
+                            !m_StreamConfiguration.pending && changed, false, true });
+
+    level.items.push_back(
+        { tr("Negotiated"),
+          tr("%1 · %2 · %3")
+              .arg(m_StreamConfiguration.currentCodec, m_StreamConfiguration.currentHdr,
+                   m_StreamConfiguration.currentAudio),
+          MenuItemType::Info, MenuAction::MenuActionMax, 0, false, false, false });
+    level.items.push_back({ tr("Requested"),
+                            tr("%1 · %2 · %3")
+                                .arg(codecName(m_StreamConfiguration.requestedCodec),
+                                     hdrName(m_StreamConfiguration.requestedHdrMode),
+                                     audioName(m_StreamConfiguration.requestedAudioConfig)),
+                            MenuItemType::Info, MenuAction::MenuActionMax, 0, false, false, true });
+    if (!m_StreamConfiguration.resultMessage.isEmpty()) {
+        level.items.push_back({ m_StreamConfiguration.resultMessage, QString(), MenuItemType::Info,
+                                MenuAction::MenuActionMax, 0, false, false, true });
+    }
+
+    level.items.push_back({ tr("Video codec"), QString(), MenuItemType::Header,
+                            MenuAction::MenuActionMax, 0, false, false, false });
+    const QList<int> codecs = { StreamingPreferences::VCC_AUTO,
+                                StreamingPreferences::VCC_FORCE_H264,
+                                StreamingPreferences::VCC_FORCE_HEVC,
+                                StreamingPreferences::VCC_FORCE_AV1 };
+    for (int codec : codecs) {
+        const bool selected =
+            m_PendingCodec == codec ||
+            (codec == StreamingPreferences::VCC_FORCE_HEVC &&
+             m_PendingCodec == StreamingPreferences::VCC_FORCE_HEVC_HDR_DEPRECATED);
+        const QString note =
+            m_StreamConfiguration.pyrowaveSelected
+                ? tr("PyroWave remains selected; changing codecs requires a new stream")
+            : m_StreamConfiguration.requestedCodec == codec ? tr("Requested")
+                                                            : QString();
+        level.items.push_back(
+            { codecName(codec), detailText(selected, note), MenuItemType::Action,
+              MenuAction::SelectStreamCodec, 0,
+              !m_StreamConfiguration.pending && !m_StreamConfiguration.pyrowaveSelected, false,
+              false, QString::number(codec) });
+    }
+
+    level.items.push_back({ tr("HDR"), QString(), MenuItemType::Header, MenuAction::MenuActionMax,
+                            0, false, false, false });
+    const int hdrModes[] = { 0, StreamingPreferences::HDR_PQ, StreamingPreferences::HDR_HLG };
+    for (int mode : hdrModes) {
+        const QString label = mode == 0                              ? tr("Off")
+                              : mode == StreamingPreferences::HDR_PQ ? tr("PQ")
+                                                                     : tr("HLG");
+        level.items.push_back(
+            { label,
+              detailText(m_PendingHdrMode == mode, m_StreamConfiguration.requestedHdrMode == mode
+                                                       ? tr("Requested")
+                                                       : QString()),
+              MenuItemType::Action, MenuAction::SelectStreamHdr, 0, !m_StreamConfiguration.pending,
+              false, false, QString::number(mode) });
+    }
+
+    level.items.push_back({ tr("Audio channels"), QString(), MenuItemType::Header,
+                            MenuAction::MenuActionMax, 0, false, false, false });
+    const int audioConfigurations[] = { StreamingPreferences::AC_STEREO,
+                                        StreamingPreferences::AC_51_SURROUND,
+                                        StreamingPreferences::AC_71_SURROUND,
+                                        StreamingPreferences::AC_714_SURROUND };
+    for (int config : audioConfigurations) {
+        level.items.push_back(
+            { audioName(config),
+              detailText(m_PendingAudioConfig == config,
+                         m_StreamConfiguration.requestedAudioConfig == config ? tr("Requested")
+                                                                              : QString()),
+              MenuItemType::Action, MenuAction::SelectStreamAudio, 0,
+              !m_StreamConfiguration.pending, false, false, QString::number(config) });
+    }
+    return level;
+}
+
+void OverlayMenuPanel::updateStreamConfigurationState(const StreamConfigurationState& state)
+{
+    m_StreamConfiguration = state;
+    m_PendingCodec = state.pending ? state.pendingCodec : state.requestedCodec;
+    m_PendingHdrMode = state.pending ? state.pendingHdrMode : state.requestedHdrMode;
+    m_PendingAudioConfig = state.pending ? state.pendingAudioConfig : state.requestedAudioConfig;
+    buildMenuLevels();
+    if (m_Visible) {
+        repositionWindow();
+    }
+    forceRepaint();
+}
+
+bool OverlayMenuPanel::handleStreamConfigurationItem(const MenuItem& item)
+{
+    if (item.action == MenuAction::ApplyStreamConfiguration) {
+        StreamConfigurationRequest request;
+        request.codec = m_PendingCodec;
+        request.hdrMode = m_PendingHdrMode;
+        request.audioConfig = m_PendingAudioConfig;
+        closeMenu();
+        if (m_StreamConfigurationCallback) {
+            m_StreamConfigurationCallback(request);
+        }
+        return true;
+    }
+
+    bool validPayload = false;
+    const int value = item.payload.toInt(&validPayload);
+    if (!validPayload) {
+        return false;
+    }
+
+    switch (item.action) {
+    case MenuAction::SelectStreamCodec:
+        if (m_StreamConfiguration.pyrowaveSelected ||
+            (value != StreamingPreferences::VCC_AUTO &&
+             value != StreamingPreferences::VCC_FORCE_H264 &&
+             value != StreamingPreferences::VCC_FORCE_HEVC &&
+             value != StreamingPreferences::VCC_FORCE_AV1)) {
+            return true;
+        }
+        m_PendingCodec = value;
+        break;
+    case MenuAction::SelectStreamHdr:
+        if (value != 0 && value != StreamingPreferences::HDR_PQ &&
+            value != StreamingPreferences::HDR_HLG) {
+            return true;
+        }
+        m_PendingHdrMode = value;
+        break;
+    case MenuAction::SelectStreamAudio:
+        if (value < StreamingPreferences::AC_STEREO ||
+            value > StreamingPreferences::AC_714_SURROUND) {
+            return true;
+        }
+        m_PendingAudioConfig = value;
+        break;
+    case MenuAction::ApplyStreamConfiguration:
+        return false;
+    default:
+        return false;
+    }
+
+    beginInteraction();
+    const int levelIndex = levelForOpenAction(MenuAction::OpenStreamConfiguration);
+    if (levelIndex >= 0 && levelIndex < static_cast<int>(m_MenuLevels.size())) {
+        m_MenuLevels[levelIndex] = buildStreamConfigurationLevel();
+    }
+    forceRepaint();
+    return true;
+}
+
 void OverlayMenuPanel::updateStreamQualityState(const StreamQualityState& state)
 {
     m_StreamQuality = state;
-    m_PendingStreamResolution = state.resolution;
+    m_PendingStreamResolution =
+        state.liveRequestPending ? state.pendingResolution : state.resolution;
     m_PendingStreamFps = state.fps;
     buildMenuLevels();
     if (m_Visible) {
@@ -2837,7 +3141,7 @@ void OverlayMenuPanel::dispatchActionItem(const MenuItem& item)
         closeMenu();
         return;
     }
-    if (handleStreamQualityItem(item)) {
+    if (handleStreamQualityItem(item) || handleStreamConfigurationItem(item)) {
         return;
     }
     // USB callbacks can synchronously rebuild the device list. Own the payload

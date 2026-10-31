@@ -76,6 +76,8 @@
 #define SDL_CODE_PROCESS_QT_OVERLAY_EVENTS 109
 #endif
 #define SDL_CODE_RESOLUTION_CHANGED 111
+#define SDL_CODE_APPLY_STREAM_CONFIGURATION 112
+#define SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME 113
 
 #include <openssl/rand.h>
 
@@ -112,7 +114,8 @@ int SDLCALL keepConnectionIndependentEvent(void*, SDL_Event* event)
     return event->type != SDL_USEREVENT ||
            (event->user.code != SDL_CODE_GAMECONTROLLER_RUMBLE &&
             event->user.code != SDL_CODE_GAMECONTROLLER_RUMBLE_TRIGGERS &&
-            event->user.code != SDL_CODE_RESOLUTION_CHANGED);
+            event->user.code != SDL_CODE_RESOLUTION_CHANGED &&
+            event->user.code != SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME);
 }
 
 void stopControllerRumbleAtConnectionBoundary(SdlInputHandler* inputHandler)
@@ -957,6 +960,7 @@ void Session::clResolutionChanged(uint32_t width, uint32_t height)
     event.user.code = SDL_CODE_RESOLUTION_CHANGED;
     event.user.data1 = (void*)(uintptr_t)width;
     event.user.data2 = (void*)(uintptr_t)height;
+    event.user.windowID = s_ActiveSession->m_ConnectionGeneration.load();
     pushEventOrWarn(event);
 }
 
@@ -1170,9 +1174,26 @@ int Session::drSetup(int videoFormat, int width, int height, int frameRate, void
     return 0;
 }
 
+void Session::markVideoReceived()
+{
+    Session* session = s_ActiveSession;
+    if (session == nullptr) {
+        return;
+    }
+
+    session->m_HasReceivedVideo = true;
+    if (session->m_LiveResolutionAwaitingFirstFrame.exchange(false)) {
+        SDL_Event event = {};
+        event.type = SDL_USEREVENT;
+        event.user.code = SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME;
+        event.user.data1 = (void*)(uintptr_t)session->m_ConnectionGeneration.load();
+        pushEventOrWarn(event);
+    }
+}
+
 int Session::drSubmitDecodeUnit(PDECODE_UNIT du)
 {
-    s_ActiveSession->m_HasReceivedVideo = true;
+    Session::markVideoReceived();
 
     // Use a lock since we'll be yanking this decoder out
     // from underneath the session when we initiate destruction.
@@ -1726,6 +1747,10 @@ void Session::teardownUsbTunnel()
 bool Session::initialize(QQuickWindow* qtWindow)
 {
     m_QtWindow = qtWindow;
+    m_RequestedStreamConfiguration.codec = m_Preferences->videoCodecConfig;
+    m_RequestedStreamConfiguration.hdrMode =
+        m_Preferences->enableHdr ? static_cast<int>(m_Preferences->hdrMode) : 0;
+    m_RequestedStreamConfiguration.audioConfig = m_Preferences->audioConfig;
 #ifdef Q_OS_WIN32
     // Capture this on the Qt thread. The launch request is assembled later on
     // a worker thread, where reading QWindow/QScreen state would be unsafe.
@@ -2754,11 +2779,9 @@ void Session::updateOptimalWindowDisplayMode()
     SDL_SetWindowDisplayMode(m_Window, &bestMode);
 }
 
-// The host applies resolution requests, and its stream follows its display, only
-// while it streams its display 1:1 (in either orientation).
-static bool isHostStreamingDisplay1To1(const QSize& hostDisplay, const QSize& stream)
+void Session::restoreResolutionMatchOverride()
 {
-    return hostDisplay == stream || hostDisplay == stream.transposed();
+    m_ResolutionMatch.explicitOverride = m_HasExplicitStreamQualityOverride;
 }
 
 void Session::scheduleWindowResolutionMatch()
@@ -2767,7 +2790,8 @@ void Session::scheduleWindowResolutionMatch()
 
     // Restarted by every resize event, so only the settled size is requested
     if ((m_Preferences->resolutionMatchWindow || m_ResolutionMatch.oneShot) &&
-        m_ResolutionMatch.hostSupported) {
+        m_ResolutionMatch.hostSupported && !m_ResolutionMatch.explicitOverride &&
+        !m_LiveResolutionTransaction.isActive()) {
         m_ResolutionMatch.deadline = SDL_GetTicks() + RESOLUTION_MATCH_DEBOUNCE_MS;
     }
 }
@@ -2785,13 +2809,15 @@ bool Session::requestWindowResolutionMatchNow()
 {
     const Uint32 now = SDL_GetTicks();
     if (!m_ResolutionMatch.hostSupported || m_SuppressConnectionErrorDialog ||
-        m_PendingStreamQuality || m_ResolutionMatch.oneShot ||
+        m_PendingStreamQuality || m_PendingStreamConfiguration ||
+        m_LiveResolutionTransaction.isActive() || m_ResolutionMatch.oneShot ||
         (m_ResolutionMatch.requestTicks != 0 &&
          !SDL_TICKS_PASSED(now, m_ResolutionMatch.requestTicks + 5000)) ||
         (m_ResolutionMatch.lastAttemptTicks != 0 &&
          !SDL_TICKS_PASSED(now, m_ResolutionMatch.lastAttemptTicks + 400))) {
         return false;
     }
+    m_ResolutionMatch.explicitOverride = false;
     m_ResolutionMatch.oneShot = true;
     scheduleWindowResolutionMatch();
     return true;
@@ -2805,7 +2831,12 @@ void Session::processWindowResolutionMatch()
         m_ResolutionMatch.oneShot = false;
         return;
     }
-    if (m_PendingStreamQuality || m_SuppressConnectionErrorDialog) {
+    if (m_ResolutionMatch.explicitOverride && !m_ResolutionMatch.oneShot) {
+        m_ResolutionMatch.deadline = 0;
+        return;
+    }
+    if (m_PendingStreamQuality || m_PendingStreamConfiguration ||
+        m_LiveResolutionTransaction.isActive() || m_SuppressConnectionErrorDialog) {
         return;
     }
 
@@ -2865,16 +2896,28 @@ void Session::processWindowResolutionMatch()
         return;
     }
 
-    if (!isHostStreamingDisplay1To1(m_ResolutionMatch.hostDisplaySize, stream)) {
+    const StreamQuality::LiveResolutionState liveState{ m_ResolutionMatch.hostSupported,
+                                                        m_ResolutionMatch.hostDisplaySize, stream,
+                                                        false };
+    if (!StreamQuality::canApplyLiveResolution(target, liveState)) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "Host isn't streaming its display 1:1; not requesting %dx%d yet",
-                    target.width(), target.height());
+                    "Live resolution isn't eligible; not requesting %dx%d yet", target.width(),
+                    target.height());
         m_ResolutionMatch.deferred = true;
         return;
     }
 
+    const bool wasOneShot = m_ResolutionMatch.oneShot;
     m_ResolutionMatch.oneShot = false;
     m_ResolutionMatch.lastAttemptTicks = now;
+    if (!m_LiveResolutionTransaction.begin(
+            m_ConnectionGeneration.load(), stream, target, now,
+            wasOneShot ? StreamQuality::LiveResolutionTransaction::ExplicitTimeoutMs
+                       : StreamQuality::LiveResolutionTransaction::WindowMatchTimeoutMs,
+            false)) {
+        m_ResolutionMatch.deferred = true;
+        return;
+    }
     const int result = LiSendResolutionChangeRequest(target.width(), target.height());
     if (result == LI_RESOLUTION_CHANGE_OK) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -2883,6 +2926,7 @@ void Session::processWindowResolutionMatch()
         m_ResolutionMatch.requestedSize = target;
         m_ResolutionMatch.requestTicks = now;
     } else {
+        m_LiveResolutionTransaction.cancel();
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "LiSendResolutionChangeRequest(%d, %d) failed: %d", target.width(),
                     target.height(), result);
@@ -2892,9 +2936,10 @@ void Session::processWindowResolutionMatch()
     }
 }
 
-void Session::handleHostResolutionReport(int width, int height)
+void Session::handleHostResolutionReport(int width, int height, Uint32 generation)
 {
-    if (!m_ResolutionMatch.hostSupported || width <= 0 || height <= 0) {
+    if (generation != m_ConnectionGeneration.load() || !m_ResolutionMatch.hostSupported ||
+        width <= 0 || height <= 0) {
         return;
     }
 
@@ -2902,9 +2947,16 @@ void Session::handleHostResolutionReport(int width, int height)
     // display changes. It encodes at the negotiated size from stream start and
     // only follows its display if it was streaming it 1:1.
     const QSize reported(width, height);
-    const QSize stream(m_ActiveVideoWidth, m_ActiveVideoHeight);
+    const bool transactionForConnection = m_LiveResolutionTransaction.isActive() &&
+                                          m_LiveResolutionTransaction.generation() == generation;
+    const QSize stream = transactionForConnection ? m_LiveResolutionTransaction.current()
+                                                  : QSize(m_ActiveVideoWidth, m_ActiveVideoHeight);
     const QSize previousDisplay = m_ResolutionMatch.hostDisplaySize;
-    const bool streamFollowsDisplay = isHostStreamingDisplay1To1(previousDisplay, stream);
+    const bool streamFollowsDisplay =
+        StreamQuality::hostStreamingDisplayIsOneToOne(previousDisplay, stream);
+    if (transactionForConnection) {
+        m_LiveResolutionTransaction.observeHostReport(generation, previousDisplay, reported);
+    }
     m_ResolutionMatch.hostDisplaySize = reported;
     m_ResolutionMatch.requestTicks = 0;
 
@@ -2945,6 +2997,116 @@ void Session::handleHostResolutionReport(int width, int height)
 
     m_ResolutionMatch.requestedSize = QSize();
     updateStreamQualityMenuState();
+}
+
+void Session::processLiveResolutionTransaction()
+{
+    if (!m_LiveResolutionTransaction.isActive()) {
+        return;
+    }
+
+    const bool explicitRequest = m_LiveResolutionTransaction.isExplicit();
+    const QSize target = m_LiveResolutionTransaction.target();
+    const QSize current = m_LiveResolutionTransaction.current();
+    const StreamQuality::Settings targetSettings = m_LiveResolutionTargetSettings;
+    if (!m_LiveResolutionTransaction.expire(SDL_GetTicks())) {
+        return;
+    }
+
+    m_LiveResolutionAwaitingFirstFrame = false;
+    m_ResolutionMatch.requestTicks = 0;
+    if (!explicitRequest) {
+        return;
+    }
+
+    m_ResolutionMatch.requestedSize = QSize();
+    m_HasFailedLiveResolution = true;
+    m_FailedLiveResolution = targetSettings;
+    m_FailedLiveResolutionCurrent = current;
+    m_StreamQualityResultMessage = tr("Host did not apply %1; retry Live or choose Reconnect")
+                                       .arg(StreamQuality::resolutionName(target));
+    showStreamingToast(m_StreamQualityResultMessage, 5000);
+    updateStreamQualityMenuState();
+}
+
+void Session::handleLiveResolutionFirstFrame(Uint32 generation)
+{
+    if (!m_LiveResolutionTransaction.isActive() ||
+        generation != m_LiveResolutionTransaction.generation()) {
+        return;
+    }
+
+    const bool explicitRequest = m_LiveResolutionTransaction.isExplicit();
+    const QSize target = m_LiveResolutionTransaction.target();
+    const QSize observed = m_LiveResolutionTransaction.observedSize();
+    const StreamQuality::Settings targetSettings = m_LiveResolutionTargetSettings;
+    const StreamQuality::LiveResolutionResult result =
+        m_LiveResolutionTransaction.firstFrame(generation);
+    if (result == StreamQuality::LiveResolutionResult::Waiting) {
+        return;
+    }
+
+    m_LiveResolutionAwaitingFirstFrame = false;
+    m_ResolutionMatch.requestedSize = QSize();
+    m_ResolutionMatch.requestTicks = 0;
+    m_ResolutionMatch.deadline = 0;
+
+    const QSize accepted = observed.isValid() ? observed : target;
+    const int fps = m_ActiveVideoFrameRate > 0 ? m_ActiveVideoFrameRate : m_StreamConfig.fps;
+    if (explicitRequest) {
+        m_StreamConfig.width = accepted.width();
+        m_StreamConfig.height = accepted.height();
+        m_StreamQualityOverride = StreamQuality::Settings{ accepted.width(), accepted.height(), fps,
+                                                           m_StreamConfig.bitrate };
+        m_HasExplicitStreamQualityOverride = true;
+    }
+
+    if (explicitRequest && result == StreamQuality::LiveResolutionResult::Applied) {
+        m_HasFailedLiveResolution = false;
+        m_FailedLiveResolutionCurrent = QSize();
+        m_StreamQualityResultMessage =
+            tr("Live resolution applied: %1").arg(StreamQuality::resolutionName(accepted));
+        if (targetSettings.bitrateKbps > 0 &&
+            targetSettings.bitrateKbps != m_StreamConfig.bitrate) {
+            requestRuntimeBitrateChange(targetSettings.bitrateKbps);
+        }
+        showStreamingToast(m_StreamQualityResultMessage, 3500);
+    } else if (explicitRequest) {
+        m_HasFailedLiveResolution = true;
+        m_FailedLiveResolution = targetSettings;
+        m_FailedLiveResolutionCurrent = accepted;
+        m_FailedLiveResolution.width = target.width();
+        m_FailedLiveResolution.height = target.height();
+        m_StreamQualityResultMessage =
+            tr("Host applied %1 instead of requested %2; retry Live or choose Reconnect")
+                .arg(StreamQuality::resolutionName(accepted),
+                     StreamQuality::resolutionName(target));
+        showStreamingToast(m_StreamQualityResultMessage, 5000);
+    } else {
+        m_HasFailedLiveResolution = false;
+        m_FailedLiveResolutionCurrent = QSize();
+        m_StreamQualityResultMessage.clear();
+    }
+
+    updateStreamQualityMenuState();
+}
+
+void Session::retryFailedLiveResolution(bool reconnect)
+{
+    if (!m_HasFailedLiveResolution || m_LiveResolutionTransaction.isActive() ||
+        m_SuppressConnectionErrorDialog) {
+        return;
+    }
+
+    OverlayMenuPanel::StreamQualityRequest request;
+    request.resolution = QSize(m_FailedLiveResolution.width, m_FailedLiveResolution.height);
+    request.fps = m_FailedLiveResolution.fps;
+    request.forceReconnect = reconnect;
+    request.forceLive = !reconnect;
+    m_HasFailedLiveResolution = false;
+    m_FailedLiveResolutionCurrent = QSize();
+    m_StreamQualityResultMessage.clear();
+    requestStreamQualityChange(request);
 }
 
 Session::WindowMode Session::streamingWindowMode() const
@@ -3554,7 +3716,9 @@ void Session::updateLiveMenuState()
     m_MenuPanel->updateAudioState(m_ManualAudioMuted, m_Preferences->muteOnFocusLoss);
     const Uint32 now = SDL_GetTicks();
     const bool canMatch = !m_SuppressConnectionErrorDialog && !m_PendingStreamQuality &&
-                          !m_ResolutionMatch.oneShot &&
+                          !m_PendingStreamConfiguration &&
+                          !m_LiveResolutionTransaction.isActive() &&
+                          !m_ResolutionMatch.explicitOverride && !m_ResolutionMatch.oneShot &&
                           (m_ResolutionMatch.requestTicks == 0 ||
                            SDL_TICKS_PASSED(now, m_ResolutionMatch.requestTicks + 5000)) &&
                           (m_ResolutionMatch.lastAttemptTicks == 0 ||
@@ -3591,16 +3755,28 @@ bool Session::handleLiveMenuAction(OverlayMenuPanel::MenuAction action)
         m_Preferences->resolutionMatchWindow = !m_Preferences->resolutionMatchWindow;
         m_Preferences->save();
         if (m_Preferences->resolutionMatchWindow) {
+            m_ResolutionMatch.explicitOverride = false;
+            m_HasExplicitStreamQualityOverride = false;
+        }
+        if (m_Preferences->resolutionMatchWindow) {
             scheduleWindowResolutionMatch();
         }
         break;
     case Action::MatchResolutionNow:
+        m_ResolutionMatch.explicitOverride = false;
+        m_HasExplicitStreamQualityOverride = false;
         if (requestWindowResolutionMatchNow()) {
             showStreamingToast(tr("Window-size request queued; host support is best-effort"), 3000);
         } else {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Match now is not available");
             showStreamingToast(tr("Window-size request is not available right now"), 3000);
         }
+        return true;
+    case Action::RetryLiveResolution:
+        retryFailedLiveResolution(false);
+        return true;
+    case Action::ReconnectStreamQuality:
+        retryFailedLiveResolution(true);
         break;
     case Action::ToggleCursorHide:
     case Action::TogglePointerRegionLock:
@@ -3922,6 +4098,7 @@ void Session::requestRuntimeBitrateChange(int bitrateKbps)
     if (m_RuntimeBitrateInFlight.exchange(true, std::memory_order_acq_rel)) {
         return;
     }
+    m_LastRuntimeBitrateApplied.store(-1, std::memory_order_release);
     startRuntimeBitrateWorker();
 }
 
@@ -3992,6 +4169,7 @@ void Session::startRuntimeBitrateWorker()
         const int applied = appliedBitrate->load();
         if (applied > 0) {
             m_AbrCurrentBitrateKbps->store(applied);
+            m_LastRuntimeBitrateApplied.store(applied, std::memory_order_release);
             showStreamingToast(tr("Bitrate: %1").arg(
                     OverlayMenuPanel::formatBitrateKbps(applied)));
         }
@@ -4001,7 +4179,22 @@ void Session::startRuntimeBitrateWorker()
             startRuntimeBitrateWorker();
         }
         else {
+            const int lastApplied =
+                m_LastRuntimeBitrateApplied.exchange(-1, std::memory_order_acq_rel);
+            if (lastApplied > 0) {
+                m_StreamConfig.bitrate = lastApplied;
+                if (m_StreamQualityOverride) {
+                    m_StreamQualityOverride->bitrateKbps = lastApplied;
+                }
+            }
+            if (applied <= 0) {
+                showStreamingToast(tr("The requested bitrate change failed"), 5000);
+            }
             m_RuntimeBitrateInFlight.store(false, std::memory_order_release);
+            if (m_PendingRuntimeBitrateKbps.load(std::memory_order_acquire) != 0 &&
+                !m_RuntimeBitrateInFlight.exchange(true, std::memory_order_acq_rel)) {
+                startRuntimeBitrateWorker();
+            }
         }
     });
     connect(worker, &QThread::finished, worker, &QObject::deleteLater);
@@ -4524,7 +4717,11 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
         m_InputHandler->flushPendingTouchpadFrameEvent();
         break;
     case SDL_CODE_RESOLUTION_CHANGED:
-        handleHostResolutionReport((int)(uintptr_t)event.data1, (int)(uintptr_t)event.data2);
+        handleHostResolutionReport((int)(uintptr_t)event.data1, (int)(uintptr_t)event.data2,
+                                   event.windowID);
+        break;
+    case SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME:
+        handleLiveResolutionFirstFrame((Uint32)(uintptr_t)event.data1);
         break;
     case SDL_CODE_FLUSH_CURSOR_VISIBILITY:
         if (m_InputHandler != nullptr) {
@@ -4559,6 +4756,11 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
                     "Ignoring stream quality change requested during a reconnect");
         m_PendingStreamQuality.reset();
         break;
+    case SDL_CODE_APPLY_STREAM_CONFIGURATION:
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Ignoring stream configuration change requested during a reconnect");
+        m_PendingStreamConfiguration.reset();
+        break;
     default:
         SDL_assert(false);
     }
@@ -4586,6 +4788,14 @@ void Session::requestStreamQualityChange(const OverlayMenuPanel::StreamQualityRe
 {
     // This runs inside the stream loop's Qt overlay event processing.
     // Restart the connection from the loop itself, not from the callback.
+    if (m_PendingStreamConfiguration || m_LiveResolutionTransaction.isActive() ||
+        m_SuppressConnectionErrorDialog) {
+        showStreamingToast(tr("Another stream change is already in progress"));
+        return;
+    }
+    m_HasFailedLiveResolution = false;
+    m_FailedLiveResolutionCurrent = QSize();
+    m_StreamQualityResultMessage.clear();
     m_PendingStreamQuality = request;
     SDL_Event event = {};
     event.type = SDL_USEREVENT;
@@ -4600,8 +4810,33 @@ void Session::updateStreamQualityMenuState()
     }
 
     OverlayMenuPanel::StreamQualityState state;
-    state.resolution = QSize(m_ActiveVideoWidth, m_ActiveVideoHeight);
-    state.fps = m_StreamConfig.fps;
+    state.resolution =
+        m_LiveResolutionTransaction.isActive() && m_LiveResolutionTransaction.isExplicit()
+            ? m_LiveResolutionTransaction.current()
+        : m_HasFailedLiveResolution && m_FailedLiveResolutionCurrent.isValid()
+            ? m_FailedLiveResolutionCurrent
+            : QSize(m_ActiveVideoWidth, m_ActiveVideoHeight);
+    state.fps = m_ActiveVideoFrameRate > 0 ? m_ActiveVideoFrameRate : m_StreamConfig.fps;
+    state.hostSupportsLiveResolution = m_ResolutionMatch.hostSupported;
+    state.hostDisplaySize = m_ResolutionMatch.hostDisplaySize;
+    state.resolutionOperationBusy = m_PendingStreamQuality || m_PendingStreamConfiguration ||
+                                    m_LiveResolutionTransaction.isActive() ||
+                                    m_SuppressConnectionErrorDialog;
+    state.liveRequestPending =
+        m_LiveResolutionTransaction.isActive() && m_LiveResolutionTransaction.isExplicit();
+    state.pendingResolution =
+        state.liveRequestPending ? m_LiveResolutionTransaction.target() : QSize();
+    state.resultMessage = m_StreamQualityResultMessage;
+    state.canRetryLiveResolution = m_HasFailedLiveResolution && !state.resolutionOperationBusy;
+    state.retryLiveResolutionEnabled =
+        state.canRetryLiveResolution && m_FailedLiveResolution.fps == state.fps &&
+        StreamQuality::canApplyLiveResolution(
+            QSize(m_FailedLiveResolution.width, m_FailedLiveResolution.height),
+            { m_ResolutionMatch.hostSupported, m_ResolutionMatch.hostDisplaySize, state.resolution,
+              false });
+    state.canReconnectStreamQuality = m_HasFailedLiveResolution && !state.resolutionOperationBusy;
+    state.failedResolution = QSize(m_FailedLiveResolution.width, m_FailedLiveResolution.height);
+    state.failedFps = m_FailedLiveResolution.fps;
     if (m_Window != nullptr) {
         SDL_DisplayMode mode;
         SDL_Rect safeArea;
@@ -4613,15 +4848,436 @@ void Session::updateStreamQualityMenuState()
         state.displayHz = StreamUtils::getDisplayRefreshRate(m_Window);
     }
     m_MenuPanel->updateStreamQualityState(state);
+    updateStreamConfigurationMenuState();
+}
+
+void Session::updateStreamConfigurationMenuState()
+{
+    if (m_MenuPanel == nullptr) {
+        return;
+    }
+
+    const StatsSnapshot stats = m_StatsModel.snapshot(LiGetMicroseconds());
+    OverlayMenuPanel::StreamConfigurationState state;
+    state.currentCodec = stats.codec.isEmpty() ? tr("Not reported") : stats.codec;
+    const bool hdrActive = stats.codec.contains(QStringLiteral("HDR"), Qt::CaseInsensitive);
+    if (!hdrActive) {
+        state.currentHdr = tr("Off");
+    } else if (stats.codec.contains(QStringLiteral("HLG"), Qt::CaseInsensitive) ||
+               m_StreamConfig.hdrMode == StreamingPreferences::HDR_HLG) {
+        state.currentHdr = tr("HLG");
+    } else {
+        state.currentHdr = tr("PQ");
+    }
+    state.currentAudio = m_OriginalAudioConfig.channelCount > 0
+                             ? tr("%1 channels").arg(m_OriginalAudioConfig.channelCount)
+                             : tr("Not reported");
+    state.requestedCodec = m_RequestedStreamConfiguration.codec;
+    state.requestedHdrMode = m_RequestedStreamConfiguration.hdrMode;
+    state.requestedAudioConfig = m_RequestedStreamConfiguration.audioConfig;
+    state.pyrowaveSelected = state.requestedCodec == StreamingPreferences::VCC_FORCE_PYROWAVE;
+    if (m_PendingStreamConfiguration) {
+        state.pending = true;
+        state.pendingCodec = m_PendingStreamConfiguration->codec;
+        state.pendingHdrMode = m_PendingStreamConfiguration->hdrMode;
+        state.pendingAudioConfig = m_PendingStreamConfiguration->audioConfig;
+    }
+    state.resultMessage = m_StreamConfigurationResultMessage;
+    m_MenuPanel->updateStreamConfigurationState(state);
+}
+
+bool Session::prepareStreamConfiguration(
+    const OverlayMenuPanel::StreamConfigurationRequest& request,
+    PreparedStreamConfiguration& prepared, QString& failureReason)
+{
+    const auto fail = [&failureReason](const QString& reason) {
+        failureReason = reason;
+        return false;
+    };
+
+    const bool pyrowaveSelected = request.codec == StreamingPreferences::VCC_FORCE_PYROWAVE;
+    if (pyrowaveSelected !=
+        (m_RequestedStreamConfiguration.codec == StreamingPreferences::VCC_FORCE_PYROWAVE)) {
+        return fail(tr("Changing to or from PyroWave requires a new stream"));
+    }
+    if (request.codec < StreamingPreferences::VCC_AUTO ||
+        request.codec > StreamingPreferences::VCC_FORCE_PYROWAVE ||
+        (request.hdrMode != 0 && request.hdrMode != StreamingPreferences::HDR_PQ &&
+         request.hdrMode != StreamingPreferences::HDR_HLG) ||
+        request.audioConfig < StreamingPreferences::AC_STEREO ||
+        request.audioConfig > StreamingPreferences::AC_714_SURROUND) {
+        return fail(tr("The requested stream settings are invalid"));
+    }
+    prepared.streamConfig = m_StreamConfig;
+    if (m_ActiveVideoWidth > 0 && m_ActiveVideoHeight > 0) {
+        prepared.streamConfig.width = m_ActiveVideoWidth;
+        prepared.streamConfig.height = m_ActiveVideoHeight;
+    }
+    if (m_ActiveVideoFrameRate > 0) {
+        prepared.streamConfig.fps = m_ActiveVideoFrameRate;
+    }
+    prepared.streamConfig.hdrMode = request.hdrMode;
+    switch (request.audioConfig) {
+    case StreamingPreferences::AC_STEREO:
+        prepared.streamConfig.audioConfiguration = AUDIO_CONFIGURATION_STEREO;
+        break;
+    case StreamingPreferences::AC_51_SURROUND:
+        prepared.streamConfig.audioConfiguration = AUDIO_CONFIGURATION_51_SURROUND;
+        break;
+    case StreamingPreferences::AC_71_SURROUND:
+        prepared.streamConfig.audioConfiguration = AUDIO_CONFIGURATION_71_SURROUND;
+        break;
+    case StreamingPreferences::AC_714_SURROUND:
+        prepared.streamConfig.audioConfiguration = AUDIO_CONFIGURATION_714_SURROUND;
+        break;
+    default:
+        return fail(tr("The requested audio configuration is invalid"));
+    }
+
+    SDL_Window* testWindow = StreamUtils::createTestWindow();
+    if (testWindow == nullptr) {
+        return fail(tr("Couldn't create a decoder test window"));
+    }
+    const auto destroyTestWindow = [&testWindow]() {
+        if (testWindow != nullptr) {
+            SDL_DestroyWindow(testWindow);
+            testWindow = nullptr;
+        }
+    };
+
+    prepared.pyrowaveRequested = pyrowaveSelected && m_PyrowaveRequested;
+    if (prepared.pyrowaveRequested) {
+        PyrowavePreflightRequest preflightRequest;
+        preflightRequest.window = testWindow;
+        preflightRequest.width = prepared.streamConfig.width;
+        preflightRequest.height = prepared.streamConfig.height;
+        preflightRequest.frameRate = prepared.streamConfig.fps;
+        preflightRequest.hdrMode = request.hdrMode;
+        const PyrowavePreflightResult preflight = PyrowaveVideoDecoder::preflight(preflightRequest);
+        if (!preflight.ok) {
+            destroyTestWindow();
+            return fail(PyrowaveVideoDecoder::launchErrorText(preflight.reason));
+        }
+    }
+
+    SupportedVideoFormatList& formats = prepared.videoFormats;
+    formats.clear();
+    formats.append(VIDEO_FORMAT_AV1_HIGH10_444);
+    formats.append(VIDEO_FORMAT_AV1_MAIN10);
+    formats.append(VIDEO_FORMAT_H265_REXT10_444);
+    formats.append(VIDEO_FORMAT_H265_MAIN10);
+    formats.append(VIDEO_FORMAT_AV1_HIGH8_444);
+    formats.append(VIDEO_FORMAT_AV1_MAIN8);
+    formats.append(VIDEO_FORMAT_H265_REXT8_444);
+    formats.append(VIDEO_FORMAT_H265);
+    formats.append(VIDEO_FORMAT_H264_HIGH8_444);
+    formats.append(VIDEO_FORMAT_H264);
+
+    const bool enableYuv444 = m_Preferences->enableYUV444 && !prepared.pyrowaveRequested;
+    if (!enableYuv444 || !(m_Computer->serverCodecModeSupport & SCM_MASK_YUV444)) {
+        formats.removeByMask(VIDEO_FORMAT_MASK_YUV444);
+    } else {
+        formats.deprioritizeByMask(~VIDEO_FORMAT_MASK_YUV444);
+    }
+
+    StreamingPreferences::VideoCodecConfig effectiveCodec =
+        static_cast<StreamingPreferences::VideoCodecConfig>(request.codec);
+    if (effectiveCodec == StreamingPreferences::VCC_FORCE_PYROWAVE) {
+        effectiveCodec = StreamingPreferences::VCC_AUTO;
+    }
+    switch (effectiveCodec) {
+    case StreamingPreferences::VCC_FORCE_H264:
+        formats.removeByMask(~VIDEO_FORMAT_MASK_H264);
+        break;
+    case StreamingPreferences::VCC_FORCE_HEVC:
+    case StreamingPreferences::VCC_FORCE_HEVC_HDR_DEPRECATED:
+        formats.removeByMask(~VIDEO_FORMAT_MASK_H265);
+        break;
+    case StreamingPreferences::VCC_FORCE_AV1:
+        formats.removeByMask(~(VIDEO_FORMAT_MASK_AV1 | VIDEO_FORMAT_MASK_H265));
+        break;
+    case StreamingPreferences::VCC_AUTO:
+        break;
+    case StreamingPreferences::VCC_FORCE_PYROWAVE:
+        SDL_assert(false);
+        break;
+    }
+
+    if (request.hdrMode == 0) {
+        formats.removeByMask(VIDEO_FORMAT_MASK_10BIT);
+    } else {
+        formats.removeByMask(~VIDEO_FORMAT_MASK_10BIT);
+    }
+
+    formats.removeByMask(~formats.maskByServerCodecModes(m_Computer->serverCodecModeSupport));
+    if (m_Computer->maxLumaPixelsHEVC == 0) {
+        formats.removeByMask(VIDEO_FORMAT_MASK_H265);
+    }
+
+    for (int i = 0; i < formats.size();) {
+        const DecoderAvailability availability = getDecoderAvailability(
+            testWindow, m_Preferences->videoDecoderSelection, formats[i],
+            prepared.streamConfig.width, prepared.streamConfig.height, prepared.streamConfig.fps);
+        if (availability == DecoderAvailability::None ||
+            (m_Preferences->videoDecoderSelection == StreamingPreferences::VDS_FORCE_HARDWARE &&
+             availability != DecoderAvailability::Hardware)) {
+            formats.removeAt(i);
+        } else {
+            ++i;
+        }
+    }
+
+    if (formats.isEmpty()) {
+        if (request.hdrMode != 0) {
+            destroyTestWindow();
+            OverlayMenuPanel::StreamConfigurationRequest sdrRequest = request;
+            sdrRequest.hdrMode = 0;
+            QString sdrFailureReason;
+            if (prepareStreamConfiguration(sdrRequest, prepared, sdrFailureReason)) {
+                prepared.resultMessage = tr("HDR was unavailable; the stream continued in SDR");
+                return true;
+            }
+            return fail(tr("HDR is unavailable and SDR fallback failed: %1").arg(sdrFailureReason));
+        }
+        destroyTestWindow();
+        return fail(tr("No compatible video format and decoder are available"));
+    }
+
+    if (effectiveCodec == StreamingPreferences::VCC_AUTO) {
+        const int hevcProbe =
+            enableYuv444
+                ? (request.hdrMode ? VIDEO_FORMAT_H265_REXT10_444 : VIDEO_FORMAT_H265_REXT8_444)
+                : (request.hdrMode ? VIDEO_FORMAT_H265_MAIN10 : VIDEO_FORMAT_H265);
+        const DecoderAvailability hevcAvailability = getDecoderAvailability(
+            testWindow, m_Preferences->videoDecoderSelection, hevcProbe,
+            prepared.streamConfig.width, prepared.streamConfig.height, prepared.streamConfig.fps);
+        if (hevcAvailability != DecoderAvailability::Hardware &&
+            !(m_Preferences->videoDecoderSelection == StreamingPreferences::VDS_FORCE_SOFTWARE &&
+              request.hdrMode != 0)) {
+            formats.deprioritizeByMask(VIDEO_FORMAT_MASK_H265);
+        } else {
+            bool deprioritizeAv1 = hevcAvailability == DecoderAvailability::Hardware;
+#if !defined(Q_OS_WIN32) &&                                                                        \
+    (!(defined(Q_OS_UNIX) && !defined(Q_OS_DARWIN)) || defined(Q_PROCESSOR_X86))
+            deprioritizeAv1 = deprioritizeAv1 || request.hdrMode == 0;
+#endif
+            if (deprioritizeAv1) {
+                formats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
+            } else if (request.hdrMode == 0 &&
+                       getDecoderAvailability(
+                           testWindow, m_Preferences->videoDecoderSelection,
+                           enableYuv444 ? VIDEO_FORMAT_AV1_HIGH8_444 : VIDEO_FORMAT_AV1_MAIN8,
+                           prepared.streamConfig.width, prepared.streamConfig.height,
+                           prepared.streamConfig.fps) != DecoderAvailability::Hardware) {
+                formats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
+            }
+        }
+    }
+
+    if (formats.isEmpty()) {
+        destroyTestWindow();
+        return fail(tr("The host and this device have no compatible video format"));
+    }
+
+    IVideoDecoder* decoder = nullptr;
+    if (!chooseDecoder(m_Preferences->videoDecoderSelection, m_Preferences->rendererSelection,
+                       testWindow, formats.front(), prepared.streamConfig.width,
+                       prepared.streamConfig.height, prepared.streamConfig.fps, false, false, false,
+                       false, true, decoder)) {
+        destroyTestWindow();
+        return fail(tr("The selected renderer cannot decode the requested video format"));
+    }
+
+    prepared.streamConfig.supportedVideoFormats = formats.front();
+    prepared.videoCallbacks = m_VideoCallbacks;
+    prepared.videoCallbacks.capabilities = decoder->getDecoderCapabilities();
+    if (prepared.pyrowaveRequested) {
+        prepared.videoCallbacks.capabilities =
+            PyrowaveVideoDecoder::advertisedCapabilities(prepared.videoCallbacks.capabilities);
+        prepared.streamConfig.supportedVideoFormats = PyrowaveVideoDecoder::advertisedVideoFormats(
+            prepared.streamConfig.supportedVideoFormats);
+    }
+    if (prepared.videoCallbacks.capabilities & CAPABILITY_PULL_RENDERER) {
+        prepared.videoCallbacks.submitDecodeUnit = nullptr;
+    } else {
+        prepared.videoCallbacks.submitDecodeUnit = drSubmitDecodeUnit;
+    }
+    if (!Utils::getEnvironmentVariableOverride("COLOR_SPACE_OVERRIDE",
+                                               &prepared.streamConfig.colorSpace)) {
+        prepared.streamConfig.colorSpace = decoder->getDecoderColorspace();
+    }
+    if (!Utils::getEnvironmentVariableOverride("COLOR_RANGE_OVERRIDE",
+                                               &prepared.streamConfig.colorRange)) {
+        prepared.streamConfig.colorRange = decoder->getDecoderColorRange();
+    }
+    delete decoder;
+    destroyTestWindow();
+
+    if (prepared.streamConfig.audioConfiguration != m_StreamConfig.audioConfiguration &&
+        !testAudio(prepared.streamConfig.audioConfiguration)) {
+        if (CHANNEL_COUNT_FROM_AUDIO_CONFIGURATION(prepared.streamConfig.audioConfiguration) <= 2 ||
+            !testAudio(AUDIO_CONFIGURATION_STEREO)) {
+            return fail(tr("The requested audio channels are unavailable on this device"));
+        }
+        prepared.streamConfig.audioConfiguration = AUDIO_CONFIGURATION_STEREO;
+        if (!prepared.resultMessage.isEmpty()) {
+            prepared.resultMessage += QStringLiteral("; ");
+        }
+        prepared.resultMessage +=
+            tr("Audio fell back to stereo; check the negotiated channel count");
+    }
+    prepared.audioCallbacks = m_AudioCallbacks;
+    prepared.audioCallbacks.capabilities =
+        getAudioRendererCapabilities(prepared.streamConfig.audioConfiguration);
+    return true;
+}
+
+void Session::applyPreparedStreamConfiguration()
+{
+    if (!m_PreparedStreamConfiguration) {
+        return;
+    }
+
+    const PreparedStreamConfiguration& prepared = *m_PreparedStreamConfiguration;
+    m_StreamConfig = prepared.streamConfig;
+    m_SupportedVideoFormats = prepared.videoFormats;
+    m_VideoCallbacks = prepared.videoCallbacks;
+    m_AudioCallbacks = prepared.audioCallbacks;
+    m_PyrowaveRequested = prepared.pyrowaveRequested;
+}
+
+void Session::requestStreamConfigurationChange(
+    const OverlayMenuPanel::StreamConfigurationRequest& request)
+{
+    if (m_PendingStreamConfiguration || m_PendingStreamQuality ||
+        m_LiveResolutionTransaction.isActive() || m_SuppressConnectionErrorDialog) {
+        showStreamingToast(tr("Another stream change is already in progress"));
+        return;
+    }
+    m_PendingStreamConfiguration = request;
+    SDL_Event event = {};
+    event.type = SDL_USEREVENT;
+    event.user.code = SDL_CODE_APPLY_STREAM_CONFIGURATION;
+    pushEventOrWarn(event);
+}
+
+bool Session::applyPendingStreamConfigurationChange()
+{
+    if (!m_PendingStreamConfiguration) {
+        return true;
+    }
+    const OverlayMenuPanel::StreamConfigurationRequest request = *m_PendingStreamConfiguration;
+    if (m_LiveResolutionTransaction.isActive() || m_SuppressConnectionErrorDialog) {
+        m_PendingStreamConfiguration.reset();
+        showStreamingToast(tr("Another stream change is already in progress"));
+        updateStreamConfigurationMenuState();
+        return true;
+    }
+
+    PreparedStreamConfiguration prepared;
+    QString failureReason;
+    if (!prepareStreamConfiguration(request, prepared, failureReason)) {
+        m_PendingStreamConfiguration.reset();
+        m_StreamConfigurationResultMessage = tr("Not applied: %1").arg(failureReason);
+        showStreamingToast(m_StreamConfigurationResultMessage, 5000);
+        updateStreamConfigurationMenuState();
+        return true;
+    }
+
+    m_PreparedStreamConfiguration = std::move(prepared);
+    m_StreamConfigurationResultMessage.clear();
+    showStreamingToast(tr("Reconnecting with requested codec, HDR and audio settings"), 2500);
+    const QString preparationResult = m_PreparedStreamConfiguration->resultMessage;
+    if (tryReconnect(ReconnectReason::StreamQualityChange)) {
+        m_PreparedStreamConfiguration.reset();
+        m_PendingStreamConfiguration.reset();
+        m_RequestedStreamConfiguration = request;
+        m_StreamConfigurationResultMessage =
+            preparationResult.isEmpty()
+                ? tr("Reconnect complete; negotiated values are shown above")
+                : preparationResult;
+        updateStreamQualityMenuState();
+        updateConnectionMenuInfo();
+        updateStreamConfigurationMenuState();
+        return true;
+    }
+
+    m_PreparedStreamConfiguration.reset();
+    m_PendingStreamConfiguration.reset();
+    if (m_ShouldExit) {
+        return false;
+    }
+    m_StreamConfigurationResultMessage = tr("Reconnect failed; the session ended");
+    emit displayLaunchError(
+        tr("Couldn't reconnect with the requested codec, HDR, and audio settings. The host "
+           "didn't accept the new settings or stopped responding, so the session ended."));
+    updateStreamConfigurationMenuState();
+    return false;
 }
 
 bool Session::tryApplyStreamQualityLive(const StreamQuality::Settings& target)
 {
-    // Explicit menu choices still reconnect. A future live path must share
-    // the window matcher's single-request/1:1 state rather than race it.
-    // FPS changes also need a reconnect.
-    Q_UNUSED(target);
-    return false;
+    const QSize currentSize(m_ActiveVideoWidth, m_ActiveVideoHeight);
+    m_HasExplicitStreamQualityOverride = true;
+    m_ResolutionMatch.explicitOverride = true;
+    const Uint32 now = SDL_GetTicks();
+    const StreamQuality::LiveResolutionState liveState{
+        m_ResolutionMatch.hostSupported,
+        m_ResolutionMatch.hostDisplaySize,
+        currentSize,
+        m_LiveResolutionTransaction.isActive() || m_PendingStreamConfiguration ||
+            m_SuppressConnectionErrorDialog,
+    };
+    if (!StreamQuality::canApplyLiveResolution(target.resolution(), liveState) ||
+        target.fps != m_ActiveVideoFrameRate ||
+        !m_LiveResolutionTransaction.begin(
+            m_ConnectionGeneration.load(), currentSize, target.resolution(), now,
+            StreamQuality::LiveResolutionTransaction::ExplicitTimeoutMs, true)) {
+        m_StreamQualityResultMessage =
+            tr("Live resolution is no longer available; choose Reconnect explicitly");
+        m_HasFailedLiveResolution = true;
+        m_FailedLiveResolution = target;
+        m_FailedLiveResolutionCurrent = currentSize;
+        showStreamingToast(m_StreamQualityResultMessage, 5000);
+        updateStreamQualityMenuState();
+        return false;
+    }
+
+    m_LiveResolutionTargetSettings = target;
+    m_LiveResolutionAwaitingFirstFrame = false;
+    m_ResolutionMatch.oneShot = false;
+    m_ResolutionMatch.deadline = 0;
+    m_ResolutionMatch.deferred = false;
+    m_ResolutionMatch.explicitOverride = true;
+    m_ResolutionMatch.lastAttemptTicks = now;
+    m_ResolutionMatch.requestedSize = target.resolution();
+    m_ResolutionMatch.requestTicks = now;
+    m_StreamQualityResultMessage.clear();
+
+    const int result = LiSendResolutionChangeRequest(target.width, target.height);
+    if (result != LI_RESOLUTION_CHANGE_OK) {
+        m_LiveResolutionTransaction.cancel();
+        m_ResolutionMatch.requestedSize = QSize();
+        m_ResolutionMatch.requestTicks = 0;
+        if (result == LI_RESOLUTION_CHANGE_ERR_UNSUPPORTED) {
+            m_ResolutionMatch.hostSupported = false;
+        }
+        m_HasFailedLiveResolution = true;
+        m_FailedLiveResolution = target;
+        m_FailedLiveResolutionCurrent = currentSize;
+        m_StreamQualityResultMessage =
+            tr("Host rejected the live resolution request (%1); choose Retry or Reconnect")
+                .arg(result);
+        showStreamingToast(m_StreamQualityResultMessage, 5000);
+        updateStreamQualityMenuState();
+        return false;
+    }
+
+    showStreamingToast(tr("Requesting %1; brief video reset, host may refuse")
+                           .arg(StreamQuality::resolutionName(target.resolution())),
+                       5000);
+    updateStreamQualityMenuState();
+    return true;
 }
 
 bool Session::applyPendingStreamQualityChange()
@@ -4632,8 +5288,10 @@ bool Session::applyPendingStreamQualityChange()
     const OverlayMenuPanel::StreamQualityRequest request = *m_PendingStreamQuality;
     m_PendingStreamQuality.reset();
 
-    const StreamQuality::Settings current{ m_ActiveVideoWidth, m_ActiveVideoHeight,
-                                           m_StreamConfig.fps, m_Preferences->bitrateKbps };
+    const int currentFps = m_ActiveVideoFrameRate > 0 ? m_ActiveVideoFrameRate : m_StreamConfig.fps;
+    const bool liveFpsKnown = m_ActiveVideoFrameRate > 0;
+    const StreamQuality::Settings current{ m_ActiveVideoWidth, m_ActiveVideoHeight, currentFps,
+                                           m_StreamConfig.bitrate };
     StreamQuality::Settings target = current;
     if (request.resolution.isValid()) {
         target.width = request.resolution.width();
@@ -4662,8 +5320,39 @@ bool Session::applyPendingStreamQualityChange()
         m_Preferences->streamResolutionScale = false;
         m_Preferences->save();
     }
+    if (m_LiveResolutionTransaction.isActive() || m_PendingStreamConfiguration ||
+        m_SuppressConnectionErrorDialog) {
+        showStreamingToast(tr("Another stream change is already in progress"));
+        return true;
+    }
 
-    switch (StreamQuality::choosePath(change, /* hostSupportsLiveResolution */ false)) {
+    const StreamQuality::LiveResolutionState liveState{
+        m_ResolutionMatch.hostSupported,
+        m_ResolutionMatch.hostDisplaySize,
+        QSize(m_ActiveVideoWidth, m_ActiveVideoHeight),
+        m_LiveResolutionTransaction.isActive() || m_PendingStreamConfiguration ||
+            m_SuppressConnectionErrorDialog,
+    };
+    if (request.forceLive &&
+        (!liveFpsKnown || target.fps != currentFps ||
+         !StreamQuality::canApplyLiveResolution(target.resolution(), liveState))) {
+        m_HasExplicitStreamQualityOverride = true;
+        m_ResolutionMatch.explicitOverride = true;
+        m_HasFailedLiveResolution = true;
+        m_FailedLiveResolution = target;
+        m_FailedLiveResolutionCurrent = current.resolution();
+        m_StreamQualityResultMessage =
+            tr("Live is no longer eligible; choose Reconnect explicitly");
+        showStreamingToast(m_StreamQualityResultMessage, 5000);
+        updateStreamQualityMenuState();
+        return true;
+    }
+    const StreamQuality::Path path =
+        request.forceReconnect || (change.resolution && !liveFpsKnown)
+            ? StreamQuality::Path::Reconnect
+        : request.forceLive ? StreamQuality::Path::LiveResolution
+                            : StreamQuality::choosePath(change, liveState, target.resolution());
+    switch (path) {
     case StreamQuality::Path::None:
         if (request.saveAsDefault) {
             showStreamingToast(tr("Saved %1 as the default").arg(summary), 2500);
@@ -4673,10 +5362,11 @@ bool Session::applyPendingStreamQualityChange()
         requestRuntimeBitrateChange(target.bitrateKbps);
         return true;
     case StreamQuality::Path::LiveResolution:
-        if (tryApplyStreamQualityLive(target)) {
-            return true;
-        }
-        break;
+        tryApplyStreamQualityLive(target);
+        return true;
+    case StreamQuality::Path::Busy:
+        showStreamingToast(tr("Another resolution or stream change is in progress"), 3500);
+        return true;
     case StreamQuality::Path::Reconnect:
         break;
     }
@@ -4694,15 +5384,20 @@ bool Session::applyPendingStreamQualityChange()
     m_StreamConfig.fps = target.fps;
     m_StreamConfig.bitrate = target.bitrateKbps;
     m_StreamQualityOverride = target;
+    m_HasExplicitStreamQualityOverride = true;
     if (m_InputHandler != nullptr) {
         m_InputHandler->setStreamDimensions(target.width, target.height);
     }
 
     if (tryReconnect(ReconnectReason::StreamQualityChange)) {
+        m_HasFailedLiveResolution = false;
+        m_FailedLiveResolutionCurrent = QSize();
+        m_StreamQualityResultMessage.clear();
         showStreamingToast(request.saveAsDefault
                                ? tr("Now streaming at %1 (saved as default)").arg(summary)
                                : tr("Now streaming at %1").arg(summary),
                            2500);
+        updateStreamQualityMenuState();
         return true;
     }
 
@@ -4749,6 +5444,20 @@ bool Session::tryReconnect(ReconnectReason reason)
     if (m_DualSenseHapticsRenderer != nullptr) {
         m_DualSenseHapticsRenderer->reset();
     }
+    if (m_LiveResolutionTransaction.isActive()) {
+        if (m_LiveResolutionTransaction.isExplicit()) {
+            m_HasFailedLiveResolution = true;
+            m_FailedLiveResolution = m_LiveResolutionTargetSettings;
+            m_FailedLiveResolutionCurrent = m_LiveResolutionTransaction.current();
+            m_StreamQualityResultMessage =
+                tr("Connection changed before the live resolution result was confirmed");
+        }
+        m_LiveResolutionTransaction.cancel();
+        m_LiveResolutionAwaitingFirstFrame = false;
+        m_ResolutionMatch.requestTicks = 0;
+        m_ResolutionMatch.requestedSize = QSize();
+    }
+    applyPreparedStreamConfiguration();
 
     // Total time budget for reconnect attempts before giving up. A quality
     // change talks to a host that was fine a moment ago, so give up sooner.
@@ -4763,6 +5472,7 @@ bool Session::tryReconnect(ReconnectReason reason)
     bool reconnected = false;
     bool cancelled = false;
     QSize deferredResolution;
+    Uint32 deferredResolutionGeneration = 0;
 
     // Returns true if the user wants to cancel the reconnect (close/quit/Esc)
     auto isCancelEvent = [](const SDL_Event& ev) -> bool {
@@ -4778,7 +5488,8 @@ bool Session::tryReconnect(ReconnectReason reason)
         return false;
     };
 
-    auto handleReconnectEvent = [this, &isCancelEvent, &deferredResolution](SDL_Event& ev) -> bool {
+    auto handleReconnectEvent = [this, &isCancelEvent, &deferredResolution,
+                                 &deferredResolutionGeneration](SDL_Event& ev) -> bool {
         if (isCancelEvent(ev)) {
             return true;
         }
@@ -4790,6 +5501,7 @@ bool Session::tryReconnect(ReconnectReason reason)
             if (ev.user.code == SDL_CODE_RESOLUTION_CHANGED) {
                 deferredResolution =
                     QSize((int)(uintptr_t)ev.user.data1, (int)(uintptr_t)ev.user.data2);
+                deferredResolutionGeneration = ev.user.windowID;
             } else {
                 handleSdlUserEvent(ev.user);
             }
@@ -4878,6 +5590,7 @@ bool Session::tryReconnect(ReconnectReason reason)
             m_DualSenseHapticsRenderer->reset();
         }
         deferredResolution = QSize();
+        deferredResolutionGeneration = 0;
 
         Uint32 backoffUntil = SDL_GetTicks() + backoffMs;
         while (SDL_GetTicks() < backoffUntil &&
@@ -4912,8 +5625,10 @@ bool Session::tryReconnect(ReconnectReason reason)
         // startConnectionAsync() reset the state for this connection. The host
         // may have reported its initial display size while we were connecting.
         if (deferredResolution.isValid()) {
-            handleHostResolutionReport(deferredResolution.width(), deferredResolution.height());
+            handleHostResolutionReport(deferredResolution.width(), deferredResolution.height(),
+                                       deferredResolutionGeneration);
         }
+        restoreResolutionMatchOverride();
         if (!qualityChange) {
             scheduleWindowResolutionMatch();
         }
@@ -4930,6 +5645,7 @@ bool Session::tryReconnect(ReconnectReason reason)
         if (!qualityChange) {
             showStreamingToast(tr("Reconnected"), 1500);
         }
+        updateStreamQualityMenuState();
         return true;
     }
 
@@ -5047,6 +5763,8 @@ void prepareServerInformation(const HostConnectionInfoSnapshot& snapshot,
 // Called in a non-main thread
 bool Session::startConnectionAsync()
 {
+    m_ConnectionGeneration.fetch_add(1);
+
     bool enableGameOptimizations;
     if (m_Computer->isNvidiaServerSoftware) {
         // GFE will set all settings to 720p60 if it doesn't recognize
@@ -5971,6 +6689,7 @@ void Session::exec()
         if (m_MenuPanel->isMenuVisible()) {
             updateLiveMenuState();
             updateConnectionMenuInfo();
+            updateStreamConfigurationMenuState();
         }
     });
     menuStateTimer->start();
@@ -5999,6 +6718,10 @@ void Session::exec()
     m_MenuPanel->setStreamQualityCallback(
         [this](const OverlayMenuPanel::StreamQualityRequest& request) {
             requestStreamQualityChange(request);
+        });
+    m_MenuPanel->setStreamConfigurationCallback(
+        [this](const OverlayMenuPanel::StreamConfigurationRequest& request) {
+            requestStreamConfigurationChange(request);
         });
     updateRemoteUsbMenuState();
     m_MenuPanel->setCloseCallback([this]() {
@@ -6210,6 +6933,7 @@ void Session::exec()
             m_StatsOverlay->tick();
         }
         updateOverlayMenuEdgeTrigger();
+        processLiveResolutionTransaction();
         processWindowResolutionMatch();
 #ifdef Q_OS_WIN32
         processClientSdrWhiteUpdate();
@@ -6256,6 +6980,11 @@ void Session::exec()
             // Wake up when the window resize debounce settles
             const int matchDelayMs = (int)(Sint32)(m_ResolutionMatch.deadline - SDL_GetTicks());
             waitTimeoutMs = qMin(waitTimeoutMs, qMax(matchDelayMs, 1));
+        }
+        if (m_LiveResolutionTransaction.isActive()) {
+            const int transactionDelayMs =
+                (int)(Sint32)(m_LiveResolutionTransaction.deadline() - SDL_GetTicks());
+            waitTimeoutMs = qMin(waitTimeoutMs, qMax(transactionDelayMs, 1));
         }
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         if (const int replayDelayMs = m_StylusReplayTest ? m_StylusReplayTest->nextDelayMs() : -1;
@@ -6332,6 +7061,12 @@ void Session::exec()
         case SDL_USEREVENT:
             if (event.user.code == SDL_CODE_APPLY_STREAM_QUALITY) {
                 if (!applyPendingStreamQualityChange()) {
+                    goto DispatchDeferredCleanup;
+                }
+                break;
+            }
+            if (event.user.code == SDL_CODE_APPLY_STREAM_CONFIGURATION) {
+                if (!applyPendingStreamConfigurationChange()) {
                     goto DispatchDeferredCleanup;
                 }
                 break;
@@ -6671,6 +7406,10 @@ void Session::exec()
                     m_InputHandler->setCaptureActive(true);
                     needsPostDecoderCreationCapture = false;
                 }
+            }
+
+            if (m_LiveResolutionTransaction.decoderResetCompleted(m_ConnectionGeneration.load())) {
+                m_LiveResolutionAwaitingFirstFrame = true;
             }
 
             // Request an IDR frame to complete the reset

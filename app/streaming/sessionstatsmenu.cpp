@@ -6,8 +6,6 @@
 
 #include <Limelight.h>
 
-#include <cmath>
-
 namespace {
 
 QString formatDuration(uint64_t durationUs)
@@ -58,9 +56,11 @@ std::vector<std::pair<QString, QString>> Session::sessionStatsMenuRows() const
                                                        .arg(s.sessionFramesPacerEligible)
                                                  : unknown);
 
-    rows.emplace_back(tr("Bitrate"), s.valid && !std::isnan(s.bitrateMbps)
-                                         ? tr("%1 Mbps").arg(s.bitrateMbps, 0, 'f', 1)
-                                         : unknown);
+    rows.emplace_back(tr("Received video rate"),
+                      StreamStatsModel::hasFreshReceivedVideoRate(s, LiGetMicroseconds())
+                          ? tr("%1 Mbps (video socket, incl. FEC; not host encode target)")
+                                .arg(s.bitrateMbps, 0, 'f', 1)
+                          : unknown);
     rows.emplace_back(tr("Latency"), s.valid && s.decodedFps > 0
                                          ? tr("%1 ms").arg(s.latency.totalMs(), 0, 'f', 1)
                                          : unknown);

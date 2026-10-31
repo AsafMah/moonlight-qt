@@ -26,6 +26,7 @@ public:
     static constexpr size_t PresentRingCapacity = 4096;
     // Recent frame time percentiles cover this much time
     static constexpr uint64_t LowFpsWindowUs = 10 * 1000000ULL;
+    static constexpr uint64_t ReceivedVideoRateMaxAgeUs = 3 * 1000000ULL;
     // Number of frame times in StatsSnapshot::frameTimeHistoryMs
     static constexpr size_t FrameTimeHistoryLength = 240;
     // A present interval longer than this is a discontinuity, not a frame
@@ -51,6 +52,7 @@ public:
 
     // Any thread
     StatsSnapshot snapshot(uint64_t nowUs) const;
+    static bool hasFreshReceivedVideoRate(const StatsSnapshot& snapshot, uint64_t nowUs);
     uint64_t sequence() const { return m_Sequence.load(std::memory_order_acquire); }
 
     // Forgets everything, e.g. at the start of a new stream

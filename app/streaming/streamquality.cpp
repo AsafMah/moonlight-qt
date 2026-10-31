@@ -112,6 +112,26 @@ Change diff(const Settings& from, const Settings& to)
     return change;
 }
 
+bool validResolutionTarget(QSize target)
+{
+    constexpr int kMinDimension = 256;
+    return target.width() >= kMinDimension && target.height() >= kMinDimension &&
+           target.width() <= kMaxDimension && target.height() <= kMaxDimension &&
+           target.width() % 2 == 0 && target.height() % 2 == 0;
+}
+
+bool hostStreamingDisplayIsOneToOne(QSize hostDisplaySize, QSize streamSize)
+{
+    return hostDisplaySize.isValid() && streamSize.isValid() &&
+           (hostDisplaySize == streamSize || hostDisplaySize == streamSize.transposed());
+}
+
+bool canApplyLiveResolution(QSize target, const LiveResolutionState& state)
+{
+    return state.hostSupported && !state.busy && validResolutionTarget(target) &&
+           hostStreamingDisplayIsOneToOne(state.hostDisplaySize, state.streamSize);
+}
+
 int bitrateForSwitch(bool autoAdjustBitrate, int currentKbps, int newDefaultKbps)
 {
     if (autoAdjustBitrate && newDefaultKbps > 0) {
@@ -120,18 +140,101 @@ int bitrateForSwitch(bool autoAdjustBitrate, int currentKbps, int newDefaultKbps
     return currentKbps > 0 ? currentKbps : newDefaultKbps;
 }
 
-Path choosePath(const Change& change, bool hostSupportsLiveResolution)
+Path choosePath(const Change& change, const LiveResolutionState& state, QSize target)
 {
     if (!change.any()) {
         return Path::None;
+    }
+    if (state.busy) {
+        return Path::Busy;
     }
     if (change.fps) {
         return Path::Reconnect;
     }
     if (change.resolution) {
-        return hostSupportsLiveResolution ? Path::LiveResolution : Path::Reconnect;
+        return canApplyLiveResolution(target, state) ? Path::LiveResolution : Path::Reconnect;
     }
     return Path::LiveBitrate;
+}
+
+bool LiveResolutionTransaction::begin(std::uint32_t generation, QSize current, QSize target,
+                                      std::uint32_t now, std::uint32_t timeoutMs,
+                                      bool explicitRequest)
+{
+    if (m_Active || !validResolutionTarget(current) || !validResolutionTarget(target) ||
+        timeoutMs == 0) {
+        return false;
+    }
+
+    m_Active = true;
+    m_ExplicitRequest = explicitRequest;
+    m_AwaitingDecoderReset = false;
+    m_DecoderResetCompleted = false;
+    m_Generation = generation;
+    m_Deadline = now + timeoutMs;
+    m_Current = current;
+    m_Target = target;
+    m_ObservedSize = QSize();
+    return true;
+}
+
+bool LiveResolutionTransaction::observeHostReport(std::uint32_t generation, QSize previousDisplay,
+                                                  QSize reported)
+{
+    if (!m_Active || generation != m_Generation || !reported.isValid() ||
+        !hostStreamingDisplayIsOneToOne(previousDisplay, m_Current) ||
+        reported == previousDisplay || reported == m_Current) {
+        return false;
+    }
+
+    m_ObservedSize = reported;
+    m_AwaitingDecoderReset = true;
+    return true;
+}
+
+bool LiveResolutionTransaction::decoderResetCompleted(std::uint32_t generation)
+{
+    if (!m_Active || generation != m_Generation || !m_AwaitingDecoderReset) {
+        return false;
+    }
+    m_AwaitingDecoderReset = false;
+    m_DecoderResetCompleted = true;
+    return true;
+}
+
+LiveResolutionResult LiveResolutionTransaction::firstFrame(std::uint32_t generation)
+{
+    if (!m_Active || generation != m_Generation || !m_DecoderResetCompleted) {
+        return LiveResolutionResult::Waiting;
+    }
+
+    const LiveResolutionResult result = m_ObservedSize == m_Target
+                                            ? LiveResolutionResult::Applied
+                                            : LiveResolutionResult::AppliedDifferentSize;
+    cancel();
+    return result;
+}
+
+bool LiveResolutionTransaction::expire(std::uint32_t now)
+{
+    if (!m_Active || static_cast<std::int32_t>(now - m_Deadline) < 0) {
+        return false;
+    }
+    cancel();
+    return true;
+}
+
+void LiveResolutionTransaction::cancel()
+{
+    m_Active = false;
+    m_ExplicitRequest = false;
+    m_AwaitingDecoderReset = false;
+    m_DecoderResetCompleted = false;
+    m_Generation = 0;
+    m_Deadline = 0;
+    m_Current = QSize();
+    m_Target = QSize();
+    m_ObservedSize = QSize();
 }
 
 } // namespace StreamQuality

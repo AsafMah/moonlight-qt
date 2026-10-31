@@ -586,6 +586,7 @@ void PyrowaveVideoDecoder::publishStatsWindow(const VIDEO_STATS& recent,
     window.renderer = m_RendererName;
     window.hardwareDecode = true;
     window.bitrateMbps = m_BandwidthMbps;
+    window.bitrateTimestampUs = m_BandwidthMeter.lastSampleTimeUs();
     VideoStatsBridge::readRtpCounters(window);
 
     StatsWindow completedWindow = VideoStatsBridge::toStatsWindow(completed);

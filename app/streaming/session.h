@@ -157,12 +157,7 @@ public:
 
     // Pull renderers bypass drSubmitDecodeUnit(). Only host frames, not
     // decoder self-test samples, should enable auto-reconnect.
-    static void markVideoReceived()
-    {
-        if (s_ActiveSession != nullptr) {
-            s_ActiveSession->m_HasReceivedVideo = true;
-        }
-    }
+    static void markVideoReceived();
 
     Overlay::OverlayManager& getOverlayManager()
     {
@@ -250,6 +245,24 @@ private:
     // the host can't, which is always the case today.
     bool tryApplyStreamQualityLive(const StreamQuality::Settings& target);
     void updateStreamQualityMenuState();
+    struct PreparedStreamConfiguration;
+    void
+    requestStreamConfigurationChange(const OverlayMenuPanel::StreamConfigurationRequest& request);
+    bool applyPendingStreamConfigurationChange();
+    void updateStreamConfigurationMenuState();
+    bool prepareStreamConfiguration(const OverlayMenuPanel::StreamConfigurationRequest& request,
+                                    PreparedStreamConfiguration& prepared, QString& failureReason);
+    void applyPreparedStreamConfiguration();
+
+    struct PreparedStreamConfiguration
+    {
+        STREAM_CONFIGURATION streamConfig{};
+        SupportedVideoFormatList videoFormats;
+        DECODER_RENDERER_CALLBACKS videoCallbacks{};
+        AUDIO_RENDERER_CALLBACKS audioCallbacks{};
+        bool pyrowaveRequested = false;
+        QString resultMessage;
+    };
 
     void handleSdlUserEvent(const SDL_UserEvent& event);
 
@@ -370,11 +383,15 @@ private:
 
     void finishSessionStatsRecorder();
 
+    void restoreResolutionMatchOverride();
     void scheduleWindowResolutionMatch();
     void scheduleInitialWindowResolutionMatch(bool awaitingFullscreenEntry);
     bool requestWindowResolutionMatchNow();
     void processWindowResolutionMatch();
-    void handleHostResolutionReport(int width, int height);
+    void processLiveResolutionTransaction();
+    void handleLiveResolutionFirstFrame(Uint32 generation);
+    void handleHostResolutionReport(int width, int height, Uint32 generation);
+    void retryFailedLiveResolution(bool reconnect);
 
     enum class DecoderAvailability {
         None,
@@ -548,6 +565,14 @@ private:
     int m_ActiveVideoWidth;
     int m_ActiveVideoHeight;
     int m_ActiveVideoFrameRate;
+    std::atomic<Uint32> m_ConnectionGeneration{ 0 };
+    std::atomic_bool m_LiveResolutionAwaitingFirstFrame{ false };
+    StreamQuality::LiveResolutionTransaction m_LiveResolutionTransaction;
+    bool m_HasFailedLiveResolution = false;
+    StreamQuality::Settings m_FailedLiveResolution;
+    QSize m_FailedLiveResolutionCurrent;
+    StreamQuality::Settings m_LiveResolutionTargetSettings;
+    QString m_StreamQualityResultMessage;
 
     // "Match stream resolution to window size" (LI_FF_CLIENT_RESOLUTION_CHANGE)
     struct ResolutionMatchState
@@ -559,6 +584,7 @@ private:
         Uint32 deadline = 0;     // When a resize has settled; 0 if none pending
         bool deferred = false;   // Skipped while minimized or not 1:1; retried when that changes
         bool oneShot = false; // Explicit Match now, independent of the saved automatic preference
+        bool explicitOverride = false;
         Uint32 lastAttemptTicks = 0;
     } m_ResolutionMatch;
 
@@ -598,11 +624,17 @@ private:
     // applies the newest value so HTTP never blocks the stream loop.
     std::atomic_int m_PendingRuntimeBitrateKbps { 0 };
     std::atomic_bool m_RuntimeBitrateInFlight { false };
+    std::atomic_int m_LastRuntimeBitrateApplied{ -1 };
     // Stream Quality: the request waiting for the stream loop, and the
     // resolution/FPS this session switched to (sent to the host on resume
     // instead of the preferences). Neither is saved unless asked.
     std::optional<OverlayMenuPanel::StreamQualityRequest> m_PendingStreamQuality;
     std::optional<StreamQuality::Settings> m_StreamQualityOverride;
+    bool m_HasExplicitStreamQualityOverride = false;
+    OverlayMenuPanel::StreamConfigurationRequest m_RequestedStreamConfiguration;
+    std::optional<OverlayMenuPanel::StreamConfigurationRequest> m_PendingStreamConfiguration;
+    std::optional<PreparedStreamConfiguration> m_PreparedStreamConfiguration;
+    QString m_StreamConfigurationResultMessage;
     OverlayMenuPanel* m_MenuPanel; // Qt-based overlay menu window
     OverlayMenuButton* m_MenuButton = nullptr; // Qt-based floating menu button
     bool m_MenuDetached = false;

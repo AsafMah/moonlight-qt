@@ -1,5 +1,6 @@
 #include "streaming/stats/statsmath.h"
 #include "streaming/stats/streamstatsmodel.h"
+#include "streaming/bandwidth.h"
 #include "streaming/video/ffmpeg-renderers/pacer/pacerstats.h"
 
 #include <QCoreApplication>
@@ -301,6 +302,43 @@ bool testLatency(QTextStream& err)
     return ok;
 }
 
+bool testReceivedVideoRateFreshness(QTextStream& err)
+{
+    bool ok = true;
+    BandwidthMeter meter(1000000, 2000000);
+
+    ok &= require(std::isnan(meter.update(0, 1000000)) && meter.lastSampleTimeUs() == 0,
+                  QStringLiteral("rate baseline must not look measured"), err);
+    ok &= require(near(meter.update(125000, 2000000), 1.0, 1e-9) &&
+                      meter.lastSampleTimeUs() == 2000000,
+                  QStringLiteral("received rate sample timestamp"), err);
+
+    // Too-short and too-long intervals retain the numeric value, but not a fresh timestamp.
+    ok &= require(near(meter.update(130000, 2100000), 1.0, 1e-9) &&
+                      meter.lastSampleTimeUs() == 2000000,
+                  QStringLiteral("short interval refreshed the sample timestamp"), err);
+    ok &= require(near(meter.update(300000, 4100001), 1.0, 1e-9) &&
+                      meter.lastSampleTimeUs() == 2000000,
+                  QStringLiteral("stale interval refreshed the sample timestamp"), err);
+
+    StatsSnapshot snapshot;
+    snapshot.valid = true;
+    snapshot.bitrateMbps = 1.0;
+    snapshot.bitrateTimestampUs = meter.lastSampleTimeUs();
+    ok &= require(StreamStatsModel::hasFreshReceivedVideoRate(snapshot, 4999999),
+                  QStringLiteral("recent video-rate sample was rejected"), err);
+    ok &= require(!StreamStatsModel::hasFreshReceivedVideoRate(snapshot, 5000001),
+                  QStringLiteral("stale video-rate sample was presented as live"), err);
+    snapshot.bitrateTimestampUs = 5000002;
+    ok &= require(!StreamStatsModel::hasFreshReceivedVideoRate(snapshot, 5000001),
+                  QStringLiteral("future video-rate timestamp was accepted"), err);
+    snapshot.bitrateTimestampUs = 5000001;
+    snapshot.bitrateMbps = std::nan("");
+    ok &= require(!StreamStatsModel::hasFreshReceivedVideoRate(snapshot, 5000001),
+                  QStringLiteral("missing video-rate sample was accepted"), err);
+    return ok;
+}
+
 bool testModel(QTextStream& err)
 {
     bool ok = true;
@@ -336,6 +374,7 @@ bool testModel(QTextStream& err)
     recent.rttVarianceMs = 1;
     recent.renderedFps = 119.5;
     recent.bitrateMbps = 50;
+    recent.bitrateTimestampUs = lastPresentUs;
 
     StatsWindow completed;
     completed.totalFrames = 120;
@@ -376,6 +415,11 @@ bool testModel(QTextStream& err)
     ok &= require(snapshot.hasRtt && snapshot.rttMs == 8 && snapshot.latency.networkMs == 4,
                   QStringLiteral("RTT was not carried into the snapshot"), err);
     ok &= require(snapshot.bitrateMbps == 50, QStringLiteral("bitrate was not copied"), err);
+    ok &= require(snapshot.bitrateTimestampUs == lastPresentUs &&
+                      StreamStatsModel::hasFreshReceivedVideoRate(snapshot, lastPresentUs),
+                  QStringLiteral("received-rate sample timestamp was not copied"), err);
+    ok &= require(!StreamStatsModel::hasFreshReceivedVideoRate(snapshot, lastPresentUs + 3000001),
+                  QStringLiteral("expired received-rate sample remained live"), err);
     ok &= require(snapshot.sessionFramesTotal == 240 && snapshot.sessionFramesReceived == 236 &&
                       snapshot.sessionFramesNetworkDropped == 4 &&
                       snapshot.sessionFramesRendered == 234,
@@ -455,6 +499,7 @@ int main(int argc, char* argv[])
     ok &= testFrameTimeHistogram(err);
     ok &= testJitter(err);
     ok &= testLatency(err);
+    ok &= testReceivedVideoRateFreshness(err);
     ok &= testModel(err);
     ok &= testPacerStats(err);
     out << (ok ? "PASS" : "FAILED") << '\n';

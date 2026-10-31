@@ -43,7 +43,9 @@ int main() {
             self.compile_run(harness.replace("// METHODS", methods))
             return
         methods = "\n".join(function(session, signature) for signature in (
+            "void Session::markVideoReceived(",
             "bool Session::handleLiveMenuAction(",
+            "void Session::restoreResolutionMatchOverride(",
             "void Session::finishOverlayMenuInput(",
             "void Session::updateAudioMuteState(",
             "bool Session::handleOverlayMenuShortcutEvent(",
@@ -61,8 +63,38 @@ int main() {
             self.assertIn("updateAudioMuteState();", body[:650])
         self.compile_run(harness.replace("// METHODS", methods))
 
+    def test_stream_configuration_apply_event_flow(self):
+        session = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
+        harness = Path(__file__).with_name("configuration_harness.cpp").read_text()
+        methods = "\n".join(function(session, signature) for signature in (
+            "void Session::requestStreamConfigurationChange(",
+            "bool Session::applyPendingStreamConfigurationChange(",
+            "void Session::applyPreparedStreamConfiguration(",
+        ))
+        exec_body = function(session, "void Session::exec(")
+        dispatch = exec_body.index(
+            "if (event.user.code == SDL_CODE_APPLY_STREAM_CONFIGURATION)")
+        apply = exec_body.index("applyPendingStreamConfigurationChange()", dispatch)
+        self.assertLess(dispatch, apply)
+        callback = session[session.index("m_MenuPanel->setStreamConfigurationCallback("):]
+        self.assertIn("requestStreamConfigurationChange(request)", callback[:300])
+        apply_body = function(session, "bool Session::applyPendingStreamConfigurationChange(")
+        self.assertIn("tryReconnect(ReconnectReason::StreamQualityChange)", apply_body)
+        reconnect_body = function(session, "bool Session::tryReconnect(")
+        stop = reconnect_body.index("LiStopConnection();")
+        prepare = reconnect_body.index("applyPreparedStreamConfiguration();", stop)
+        retry = reconnect_body.index("AsyncConnectionStartThread thread(this);", prepare)
+        self.assertLess(stop, prepare)
+        self.assertLess(prepare, retry)
+        self.compile_run(harness.replace("// METHODS", methods))
+
     def compile_run(self, harness):
-        compiler = shutil.which("cl" if os.name == "nt" else "c++")
+        compiler = shutil.which("cl")
+        if compiler:
+            msvc = True
+        else:
+            compiler = shutil.which("clang++") or shutil.which("g++") or shutil.which("c++")
+            msvc = False
         self.assertIsNotNone(compiler, "Run in a compiler environment")
         with tempfile.TemporaryDirectory(prefix="moonlight-menu-session-") as directory:
             path = Path(directory)
@@ -70,8 +102,7 @@ int main() {
             source.write_text(harness, encoding="utf-8")
             exe = path / ("main.exe" if os.name == "nt" else "main")
             command = ([compiler, "/nologo", "/std:c++17", "/EHsc", str(source), f"/Fe:{exe}"]
-                       if os.name == "nt" else
-                       [compiler, "-std=c++17", str(source), "-o", str(exe)])
+                       if msvc else [compiler, "-std=c++17", str(source), "-o", str(exe)])
             build = subprocess.run(command, cwd=path, capture_output=True, text=True, timeout=60)
             self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
             local_runner = Path(r"E:\Code\moonlight-tools\run-test-exe.ps1")

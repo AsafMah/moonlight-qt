@@ -109,14 +109,16 @@ bool testNamesDiffAndPath(QTextStream& err)
                   "custom name", err);
 
     const Settings base{ 1920, 1080, 60, 20000 };
+    const LiveResolutionState eligible{ true, QSize(1920, 1080), QSize(1920, 1080), false };
     Settings to = base;
     Change change = diff(base, to);
-    ok &= require(!change.any() && choosePath(change, true) == Path::None, "no change", err);
+    ok &= require(!change.any() && choosePath(change, eligible, QSize(1920, 1080)) == Path::None,
+                  "no change", err);
 
     to.bitrateKbps = 40000;
     change = diff(base, to);
     ok &= require(change.bitrate && !change.needsRestart() &&
-                      choosePath(change, false) == Path::LiveBitrate,
+                      choosePath(change, eligible, QSize(1920, 1080)) == Path::LiveBitrate,
                   "bitrate only is live", err);
 
     to = base;
@@ -129,13 +131,29 @@ bool testNamesDiffAndPath(QTextStream& err)
     change = diff(base, to);
     ok &=
         require(change.resolution && !change.fps && change.needsRestart(), "resolution diff", err);
-    ok &= require(choosePath(change, false) == Path::Reconnect, "resolution reconnects", err);
-    ok &= require(choosePath(change, true) == Path::LiveResolution,
-                  "resolution goes live when supported", err);
+    ok &= require(choosePath(change, {}, QSize(2560, 1440)) == Path::Reconnect,
+                  "resolution reconnects without capability evidence", err);
+    ok &= require(choosePath(change, eligible, QSize(2560, 1440)) == Path::LiveResolution,
+                  "eligible resolution goes live", err);
+    ok &= require(choosePath(change, { true, QSize(1080, 1920), QSize(1920, 1080), false },
+                             QSize(2560, 1440)) == Path::LiveResolution,
+                  "rotated display evidence allows live resolution", err);
+    ok &= require(choosePath(change, { true, QSize(), QSize(1920, 1080), false },
+                             QSize(2560, 1440)) == Path::Reconnect,
+                  "unknown display size requires reconnect", err);
+    ok &= require(choosePath(change, { true, QSize(2560, 1440), QSize(1920, 1080), false },
+                             QSize(2560, 1440)) == Path::Reconnect,
+                  "non-1:1 stream requires reconnect", err);
+    ok &= require(choosePath(change, eligible, QSize(2559, 1440)) == Path::Reconnect,
+                  "odd target dimensions require reconnect", err);
+    ok &= require(choosePath(change, { true, QSize(1920, 1080), QSize(1920, 1080), true },
+                             QSize(2560, 1440)) == Path::Busy,
+                  "busy resolution arbiter disables the request", err);
 
     to.fps = 120;
     change = diff(base, to);
-    ok &= require(choosePath(change, true) == Path::Reconnect, "FPS always reconnects", err);
+    ok &= require(choosePath(change, eligible, QSize(2560, 1440)) == Path::Reconnect,
+                  "FPS always reconnects", err);
 
     to = base;
     to.height = 1200; // a height-only change still counts
@@ -144,6 +162,47 @@ bool testNamesDiffAndPath(QTextStream& err)
     ok &= require(bitrateForSwitch(true, 20000, 80000) == 80000, "auto bitrate follows", err);
     ok &= require(bitrateForSwitch(false, 20000, 80000) == 20000, "manual bitrate kept", err);
     ok &= require(bitrateForSwitch(false, 0, 80000) == 80000, "missing bitrate uses default", err);
+    return ok;
+}
+
+bool testLiveResolutionTransaction(QTextStream& err)
+{
+    bool ok = true;
+    LiveResolutionTransaction transaction;
+    const QSize current(1920, 1080);
+    const QSize target(2560, 1440);
+    ok &= require(transaction.begin(7, current, target, 1000,
+                                    LiveResolutionTransaction::ExplicitTimeoutMs, true),
+                  "start live transaction", err);
+    ok &= require(transaction.firstFrame(7) == LiveResolutionResult::Waiting,
+                  "send success is not a result", err);
+    ok &= require(!transaction.observeHostReport(6, current, target),
+                  "ignore previous connection generation", err);
+    ok &= require(transaction.observeHostReport(7, current, target),
+                  "observe matching host display report", err);
+    ok &= require(transaction.firstFrame(7) == LiveResolutionResult::Waiting,
+                  "report without decoder reset is not accepted", err);
+    ok &= require(transaction.decoderResetCompleted(7), "confirm decoder reset", err);
+    ok &= require(transaction.firstFrame(7) == LiveResolutionResult::Applied,
+                  "confirm observed size after first frame", err);
+    ok &= require(!transaction.isActive(), "completed transaction releases arbiter", err);
+
+    ok &= require(transaction.begin(8, current, target, 10,
+                                    LiveResolutionTransaction::ExplicitTimeoutMs, true),
+                  "start timeout transaction", err);
+    ok &= require(!transaction.expire(12009), "wait through full timeout", err);
+    ok &= require(transaction.expire(12010), "expire at 12 seconds", err);
+    ok &= require(!transaction.isActive(), "timeout releases arbiter", err);
+
+    ok &= require(transaction.begin(9, current, target, 0,
+                                    LiveResolutionTransaction::ExplicitTimeoutMs, true),
+                  "start mismatched result transaction", err);
+    ok &= require(transaction.observeHostReport(9, current, QSize(1600, 900)),
+                  "observe host-applied different size", err);
+    ok &= require(transaction.decoderResetCompleted(9), "complete mismatched reset", err);
+    ok &= require(transaction.firstFrame(9) == LiveResolutionResult::AppliedDifferentSize,
+                  "report actual size rather than requested size", err);
+
     return ok;
 }
 } // namespace
@@ -158,6 +217,7 @@ int main(int argc, char* argv[])
     ok &= testResolutionPresets(err);
     ok &= testFpsPresets(err);
     ok &= testNamesDiffAndPath(err);
+    ok &= testLiveResolutionTransaction(err);
 
     if (!ok) {
         return 1;

@@ -1,6 +1,8 @@
 #include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <vector>
 
 using QString = const char*;
 namespace Qt {
@@ -16,6 +18,18 @@ using KeyboardModifiers = int;
 }
 static constexpr int KMOD_CTRL = 1, KMOD_ALT = 2, KMOD_SHIFT = 4, KMOD_GUI = 8;
 static constexpr int SDL_KEYDOWN = 1, SDL_KEYUP = 2;
+static constexpr int SDL_USEREVENT = 24;
+static constexpr int SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME = 113;
+struct SDL_UserEvent
+{
+    int code = 0;
+    void* data1 = nullptr;
+};
+struct SDL_Event
+{
+    int type = 0;
+    SDL_UserEvent user;
+};
 struct SDL_KeyboardEvent
 {
     int type = 0;
@@ -44,6 +58,8 @@ struct OverlayMenuPanel
         ToggleMuteOnFocusLoss,
         ToggleResolutionMatch,
         MatchResolutionNow,
+        RetryLiveResolution,
+        ReconnectStreamQuality,
         ToggleCursorHide,
         TogglePointerRegionLock,
         Other
@@ -69,6 +85,10 @@ struct Preferences
     int saves = 0;
     void save() { ++saves; }
 };
+struct ResolutionMatchState
+{
+    bool explicitOverride = false;
+};
 struct SdlInputHandler
 {
     bool m_AbsoluteMouseMode = false;
@@ -90,6 +110,12 @@ struct Session
     bool m_WasCapturedBeforeMenu = true;
     bool m_DeferCaptureRestore = false;
     std::optional<bool> m_PendingDesktopMouseMode;
+    ResolutionMatchState m_ResolutionMatch;
+    bool m_HasExplicitStreamQualityOverride = false;
+    std::atomic<bool> m_HasReceivedVideo{ false };
+    std::atomic<bool> m_LiveResolutionAwaitingFirstFrame{ false };
+    std::atomic<std::uint32_t> m_ConnectionGeneration{ 0 };
+    std::vector<SDL_Event> pushedEvents;
     bool m_ManualAudioMuted = false;
     bool m_StreamInputFocused = true;
     std::atomic<bool> m_AudioMuted{ false };
@@ -98,20 +124,32 @@ struct Session
     bool visible = true;
     OverlayMenuPanel panel;
     OverlayMenuPanel* m_MenuPanel = &panel;
+    static Session* s_ActiveSession;
     void showStreamingToast(QString, int) {}
     void updateLiveMenuState() {}
     void scheduleWindowResolutionMatch() {}
+    static void markVideoReceived();
+    void restoreResolutionMatchOverride();
     bool requestWindowResolutionMatchNow()
     {
         ++matchRequests;
         return matchAvailable;
     }
+    void retryFailedLiveResolution(bool) {}
     bool isStreamingWindowVisible() { return visible; }
     bool handleLiveMenuAction(OverlayMenuPanel::MenuAction);
     void finishOverlayMenuInput();
     void updateAudioMuteState();
     bool handleOverlayMenuShortcutEvent(const SDL_KeyboardEvent&);
 };
+Session* Session::s_ActiveSession = nullptr;
+
+static void pushEventOrWarn(SDL_Event& event)
+{
+    if (Session::s_ActiveSession) {
+        Session::s_ActiveSession->pushedEvents.push_back(event);
+    }
+}
 
 // METHODS
 
@@ -203,6 +241,43 @@ int main()
         ok &= require(s.matchRequests == 1 && !s.preferences.resolutionMatchWindow &&
                           s.preferences.saves == 0,
                       "Match now dispatch must not alter saved automatic policy");
+    }
+    {
+        Session s;
+        Session::s_ActiveSession = &s;
+        s.m_ConnectionGeneration = 42;
+        s.m_LiveResolutionAwaitingFirstFrame = true;
+        Session::markVideoReceived();
+        ok &=
+            require(s.m_HasReceivedVideo && !s.m_LiveResolutionAwaitingFirstFrame &&
+                        s.pushedEvents.size() == 1 &&
+                        s.pushedEvents.front().user.code == SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME &&
+                        (uintptr_t)s.pushedEvents.front().user.data1 == 42,
+                    "first host frame must complete the live-resolution observation once");
+        Session::markVideoReceived();
+        ok &= require(s.pushedEvents.size() == 1,
+                      "subsequent host frames must not duplicate first-frame confirmation");
+        Session::s_ActiveSession = nullptr;
+    }
+    {
+        Session s;
+        s.m_HasExplicitStreamQualityOverride = true;
+        s.m_ResolutionMatch.explicitOverride = true;
+        s.handleLiveMenuAction(Action::ToggleResolutionMatch);
+        s.restoreResolutionMatchOverride();
+        ok &=
+            require(!s.m_HasExplicitStreamQualityOverride && !s.m_ResolutionMatch.explicitOverride,
+                    "re-enabling automatic matching must survive reconnect restoration");
+    }
+    {
+        Session s;
+        s.m_HasExplicitStreamQualityOverride = true;
+        s.m_ResolutionMatch.explicitOverride = true;
+        s.handleLiveMenuAction(Action::MatchResolutionNow);
+        s.restoreResolutionMatchOverride();
+        ok &=
+            require(!s.m_HasExplicitStreamQualityOverride && !s.m_ResolutionMatch.explicitOverride,
+                    "Match now must clear stale explicit ownership across reconnect");
     }
     return ok ? 0 : 1;
 }

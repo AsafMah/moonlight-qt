@@ -1,4 +1,4 @@
-QT += core gui svg testlib
+QT += core gui qml svg testlib
 CONFIG += console c++17
 CONFIG -= app_bundle
 INCLUDEPATH += ../../app

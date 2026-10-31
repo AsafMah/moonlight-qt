@@ -1,6 +1,7 @@
 #include "streamstatsmodel.h"
 
 #include <algorithm>
+#include <cmath>
 
 StreamStatsModel::StreamStatsModel() : m_Presents(PresentRingCapacity) {}
 
@@ -119,6 +120,7 @@ StatsSnapshot StreamStatsModel::snapshot(uint64_t nowUs) const
         StatsMath::lossPercent(window.pacerDroppedFrames, StatsMath::pacerDropDenominator(window));
     snapshot.queueSamples = window.queueMeasured ? window.renderedFrames : 0;
     snapshot.bitrateMbps = window.bitrateMbps;
+    snapshot.bitrateTimestampUs = window.bitrateTimestampUs;
     snapshot.videoPackets = window.videoPackets;
     snapshot.fecPackets = window.fecPackets;
     snapshot.fecRecoveredFrames = window.fecRecoveredFrames;
@@ -134,6 +136,13 @@ StatsSnapshot StreamStatsModel::snapshot(uint64_t nowUs) const
     snapshot.latency = StatsMath::estimateLatency(window);
 
     return snapshot;
+}
+
+bool StreamStatsModel::hasFreshReceivedVideoRate(const StatsSnapshot& snapshot, uint64_t nowUs)
+{
+    return snapshot.valid && std::isfinite(snapshot.bitrateMbps) && snapshot.bitrateMbps >= 0 &&
+           snapshot.bitrateTimestampUs != 0 && nowUs >= snapshot.bitrateTimestampUs &&
+           nowUs - snapshot.bitrateTimestampUs <= ReceivedVideoRateMaxAgeUs;
 }
 
 void StreamStatsModel::reset()

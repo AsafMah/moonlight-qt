@@ -508,16 +508,16 @@
         <translation>自動調整位元率（ABR）</translation>
     </message>
     <message>
-        <source>Allows a compatible Sunshine host to lower the video bitrate when the network is congested, up to the limit below.</source>
-        <translation>需要相容的 Sunshine 主機。網路壅塞時自動降低視訊位元率，最高不超過下方設定的上限。</translation>
+        <source>Requests adaptive bitrate for the next stream, up to the limit below. A compatible Sunshine host must accept it. Check ABR in the performance overlay for its status.</source>
+        <translation>為下次串流請求自適應位元率，最高不超過下方限制。需要相容的 Sunshine 主機接受請求。可在效能浮層的 ABR 指標中查看狀態。</translation>
     </message>
     <message>
-        <source>Video bitrate limit</source>
-        <translation>視訊位元率上限</translation>
+        <source>Stream bitrate limit</source>
+        <translation>串流位元率上限</translation>
     </message>
     <message>
-        <source>The highest video bitrate ABR may select. FEC adds extra bandwidth.</source>
-        <translation>自動調整位元率時允許使用的最高視訊位元率。FEC 冗餘會額外占用頻寬。</translation>
+        <source>The highest stream bitrate ABR may request. The host divides this budget between video and packet loss protection.</source>
+        <translation>ABR 可請求的最高串流位元率。主機在視訊與封包遺失保護之間分配此頻寬預算。</translation>
     </message>
     <message>
         <source>Recommended bitrate follows resolution and frame rate. Entering a value keeps it fixed.</source>
@@ -4007,6 +4007,14 @@
 </context>
 <context>
     <name>OverlayStatsWindow</name>
+    <message><source>Enabling</source><translation>啟用中</translation></message>
+    <message><source>Active</source><translation>已啟用</translation></message>
+    <message><source>Unsupported</source><translation>不支援</translation></message>
+    <message><source>Rejected</source><translation>已拒絕</translation></message>
+    <message><source>Auth failed</source><translation>驗證失敗</translation></message>
+    <message><source>Degraded</source><translation>通訊異常</translation></message>
+    <message><source>Stopped</source><translation>已停止</translation></message>
+    <message><source>ABR paused. Reconnect to try again.</source><translation>ABR 已暫停。重新連線後重試。</translation></message>
     <message><source>Drag to move · Drag the edges to resize · Wheel to zoom · Ctrl+wheel to adjust transparency · Esc when done</source><translation>拖曳以移動 · 拖曳邊緣以調整大小 · 滾輪縮放 · Ctrl+滾輪調整透明度 · Esc 完成</translation></message>
     <message><source>Drag to move · Wheel to zoom · Ctrl+wheel to adjust transparency · Esc when done</source><translation>拖曳以移動 · 滾輪縮放 · Ctrl+滾輪調整透明度 · Esc 完成</translation></message>
     <message><source>Custom: On</source><translation>自訂：開</translation></message>
@@ -4339,8 +4347,8 @@
         <translation>糾錯（冗餘）封包所佔比例，以及它恢復或未能恢復的影格數。出現遺失影格代表網路丟包超出 FEC 的修復能力。</translation>
     </message>
     <message>
-        <source>Whether the host adapts the bitrate to the network automatically.</source>
-        <translation>主機是否依網路自動調整位元率。</translation>
+        <source>Host adaptive bitrate status, separate from the saved preference. Active means the host accepted ABR; it does not confirm an encoder change.</source>
+        <translation>主機自適應位元率的執行狀態，與已儲存的設定分開顯示。已啟用表示主機接受了 ABR，但不代表編碼器已套用變更。</translation>
     </message>
     <message>
         <source>Frames dropped to stay in step with the display. Above 1% shows as stutter.</source>

@@ -69,11 +69,16 @@ jobs:
     - name: Test version derivation
       run: python3 -m unittest discover -s tests/derive_version -p 'test_*.py'
 
-    - name: Install Qt for authenticated reconnect replay
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq qt6-base-dev
+    - name: Install Qt for deterministic client replay
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq qt6-base-dev qt6-l10n-tools
 
     - name: Check pull renderers report received video
       run: python3 -m unittest discover -s tests/reconnect_video_callbacks -p 'test_*.py'
+
+    - name: Test ABR HTTP errors, generation isolation and runtime overlay
+      env:
+        QT_QPA_PLATFORM: offscreen
+      run: python3 -m unittest discover -s tests/abr_client -p 'test_*.py'
 
     - name: Check settings search metadata
       # 设置搜索的索引是运行期从真实控件现采的；这里拦的是元数据漂移

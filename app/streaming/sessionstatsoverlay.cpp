@@ -45,10 +45,10 @@ void Session::createStatsOverlay(OverlayWindowMode windowMode)
 
     m_StatsOverlay->setExtrasProvider([this] {
         OverlayStatsWindow::Extras extras;
-        extras.abrEnabled = m_SunshineAbrEnabled;
+        extras.abr = m_AbrRuntime->snapshot();
         // Updated by ABR feedback and by runtime bitrate changes
-        const int appliedKbps = m_AbrCurrentBitrateKbps->load();
-        extras.targetBitrateKbps = appliedKbps > 0 ? appliedKbps : m_StreamConfig.bitrate;
+        extras.targetBitrateKbps =
+            extras.abr.bitrateKbps > 0 ? extras.abr.bitrateKbps : m_StreamConfig.bitrate;
         extras.vrrCapFps = m_VrrPresentCapFps;
         return extras;
     });

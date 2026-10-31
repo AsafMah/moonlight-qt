@@ -25,6 +25,7 @@
 #include "video/overlaytoast.h"
 #include "backend/supercmds.h"
 #include "streamquality.h"
+#include "sunshineabrruntime.h"
 #include "clipboardipc.h"
 #ifndef STEAM_LINK
 #include "micstream.h"
@@ -589,11 +590,9 @@ private:
     std::unique_ptr<StylusReplayTest> m_StylusReplayTest;
     bool m_WasCapturedBeforeStylusReplayPanel;
 #endif
-    bool m_SunshineAbrEnabled;
     Uint32 m_LastAbrFeedbackTicks;
     RTP_VIDEO_STATS m_LastAbrVideoStats;
-    std::shared_ptr<std::atomic_bool> m_AbrFeedbackInFlight;
-    std::shared_ptr<std::atomic_int> m_AbrCurrentBitrateKbps;
+    std::shared_ptr<SunshineAbrRuntime> m_AbrRuntime;
     // Runtime bitrate requests coalesce here; a single background worker
     // applies the newest value so HTTP never blocks the stream loop.
     std::atomic_int m_PendingRuntimeBitrateKbps { 0 };

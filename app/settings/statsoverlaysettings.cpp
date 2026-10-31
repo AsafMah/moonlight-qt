@@ -414,7 +414,8 @@ QString StatsOverlaySettings::metricDescription(Metric metric)
                   "recovered or could not recover. Lost frames mean the network drops more "
                   "than FEC can repair.");
     case Metric::Abr:
-        return tr("Whether the host adapts the bitrate to the network automatically.");
+        return tr("Host adaptive bitrate status, separate from the saved preference. "
+                  "Active means the host accepted ABR; it does not confirm an encoder change.");
     case Metric::PacerDrops:
         return tr("Frames dropped to stay in step with the display. Above 1% shows as stutter.");
     case Metric::DisplayHz:

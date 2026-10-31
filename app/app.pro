@@ -390,6 +390,7 @@ HEADERS += \
     streaming/stats/streamstatsmodel.h \
     streaming/stats/videostatsbridge.h \
     streaming/streamquality.h \
+    streaming/sunshineabrruntime.h \
     streaming/streamutils.h \
     backend/autoupdatechecker.h \
     backend/portableupdateinstaller.h \

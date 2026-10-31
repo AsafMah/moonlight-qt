@@ -444,7 +444,36 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         break;
     case Metric::Abr:
         cell.label = tr("ABR");
-        cell.value = m_Extras.abrEnabled ? tr("On") : tr("Off");
+        switch (m_Extras.abr.state) {
+        case SunshineAbrRuntime::State::Disabled:
+            cell.value = tr("Off");
+            break;
+        case SunshineAbrRuntime::State::Enabling:
+            cell.value = tr("Enabling");
+            break;
+        case SunshineAbrRuntime::State::Active:
+            cell.value = tr("Active");
+            cell.grade = Grade::Good;
+            break;
+        case SunshineAbrRuntime::State::Unsupported:
+            cell.value = tr("Unsupported");
+            break;
+        case SunshineAbrRuntime::State::HostRejected:
+            cell.value = tr("Rejected");
+            cell.grade = Grade::Warn;
+            break;
+        case SunshineAbrRuntime::State::AuthenticationFailed:
+            cell.value = tr("Auth failed");
+            cell.grade = Grade::Bad;
+            break;
+        case SunshineAbrRuntime::State::Degraded:
+            cell.value = tr("Degraded");
+            cell.grade = Grade::Warn;
+            break;
+        case SunshineAbrRuntime::State::Stopped:
+            cell.value = tr("Stopped");
+            break;
+        }
         break;
     case Metric::PacerDrops:
         cell.label = tr("Pacer drops");
@@ -1203,7 +1232,18 @@ OverlayStatsWindow::tooltipAt(const QPoint& windowPoint) const
     const QPoint point = bodyPoint.toPoint();
     for (const HitRegion& region : m_HitRegions) {
         if (region.rect.contains(point)) {
-            return TooltipInfo{ region.metric, region.value };
+            QString value = region.value;
+            if (region.metric == Metric::Abr) {
+                if (!m_Extras.abr.detail.isEmpty()) {
+                    value += QStringLiteral("\n") + m_Extras.abr.detail;
+                }
+                if (m_Extras.abr.state == SunshineAbrRuntime::State::HostRejected ||
+                    m_Extras.abr.state == SunshineAbrRuntime::State::AuthenticationFailed ||
+                    m_Extras.abr.state == SunshineAbrRuntime::State::Degraded) {
+                    value += QStringLiteral("\n") + tr("ABR paused. Reconnect to try again.");
+                }
+            }
+            return TooltipInfo{ region.metric, value };
         }
     }
     return std::nullopt;

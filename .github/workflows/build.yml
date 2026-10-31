@@ -69,6 +69,9 @@ jobs:
     - name: Test version derivation
       run: python3 -m unittest discover -s tests/derive_version -p 'test_*.py'
 
+    - name: Install Qt for authenticated reconnect replay
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq qt6-base-dev
+
     - name: Check pull renderers report received video
       run: python3 -m unittest discover -s tests/reconnect_video_callbacks -p 'test_*.py'
 
@@ -80,8 +83,14 @@ jobs:
     - name: Test client-resolution integration
       run: python3 -m unittest discover -s tests/resolution_match -p 'test_*.py'
 
+    - name: Check live window-mode dispatch wiring
+      run: python3 -m unittest discover -s tests/live_window_mode -p 'test_*.py'
+
     - name: Test system-key capture integration
       run: python3 -m unittest discover -s tests/system_key_capture -p 'test_*.py'
+
+    - name: Test live menu dispatch and capture ownership
+      run: python3 -m unittest discover -s tests/menu_session -p 'test_*.py'
 
   cpp-format:
     # C++ 格式门禁:用 git clang-format 只检查相对目标分支**改动过的行**,
@@ -274,6 +283,20 @@ jobs:
         rem overlay_menu_navigation 用 QTest 合成鼠标事件,CI 无桌面会话,必须 offscreen
         set QT_QPA_PLATFORM=offscreen
         call scripts\run-test.bat overlay_menu_navigation overlay_menu_navigation
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        call scripts\run-test.bat live_window_mode live_window_mode
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        set QT_SCALE_FACTOR=1
+        call scripts\run-test.bat menu_phase1 menu_phase1
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        set QT_SCALE_FACTOR=1.5
+        call scripts\run-test.bat menu_phase1 menu_phase1
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        set QT_SCALE_FACTOR=2
+        call scripts\run-test.bat menu_phase1 menu_phase1
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        set QT_SCALE_FACTOR=
+        call scripts\run-test.bat overlay_layers overlay_layers
         if errorlevel 1 exit /b %ERRORLEVEL%
 
     - name: Test compiled Chinese translations and settings navigation layout

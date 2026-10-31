@@ -128,6 +128,8 @@ public:
     QString
     getServerInfo(NvLogLevel logLevel, bool fastFail = false);
 
+    QString getAuthenticatedServerInfo(NvLogLevel logLevel, bool fastFail = false);
+
     static
     void
     verifyResponseStatus(QString xml);

@@ -931,6 +931,22 @@ bool SdlInputHandler::isSystemKeyCaptureActive()
     return isSystemKeyCaptureEnabledForWindow();
 }
 
+void SdlInputHandler::setAbsoluteMouseMode(bool absolute)
+{
+    if (m_AbsoluteMouseMode == absolute) {
+        return;
+    }
+    const bool captured = isCaptureActive();
+    if (captured) {
+        setCaptureActive(false);
+    }
+    m_AbsoluteMouseMode = absolute;
+    synchronizeLocalCursorMode();
+    if (captured) {
+        setCaptureActive(true);
+    }
+}
+
 void SdlInputHandler::setCaptureActive(bool active)
 {
     if (active && m_MouseReleaseGesture.isFree()) {

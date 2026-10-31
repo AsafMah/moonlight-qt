@@ -2449,6 +2449,11 @@
 </context>
 <context>
     <name>OverlayMenuPanel</name>
+    <message><source>Window Mode</source><translation>窗口模式</translation></message>
+    <message><source>Windowed</source><translation>窗口化</translation></message>
+    <message><source>Borderless</source><translation>无边框</translation></message>
+    <message><source>Fullscreen</source><translation>全屏</translation></message>
+    <message><source>Not supported</source><translation>不支持</translation></message>
     <message>
         <source>Toggle System Key Capture</source>
         <translation>切换系统快捷键捕获</translation>
@@ -3585,6 +3590,9 @@
 </context>
 <context>
     <name>Session</name>
+    <message><source>This window mode is not supported on this platform.</source><translation>此平台不支持该窗口模式。</translation></message>
+    <message><source>Could not change window mode: %1</source><translation>无法切换窗口模式：%1</translation></message>
+    <message><source>The window system did not accept the requested window mode.</source><translation>窗口系统未接受所请求的窗口模式。</translation></message>
     <message>
         <source>Receiving %1 from the host…</source>
         <translation>正在从主机接收 %1…</translation>

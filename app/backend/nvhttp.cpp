@@ -210,6 +210,28 @@ NvHTTP::getServerInfo(NvLogLevel logLevel, bool fastFail)
     return serverInfo;
 }
 
+QString NvHTTP::getAuthenticatedServerInfo(NvLogLevel logLevel, bool fastFail)
+{
+    if (m_ServerCert.isNull() || httpsPort() == 0) {
+        throw GfeHttpResponseException(401, "Reconnect requires a paired HTTPS host");
+    }
+
+    // The shared HTTPS transport enforces the paired certificate. Never use
+    // the discovery path's HTTP fallback to decide which app to launch.
+    QString serverInfo =
+        openConnectionToString(m_BaseUrlHttps, "serverinfo", nullptr,
+                               fastFail ? FAST_FAIL_TIMEOUT_MS : REQUEST_TIMEOUT_MS, logLevel);
+    verifyResponseStatus(serverInfo);
+    const QString state = getXmlString(serverInfo, "state");
+    bool validAppId = false;
+    const int currentGame = getXmlString(serverInfo, "currentgame").toInt(&validAppId);
+    if (!state.endsWith("_SERVER_FREE") &&
+        !(state.endsWith("_SERVER_BUSY") && validAppId && currentGame > 0)) {
+        throw GfeHttpResponseException(-1, "Invalid host application state");
+    }
+    return serverInfo;
+}
+
 void
 NvHTTP::startApp(QString verb,
                  bool isGfe,

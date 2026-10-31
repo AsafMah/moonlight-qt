@@ -185,6 +185,13 @@ public:
     // These route window-state operations through Qt only for the native
     // Wayland stream window. All other platforms retain SDL's behavior.
     bool isStreamingWindowFullscreen() const;
+    using WindowMode = OverlayMenuPanel::WindowMode;
+    WindowMode streamingWindowMode() const;
+    bool supportsStreamingWindowMode(WindowMode mode) const;
+    bool setStreamingWindowMode(WindowMode mode);
+    void updateWindowModeMenuState();
+    bool handleWindowModeMenuAction(OverlayMenuPanel::MenuAction action);
+    void restoreCaptureAfterWindowModeChange();
     bool isStreamingWindowBorderlessOnDisplay() const;
     bool usesQtWaylandStreamWindow() const;
     void minimizeStreamingWindow();
@@ -309,6 +316,12 @@ private:
     bool handleStatsOverlayMenuAction(OverlayMenuPanel::MenuAction action);
     // Overlay menu Session level (sessionstatsmenu.cpp)
     void setupSessionStatsMenu();
+    void updateConnectionMenuInfo();
+    void updateLiveMenuState();
+    bool handleLiveMenuAction(OverlayMenuPanel::MenuAction action);
+    void finishOverlayMenuInput();
+    void updateAudioMuteState();
+    bool handleOverlayMenuShortcutEvent(const SDL_KeyboardEvent& event);
     std::vector<std::pair<QString, QString>> sessionStatsMenuRows() const;
     void requestRuntimeBitrateChange(int bitrateKbps);
     void startRuntimeBitrateWorker();
@@ -358,6 +371,8 @@ private:
     void finishSessionStatsRecorder();
 
     void scheduleWindowResolutionMatch();
+    void scheduleInitialWindowResolutionMatch(bool awaitingFullscreenEntry);
+    bool requestWindowResolutionMatchNow();
     void processWindowResolutionMatch();
     void handleHostResolutionReport(int width, int height);
 
@@ -501,8 +516,12 @@ private:
     IVideoDecoder* m_VideoDecoder;
     SDL_mutex* m_DecoderLock;
     bool m_AudioDisabled;
-    bool m_AudioMuted;
+    std::atomic<bool> m_AudioMuted;
+    bool m_ManualAudioMuted = false;
+    bool m_StreamInputFocused = true;
     Uint32 m_FullScreenFlag;
+    QRect m_WindowedBounds;
+    bool m_WindowedMaximized = false;
     QQuickWindow* m_QtWindow;
     QWindow* m_WaylandStreamWindow;
     WaylandWindowSnapshot m_WaylandWindowSnapshot;
@@ -539,6 +558,8 @@ private:
         Uint32 requestTicks = 0; // When the unanswered request was sent; 0 if none
         Uint32 deadline = 0;     // When a resize has settled; 0 if none pending
         bool deferred = false;   // Skipped while minimized or not 1:1; retried when that changes
+        bool oneShot = false; // Explicit Match now, independent of the saved automatic preference
+        Uint32 lastAttemptTicks = 0;
     } m_ResolutionMatch;
 
     // PyroWave is selected and its preflight passed, so it is advertised
@@ -557,7 +578,9 @@ private:
 
     Overlay::OverlayManager m_OverlayManager;
     StreamStatsModel m_StatsModel;
+    std::vector<std::pair<QString, QString>> m_ConnectionMenuRows;
     bool m_WasCapturedBeforeMenu;  // 菜单打开前鼠标是否处于捕获状态
+    std::optional<bool> m_PendingDesktopMouseMode;
     bool m_DeferCaptureRestore;    // 延迟恢复鼠标捕获（全屏切换等）
     bool m_PendingMicToggle;       // 延迟麦克风切换（避免堆损坏）
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS

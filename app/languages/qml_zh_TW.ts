@@ -1984,6 +1984,11 @@
 </context>
 <context>
     <name>OverlayMenuPanel</name>
+    <message><source>Window Mode</source><translation>視窗模式</translation></message>
+    <message><source>Windowed</source><translation>視窗化</translation></message>
+    <message><source>Borderless</source><translation>無邊框</translation></message>
+    <message><source>Fullscreen</source><translation>全螢幕</translation></message>
+    <message><source>Not supported</source><translation>不支援</translation></message>
     <message>
         <source>Toggle System Key Capture</source>
         <translation>切換系統快捷鍵擷取</translation>
@@ -3073,6 +3078,9 @@
 </context>
 <context>
     <name>Session</name>
+    <message><source>This window mode is not supported on this platform.</source><translation>此平台不支援此視窗模式。</translation></message>
+    <message><source>Could not change window mode: %1</source><translation>無法切換視窗模式：%1</translation></message>
+    <message><source>The window system did not accept the requested window mode.</source><translation>視窗系統未接受要求的視窗模式。</translation></message>
     <message>
         <source>%1 at %2 FPS</source>
         <translation>%1 @ %2 FPS</translation>

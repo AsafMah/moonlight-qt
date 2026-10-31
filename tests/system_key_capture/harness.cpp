@@ -330,8 +330,8 @@ int main(int argc, char** argv)
               "decorated monitor-sized window qualifies");
         input.window.flags |= SDL_WINDOW_BORDERLESS;
         input.session.preferences.windowMode = StreamingPreferences::WM_WINDOWED;
-        check(!input.session.isStreamingWindowBorderlessOnDisplay(),
-              "wrong display mode qualifies");
+        check(input.session.isStreamingWindowBorderlessOnDisplay(),
+              "saved startup mode overrode live borderless geometry");
         input.session.preferences.windowMode = StreamingPreferences::WM_FULLSCREEN_DESKTOP;
         input.window.displayQueryOk = false;
         check(!input.session.isStreamingWindowBorderlessOnDisplay(),

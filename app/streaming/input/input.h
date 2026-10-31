@@ -273,6 +273,10 @@ public:
     bool isSystemKeyCaptureEnabledForWindow();
 
     void setCaptureActive(bool active);
+    bool isAbsoluteMouseMode() const { return m_AbsoluteMouseMode; }
+    bool isCapturedCursorVisible() const { return m_MouseCursorCapturedVisibilityState; }
+    bool isPointerRegionLockEnabled() const { return m_PointerRegionLockActive; }
+    void setAbsoluteMouseMode(bool absolute);
 
     bool isMouseInVideoRegion(int mouseX, int mouseY, int windowWidth = -1, int windowHeight = -1);
 

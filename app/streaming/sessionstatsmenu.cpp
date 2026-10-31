@@ -83,3 +83,33 @@ void Session::setupSessionStatsMenu()
         m_MenuPanel->setSessionStatsProvider([this] { return sessionStatsMenuRows(); });
     }
 }
+
+void Session::updateConnectionMenuInfo()
+{
+    if (!m_MenuPanel) {
+        return;
+    }
+    const StatsSnapshot snapshot = m_StatsModel.snapshot(LiGetMicroseconds());
+    const QString unknown = tr("Not reported");
+    std::vector<std::pair<QString, QString>> rows;
+    {
+        QReadLocker lock(&m_Computer->lock);
+        rows.emplace_back(tr("Host"), m_Computer->name);
+        rows.emplace_back(tr("Host version"),
+                          m_Computer->appVersion.isEmpty() ? unknown : m_Computer->appVersion);
+    }
+    rows.emplace_back(tr("App"), m_App.name);
+    rows.emplace_back(tr("Codec"), snapshot.codec.isEmpty() ? unknown : snapshot.codec);
+    rows.emplace_back(tr("HDR"), LiGetCurrentHostDisplayHdrMode() ? tr("On") : tr("Off"));
+    rows.emplace_back(tr("Resolution"),
+                      tr("%1 x %2").arg(m_ActiveVideoWidth).arg(m_ActiveVideoHeight));
+    rows.emplace_back(tr("Frame rate"), tr("%1 FPS").arg(m_StreamConfig.fps));
+    rows.emplace_back(tr("Audio"), tr("%1 channels").arg(m_ActiveAudioConfig.channelCount));
+    rows.emplace_back(tr("Decoder"), snapshot.decoder.isEmpty() ? unknown : snapshot.decoder);
+    rows.emplace_back(tr("Renderer"), snapshot.renderer.isEmpty() ? unknown : snapshot.renderer);
+    rows.emplace_back(tr("Encoder"), unknown);
+    if (rows != m_ConnectionMenuRows) {
+        m_MenuPanel->setConnectionInfo(rows);
+        m_ConnectionMenuRows = std::move(rows);
+    }
+}

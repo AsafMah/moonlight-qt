@@ -28,6 +28,8 @@ class ResolutionMatchTests(unittest.TestCase):
         methods = "\n".join(function(source, signature) for signature in (
             "static bool isHostStreamingDisplay1To1(",
             "void Session::scheduleWindowResolutionMatch(",
+            "void Session::scheduleInitialWindowResolutionMatch(",
+            "bool Session::requestWindowResolutionMatchNow(",
             "void Session::processWindowResolutionMatch(",
             "void Session::handleHostResolutionReport(",
         ))
@@ -58,6 +60,20 @@ class ResolutionMatchTests(unittest.TestCase):
         for name, value in entries:
             self.assertNotIn(value, values, f"{name} collides with {values.get(value)}")
             values[value] = name
+
+    def test_windowed_start_matches_initial_created_window_size(self):
+        source = SESSION.read_text(encoding="utf-8")
+        exec_body = function(source, "void Session::exec(")
+        create = exec_body.index("SDL_CreateWindow(")
+        initial_mode = exec_body.index("// Enter full screen if requested")
+        schedule = exec_body.index(
+            "scheduleInitialWindowResolutionMatch(awaitingFullScreenEntry);")
+        self.assertLess(create, initial_mode)
+        self.assertLess(initial_mode, schedule)
+
+        header = SESSION.with_suffix(".h").read_text(encoding="utf-8")
+        self.assertIn("void scheduleInitialWindowResolutionMatch(bool awaitingFullscreenEntry);",
+                      header)
 
     def test_input_dimension_setter_is_not_duplicated(self):
         source = (ROOT / "app/streaming/input/input.cpp").read_text(encoding="utf-8")

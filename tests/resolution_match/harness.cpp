@@ -102,12 +102,17 @@ public:
     void* m_DecoderLock = nullptr;
     Decoder* m_VideoDecoder = new Decoder;
     bool fullscreen = false;
+    bool m_IsFullScreen = false;
     bool minimized = false;
+    bool m_SuppressConnectionErrorDialog = false;
+    bool m_PendingStreamQuality = false;
     // RESOLUTION_STATE
     ~Session() { delete m_VideoDecoder; }
     bool isStreamingWindowFullscreen() const { return fullscreen; }
     bool isStreamingWindowMinimized() const { return minimized; }
     void scheduleWindowResolutionMatch();
+    void scheduleInitialWindowResolutionMatch(bool awaitingFullscreenEntry);
+    bool requestWindowResolutionMatchNow();
     void processWindowResolutionMatch();
     void handleHostResolutionReport(int width, int height);
     void updateStreamQualityMenuState() { ++menuUpdates; }
@@ -138,6 +143,120 @@ void prepare(Session& session)
 int main()
 {
     bool ok = true;
+    {
+        Session session;
+        prepare(session);
+        session.preferences.resolutionMatchWindow = false;
+        ok &= require(session.requestWindowResolutionMatchNow(),
+                      "Match now must work with automatic matching off");
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 1 && lastRequest == QSize(1600, 900) &&
+                          !session.preferences.resolutionMatchWindow,
+                      "one-shot must send exact size without saving automatic matching");
+        ok &= require(!session.requestWindowResolutionMatchNow(),
+                      "Match now must refuse an outstanding request");
+        session.m_ResolutionMatch.requestTicks = 0;
+        ok &= require(!session.requestWindowResolutionMatchNow(),
+                      "host acknowledgment must not bypass the rate limit");
+        ticks += 400;
+        ok &= require(session.requestWindowResolutionMatchNow(), "rate limit must expire");
+    }
+    {
+        Session session;
+        prepare(session);
+        session.m_ResolutionMatch.hostSupported = false;
+        ok &= require(!session.requestWindowResolutionMatchNow(),
+                      "unsupported host must refuse Match now");
+        session.m_ResolutionMatch.hostSupported = true;
+        session.m_SuppressConnectionErrorDialog = true;
+        ok &= require(!session.requestWindowResolutionMatchNow(),
+                      "Match now must refuse during reconnect");
+        session.m_SuppressConnectionErrorDialog = false;
+        session.m_PendingStreamQuality = true;
+        ok &= require(!session.requestWindowResolutionMatchNow(),
+                      "Match now must not race a pending quality change");
+    }
+    {
+        Session session;
+        prepare(session);
+        session.preferences.resolutionMatchWindow = false;
+        session.fullscreen = true;
+        session.m_StreamConfig.width = 2560;
+        session.m_StreamConfig.height = 1440;
+        session.requestWindowResolutionMatchNow();
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 1 && lastRequest == QSize(2560, 1440),
+                      "fullscreen one-shot must use configured stream size");
+    }
+    {
+        Session session;
+        prepare(session);
+        session.preferences.resolutionMatchWindow = false;
+        session.m_ResolutionMatch.hostDisplaySize = QSize(1920, 1080);
+        session.requestWindowResolutionMatchNow();
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 0 && session.m_ResolutionMatch.deferred,
+                      "one-shot must preserve the 1:1 hot-switch gate");
+        session.handleHostResolutionReport(1280, 720);
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 1, "deferred one-shot must retry with preference still off");
+    }
+    {
+        Session session;
+        prepare(session);
+        windowSize = QSize(1600, 900);
+        session.scheduleInitialWindowResolutionMatch(false);
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 1 && lastRequest == QSize(1600, 900),
+                      "windowed startup must match the initial created window size");
+    }
+    {
+        Session session;
+        prepare(session);
+        session.fullscreen = true;
+        session.scheduleInitialWindowResolutionMatch(false);
+        ok &= require(session.m_ResolutionMatch.deadline == 0,
+                      "fullscreen startup must not schedule a window-size request");
+    }
+    {
+        Session session;
+        prepare(session);
+        session.scheduleInitialWindowResolutionMatch(true);
+        ok &= require(session.m_ResolutionMatch.deadline == 0,
+                      "pending fullscreen entry must not match transient window bounds");
+    }
+    {
+        Session session;
+        prepare(session);
+        // Fullscreen was requested but SDL rejected it, so actual window state
+        // remains windowed and should still match its initial bounds.
+        session.scheduleInitialWindowResolutionMatch(false);
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 1 && lastRequest == QSize(1600, 900),
+                      "failed fullscreen entry must match actual windowed bounds");
+    }
+    {
+        Session session;
+        prepare(session);
+        session.m_ResolutionMatch.hostSupported = false;
+        session.scheduleInitialWindowResolutionMatch(false);
+        ok &= require(session.m_ResolutionMatch.deadline == 0,
+                      "initial schedule must respect unsupported hosts");
+    }
+    {
+        Session session;
+        prepare(session);
+        session.preferences.resolutionMatchWindow = false;
+        session.scheduleInitialWindowResolutionMatch(false);
+        ok &= require(session.m_ResolutionMatch.deadline == 0,
+                      "initial schedule must respect the disabled preference");
+    }
     {
         Session session;
         prepare(session);

@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/res/fluent">
+    <file alias="cat-input.svg">../../app/res/fluent/cat-input.svg</file>
+    <file alias="cat-host.svg">../../app/res/fluent/cat-host.svg</file>
+    <file alias="tb-network.svg">../../app/res/fluent/tb-network.svg</file>
+  </qresource>
+</RCC>

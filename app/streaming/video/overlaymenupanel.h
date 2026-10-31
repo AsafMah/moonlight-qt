@@ -32,7 +32,7 @@
  * D3D11/SDL/EGL video rendering pipeline.
  *
  * Menu structure:
- *   Tab bar:     Quick | Display | Input | Host | Session. Each top-level entry
+ *   Tab bar:     Quick | Stream | Display | Input | Host | Session. Each top-level entry
  *                is filed into a tab by tabForAction() (one table, keyed by
  *                MenuAction). Tabs without entries are hidden, and the last
  *                tab is remembered for the panel's lifetime (one session).
@@ -40,7 +40,8 @@
  *   Sub-levels:  Bitrate (scrubber + presets), Menu Position, USB Devices
  *                (when enabled), Performance Overlay, Send Keys, Host Commands
  *                (Foundation Sunshine only), Stream Quality (resolution / FPS
- *                presets), Session (live totals). A sub-level records the
+ *                presets), gear settings/shortcuts/Quick pins. Session facts
+ *                and live totals are inline. A sub-level records the
  *                action of the entry that opens it (MenuLevel::openAction)
  *                and is looked up by it; no level has a fixed index.
  *
@@ -66,6 +67,10 @@ public:
         Quit,
         QuitAndExit,
         ToggleFullScreen,
+        OpenWindowMode,
+        SetWindowModeWindowed,
+        SetWindowModeBorderless,
+        SetWindowModeFullscreen,
         ToggleStatsOverlay,
         ToggleMouseMode,
         ToggleCursorHide,
@@ -137,6 +142,22 @@ public:
         ToggleKeyboardGrab,
         CycleOverlayPreset,
         CancelFileTransfer,
+        OpenMouseMode,
+        SetMouseModeGame,
+        SetMouseModeDesktop,
+        ToggleAudioMute,
+        ToggleMuteOnFocusLoss,
+        ToggleResolutionMatch,
+        MatchResolutionNow,
+        OpenMenuSettings,
+        OpenShortcuts,
+        OpenShortcutAction,
+        CaptureShortcut,
+        ClearShortcut,
+        ResetShortcut,
+        OpenQuickPins,
+        ToggleQuickPin,
+        ToggleRightAltRelease,
         MenuActionMax
     };
 
@@ -144,6 +165,7 @@ public:
     enum class MenuTab
     {
         Quick,
+        Stream,
         Display,
         Input,
         Host,
@@ -197,12 +219,15 @@ public:
         QString name;
     };
 
-    enum class MenuItemType {
-        Action,     // dispatch action + close menu
-        SubMenu,    // navigate to sub-level
-        Toggle,     // dispatch action, toggle visual state, keep menu open
-        Back,       // navigate back to top level
-        Slider,     // in-row value scrubber (drag/wheel/gamepad); keeps menu open
+    enum class MenuItemType
+    {
+        Action,  // dispatch action + close menu
+        SubMenu, // navigate to sub-level
+        Toggle,  // dispatch action, owner pushes state, keep menu open
+        Back,    // navigate back to top level
+        Slider,  // in-row value scrubber (drag/wheel/gamepad); keeps menu open
+        Header,
+        Info,
     };
 
     using ActionCallback = std::function<void(MenuAction)>;
@@ -259,8 +284,8 @@ public:
         m_StreamQualityCallback = std::move(cb);
     }
 
-    // Rows (label, value) of the Session level. Polled when the level opens
-    // and about once a second while it is shown; keep the row count fixed.
+    // Inline rows (label, value) on Session. Polled when shown and about once
+    // a second while that tab is shown; keep the row count fixed.
     using SessionStatsProvider = std::function<std::vector<std::pair<QString, QString>>()>;
     void setSessionStatsProvider(SessionStatsProvider provider);
 
@@ -300,7 +325,7 @@ public:
     // Layout, scale (75-150%) and opacity (40-100%) of the panel
     void setStyle(OverlayMenu::Layout layout, int scalePercent, int opacityPercent);
     OverlayMenu::Layout menuLayout() const { return m_Layout; }
-    // The chosen scale; a level too tall for the stream is shown smaller
+    // The chosen scale; tall levels scroll without reducing typography.
     int scalePercent() const { return qRound(m_RequestedScale * 100); }
     int opacityPercent() const { return qRound(m_PanelOpacity * 100); }
     void setPointerEditMode(bool enabled);
@@ -342,8 +367,25 @@ public:
     std::optional<QPoint> detachedPosition() const { return m_DetachedPosition; }
     void setDetached(bool detached);
 
+    enum class WindowMode
+    {
+        Windowed,
+        Borderless,
+        Fullscreen
+    };
+    static std::optional<WindowMode> windowModeForAction(MenuAction action);
+    void updateWindowModeState(WindowMode current, bool windowed, bool borderless, bool fullscreen);
+
     // Update dynamic state before showing the menu
     void updateMicrophoneState(bool enabled);
+    // Session owns these snapshots, including desired mouse mode while the
+    // menu is open. Commands notify synchronously; only Session applies capture.
+    void updateInputState(bool desktopMode, bool capturedBeforeMenu, bool cursorVisible,
+                          bool regionLock, bool systemKeyCapture);
+    void updateAudioState(bool manuallyMuted, bool muteOnFocusLoss);
+    void updateResolutionMatchState(bool hostSupported, bool automatic, bool fullscreen,
+                                    bool canMatchNow);
+    void setConnectionInfo(std::vector<std::pair<QString, QString>> facts);
     void updateBitrateState(int bitrateKbps);
     void updateMenuPositionState(MenuAction activePlacementAction);
     // Marks the active layout and scale in the Menu Layout level
@@ -416,6 +458,15 @@ public:
     QString rowDetail(int row) const;
     QRect rowGeometry(int row) const;
     QRect tabGeometry(MenuTab tab) const; // empty when the tab is hidden
+    QRect gearGeometry() const;
+    QRect bitrateTrackGeometry(int row = 0) const;
+    QRect rowViewportGeometry() const;
+    bool rowEnabled(int row) const;
+    bool rowToggleState(int row) const;
+    int focusedRow() const { return m_HoveredIndex; }
+    int effectiveScalePercent() const { return qRound(m_Scale * 100); }
+    void ensureRowVisible(int row);
+    QImage renderImage();
 
     // Gamepad navigation
     void gamepadMoveUp();
@@ -435,6 +486,15 @@ public:
     // Enter/Space select, Backspace/Escape go back. Returns false for keys
     // that are not menu keys, or when the menu is hidden.
     bool handleNavigationKey(int key, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
+    bool isCapturingShortcut() const
+    {
+        return m_Visible && (m_CaptureShortcutSlot >= 0 || !m_ShortcutCapturedKeys.isEmpty());
+    }
+    // Forward both SDL halves while isCapturingShortcut() is true, including
+    // key-ups after a binding is saved (the query drains captured keys).
+    // Uses ShortcutKeys/SDL2 IDs, not a platform-native scan code.
+    // Qt navigation needs no native handle.
+    bool handleShortcutKey(int scancode, Qt::KeyboardModifiers modifiers, bool pressed);
 
 protected:
     void paintOverlay(QPainter& painter) override;
@@ -505,12 +565,25 @@ private:
     };
 
     void buildMenuLevels();
+    void applyOwnedState();
+    void syncQuick();
+    void moveFocus(int direction);
+    bool focusable(const MenuItem& item) const;
+    void activateItem(MenuItem item);
+    bool handleEditorItem(const MenuItem& item);
+    void rebuildShortcutEditor();
+    void saveShortcutCandidate(const ShortcutProfile& candidate, int slot);
+    int viewportHeight() const;
     void applyMetrics();
     // Unscaled width the content needs so that nothing is cut off
     int requiredMenuWidth() const;
     QString gamepadHintText() const;
     int gamepadHintWidth() const; // 0 without gamepads
     int menuHeight() const;
+    QStringList releaseDetailLines(const MenuItem& item, int availableWidth) const;
+    int rowHeight(const MenuItem& item) const;
+    int rowTop(int row) const;
+    int rowsHeight(const MenuLevel& level) const;
     // Left edge of the rows: right of the tab rail in the Side panel layout
     int rowsLeft() const { return m_Layout == OverlayMenu::Layout::SidePanel ? m_RailWidth : 0; }
     int rowsWidth() const { return m_MenuWidth - rowsLeft(); }
@@ -540,7 +613,7 @@ private:
     MenuItem* findRootItem(MenuAction action);
     void showTabLevel(int level, int direction); // direction: slide, 0 for none
     int contentTop() const { return m_TitleHeight + m_TabBarHeight + m_Padding; }
-    int railTabHeight() const { return m_ItemHeight; }
+    int railTabHeight() const;
     QRect tabRect(int visibleIndex, int contentWidth) const;
     void repositionWindow();
     void showInternal(); // shared show logic after geometry is set
@@ -563,6 +636,8 @@ private:
     // Index of the performance overlay level, refreshed on every build
     // from levelForOpenAction().
     int m_StatsOverlayLevel = -1;
+    WindowMode m_StreamWindowMode = WindowMode::Windowed;
+    bool m_CanWindowed = true, m_CanBorderless = true, m_CanFullscreen = true;
     int m_StatsOpacityLevel = -1;
     StatsOverlay::Preset m_StatsOverlayPreset = StatsOverlay::Preset::Off;
     bool m_StatsOverlayEditable = true;
@@ -574,9 +649,33 @@ private:
     void refreshSessionStats();
     int m_SessionStatsLevel = -1;
     SessionStatsProvider m_SessionStatsProvider;
+    std::vector<std::pair<QString, QString>> m_ConnectionInfo;
     QTimer m_SessionStatsTimer;
 
     std::vector<MenuLevel> m_MenuLevels;
+    std::vector<MenuItem> m_PinCatalog;
+    QStringList m_QuickPins;
+    bool m_DesktopMode = false, m_CapturedBeforeMenu = false, m_CursorVisible = true;
+    bool m_RegionLock = false, m_SystemKeyCapture = false;
+    bool m_ManuallyMuted = false, m_MuteOnFocusLoss = false;
+    bool m_MicrophoneEnabled = false, m_GamepadMouseEnabled = false;
+    bool m_MatchSupported = false, m_AutomaticMatch = false;
+    bool m_MatchFullscreen = false, m_CanMatchNow = false;
+    QTimer m_QuitConfirmTimer;
+    QString m_EditingShortcut;
+    int m_CaptureShortcutSlot = -1;
+    QString m_ShortcutError;
+    ModifierKeyRecorder m_ShortcutModifierRecorder{ true };
+    QSet<int> m_ShortcutCapturedKeys;
+    struct BackLocation
+    {
+        MenuAction openAction;
+        MenuAction focusAction;
+        QString payload;
+        int focusCode;
+    };
+    std::vector<BackLocation> m_BackStack;
+    int m_ScrollOffset = 0;
     // Level indices of the visible tab roots, in display order
     std::vector<int> m_TabLevels;
     // Last chosen tab; survives rebuilds, closes and reopens

@@ -45,6 +45,10 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | overlay_toast_event_state | 悬浮 toast 事件状态 | Windows |
 | stats_overlay_layout | Production stats painter/layout and move-mode controls, compiled zh_CN/zh_TW labels, real controller preset/detach/Off-preview lifecycle with a fake connection/renderer (offscreen) | Windows |
 | overlay_menu_navigation | 悬浮菜单键盘/鼠标导航(QTest 事件,需 offscreen) | Windows |
+| live_window_mode | Production Session mode transitions and menu dispatch/capture using a fake SDL/Qt shell and the real menu (offscreen) | Windows |
+| menu_session | Production menu dispatch, delayed close/capture ownership, pending mouse mode and manual/focus audio policy with fake SDL | Ubuntu / Windows (unittest + C++) |
+| menu_phase1 | Real menu Phase 1 pins/state gates, confirmation, shortcut editor and narrow-window keyboard/controller scrolling at DPR 1/1.5/2 | Windows (offscreen QtTest) |
+| overlay_layers | Production offscreen bitmap layer composition and ownership | Windows |
 | stream_quality | 串流画质菜单的分辨率/帧率预设生成、配置差异与切换路径判定 | Windows |
 | app_picker | 名称/类型/运行状态/隐藏状态筛选，排序与分组顺序 | Windows |
 | settings_localization | 中文翻译 .qm + 设置页布局(qmltestrunner) | Windows |
@@ -53,11 +57,29 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 
 ## 仅本地/手动
 
+`live_window_mode` extracts the production Session mode/dispatch methods at qmake
+time, so its non-disruptive shell exercises all six directed mode transitions,
+current-mode no-op, failures, remembered window bounds, the existing shortcut,
+platform restrictions and real menu selection/capture restoration. It does not
+switch the user's display or verify native fullscreen animations. The choice is
+per-session; the saved startup preference and enabled resolution matching stay
+unchanged. Run `python -m unittest discover -s tests\live_window_mode -p 'test_*.py'`
+for the source wiring contract, then build/run `live_window_mode` offscreen.
+
 `reconnect_video_callbacks` runs the real common-c `FakeCallbacks.c` across three
 pull-renderer connections and checks that push callbacks remain intact. Its Python
 gate checks both FFmpeg pull sites and PyroWave's pull thread mark host video,
 not decoder self-test samples, and that retries reset the atomic received flag.
 The native test runs in Windows CI; the Python gates run in `version-tests`.
+The local `test_host_restart_recovery.py` regression additionally compiles the
+production connection-start HTTP block and authenticated server-info reader
+against a scripted transport. It covers stale busy state after Core respawn,
+`NO_APP_TO_RESUME` races, original app-ID reuse, other-app refusal, authenticated
+refresh failure and unchanged explicit graceful-quit behavior. Run it with Qt
+`qmake` and a C++ compiler on PATH; on Windows it uses the local
+`E:\Code\moonlight-tools\run-test-exe.ps1` DLL-safe launcher. It performs no live
+host, RDP or login actions. Graceful service migration still needs a distinct host
+restart indication; generic graceful termination deliberately remains final.
 The production inline received-video marker is also compiled in a lightweight
 Session shell to check decoder-thread marking, retry reset and the null-session path.
 
@@ -108,6 +130,12 @@ generous resize zones, exact free dragging with 4 px magnets, conditional edit-o
 and preserves explicit settings when defaults change. Compact reflows all 13 labels and
 values and metric tooltips at 12 widths and DPR 1/1.5/2 even with a stale 25 px saved
 height. Groups wrap; narrower-than-group layouts stack labels above complete values.
+Repeated-update tests alternate NET `8 ± 1` / `12 ± 3` at the discovered real-font
+wrap boundary and a fixed repro width, plus other digit/decimal/availability transitions.
+Formatted value slots reserve numeric capacity; exceptional wider values keep their
+high-water budget until an actual resize, scale, preset or screen-bounds change.
+Inline and stacked paths share that budget. The controller's actual refresh/reposition
+path is exercised too; all13 Compact values/tooltips and bounds remain checked.
 The inline trace measures frame time, not maximum FPS. Minimal retains FPS/low/latency;
 Custom retains its selection; Detailed gates unmeasured Present/FEC and retains 0.1% low.
 Real controller/window clicks cover every edit control,
@@ -156,6 +184,18 @@ the production model. Run the Windows QML tests with
 `QT_QUICK_CONTROLS_STYLE=FluentWinUI3`, matching the app rather than the test runner's
 unsupported native customization style. These tests use offscreen windows/fakes;
 they do not capture desktop input or verify delivery on a real receiving client.
+
+`menu_session` compiles the actual Session live-action handler, menu-close input
+owner, audio policy and input mouse-mode setter against a non-disruptive SDL shell.
+Run `python -m unittest discover -s tests\menu_session -p 'test_*.py'` from an MSVC
+environment (or a C++ compiler on Linux); Windows executables use the DLL-safe
+PowerShell launcher. It covers
+Release mouse, pending Game/Desktop changes with both pre-menu capture states,
+Desktop-only guards, manual mute across focus changes and one-shot dispatch.
+It does not replace native streamed-input/audio verification.
+Windows replay harnesses use the local DLL-safe launcher when available, otherwise
+`scripts\run-built-test.ps1`, which finds Qt using `qmake` and suppresses native
+loader dialogs. Use PowerShell 7 (`pwsh`), with Qt's `qmake` on PATH.
 
 `resolution_match` compiles the production Session resize/report methods with fake
 time, window geometry, transport and decoder-reset events. Run `python -m unittest

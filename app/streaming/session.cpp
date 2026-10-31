@@ -87,6 +87,7 @@
 #include <QThreadPool>
 #include <QRunnable>
 #include <QReadLocker>
+#include <QTimer>
 #include <QSvgRenderer>
 #include <QPainter>
 #include <QImage>
@@ -2765,15 +2766,46 @@ void Session::scheduleWindowResolutionMatch()
     constexpr Uint32 RESOLUTION_MATCH_DEBOUNCE_MS = 400;
 
     // Restarted by every resize event, so only the settled size is requested
-    if (m_Preferences->resolutionMatchWindow && m_ResolutionMatch.hostSupported) {
+    if ((m_Preferences->resolutionMatchWindow || m_ResolutionMatch.oneShot) &&
+        m_ResolutionMatch.hostSupported) {
         m_ResolutionMatch.deadline = SDL_GetTicks() + RESOLUTION_MATCH_DEBOUNCE_MS;
     }
 }
 
+void Session::scheduleInitialWindowResolutionMatch(bool awaitingFullscreenEntry)
+{
+    // Window creation does not emit SIZE_CHANGED on every platform. Match the
+    // initial size only after fullscreen entry is settled or has failed.
+    if (!awaitingFullscreenEntry && !isStreamingWindowFullscreen()) {
+        scheduleWindowResolutionMatch();
+    }
+}
+
+bool Session::requestWindowResolutionMatchNow()
+{
+    const Uint32 now = SDL_GetTicks();
+    if (!m_ResolutionMatch.hostSupported || m_SuppressConnectionErrorDialog ||
+        m_PendingStreamQuality || m_ResolutionMatch.oneShot ||
+        (m_ResolutionMatch.requestTicks != 0 &&
+         !SDL_TICKS_PASSED(now, m_ResolutionMatch.requestTicks + 5000)) ||
+        (m_ResolutionMatch.lastAttemptTicks != 0 &&
+         !SDL_TICKS_PASSED(now, m_ResolutionMatch.lastAttemptTicks + 400))) {
+        return false;
+    }
+    m_ResolutionMatch.oneShot = true;
+    scheduleWindowResolutionMatch();
+    return true;
+}
+
 void Session::processWindowResolutionMatch()
 {
-    if (!m_Preferences->resolutionMatchWindow || !m_ResolutionMatch.hostSupported) {
+    if ((!m_Preferences->resolutionMatchWindow && !m_ResolutionMatch.oneShot) ||
+        !m_ResolutionMatch.hostSupported) {
         m_ResolutionMatch.deadline = 0;
+        m_ResolutionMatch.oneShot = false;
+        return;
+    }
+    if (m_PendingStreamQuality || m_SuppressConnectionErrorDialog) {
         return;
     }
 
@@ -2821,12 +2853,15 @@ void Session::processWindowResolutionMatch()
     const QSize target(width & ~1, height & ~1);
     if (target.width() < MIN_REQUESTED_DIMENSION || target.height() < MIN_REQUESTED_DIMENSION ||
         target.width() > MAX_REQUESTED_DIMENSION || target.height() > MAX_REQUESTED_DIMENSION) {
+        m_ResolutionMatch.oneShot = false;
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Window size is outside host resolution limits");
         return;
     }
 
     // Neither the current size nor a repeat of a request the host ignored would change anything
     const QSize stream(m_ActiveVideoWidth, m_ActiveVideoHeight);
     if (target == stream || target == m_ResolutionMatch.requestedSize) {
+        m_ResolutionMatch.oneShot = false;
         return;
     }
 
@@ -2838,6 +2873,8 @@ void Session::processWindowResolutionMatch()
         return;
     }
 
+    m_ResolutionMatch.oneShot = false;
+    m_ResolutionMatch.lastAttemptTicks = now;
     const int result = LiSendResolutionChangeRequest(target.width(), target.height());
     if (result == LI_RESOLUTION_CHANGE_OK) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -2910,10 +2947,75 @@ void Session::handleHostResolutionReport(int width, int height)
     updateStreamQualityMenuState();
 }
 
-void Session::toggleFullscreen()
+Session::WindowMode Session::streamingWindowMode() const
 {
-    bool fullScreen = !isStreamingWindowFullscreen();
+    if (m_WaylandStreamWindow != nullptr) {
+        return isStreamingWindowFullscreen() ? WindowMode::Borderless : WindowMode::Windowed;
+    }
+    if (m_Window != nullptr) {
+        const Uint32 flags = SDL_GetWindowFlags(m_Window);
+        if ((flags & SDL_WINDOW_FULLSCREEN_DESKTOP) == SDL_WINDOW_FULLSCREEN_DESKTOP) {
+            return WindowMode::Borderless;
+        }
+        if (flags & SDL_WINDOW_FULLSCREEN) {
+            return WindowMode::Fullscreen;
+        }
+        if (isStreamingWindowBorderlessOnDisplay()) {
+            return WindowMode::Borderless;
+        }
+    }
+    return WindowMode::Windowed;
+}
 
+bool Session::supportsStreamingWindowMode(WindowMode mode) const
+{
+    if (m_Window == nullptr)
+        return false;
+#if !SDL_VERSION_ATLEAST(2, 0, 11)
+    if (qgetenv("DESKTOP_SESSION") == "LXDE-pi") {
+        return mode == WindowMode::Windowed;
+    }
+#endif
+    if (mode == WindowMode::Fullscreen) {
+        if (m_WaylandStreamWindow != nullptr || strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0)
+            return false;
+#ifdef Q_OS_DARWIN
+        return qEnvironmentVariableIntValue("I_WANT_BUGGY_FULLSCREEN") != 0;
+#endif
+    }
+    if (mode != WindowMode::Fullscreen && !WMUtils::isRunningDesktopEnvironment()) {
+        return false;
+    }
+    return true;
+}
+
+bool Session::setStreamingWindowMode(WindowMode mode)
+{
+    const WindowMode previous = streamingWindowMode();
+    if (m_Window != nullptr && previous == mode)
+        return true;
+    if (!supportsStreamingWindowMode(mode)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Requested live window mode is not supported");
+        showStreamingToast(tr("This window mode is not supported on this platform."), 3500);
+        return false;
+    }
+
+    if (previous == WindowMode::Windowed) {
+        if (m_WaylandStreamWindow != nullptr) {
+            m_WindowedBounds = m_WaylandStreamWindow->geometry();
+            m_WindowedMaximized =
+                m_WaylandStreamWindow->windowStates().testFlag(Qt::WindowMaximized);
+        } else {
+            int x, y, width, height;
+            SDL_GetWindowPosition(m_Window, &x, &y);
+            SDL_GetWindowSize(m_Window, &width, &height);
+            m_WindowedBounds = QRect(x, y, width, height);
+            m_WindowedMaximized = (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_MAXIMIZED) != 0;
+        }
+    }
+
+    bool decoderDestroyed = false;
+    bool accepted = true;
 #if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN)
     // Destroy the video decoder before toggling full-screen because D3D9 can try
     // to put the window back into full-screen before we've managed to destroy
@@ -2927,38 +3029,122 @@ void Session::toggleFullscreen()
     delete m_VideoDecoder;
     m_VideoDecoder = nullptr;
     SDL_UnlockMutex(m_DecoderLock);
+    decoderDestroyed = true;
 #endif
 
     // Qt owns the native Wayland toplevel, so only Qt may change its shell
     // state. SDL continues to own window state everywhere else.
     if (m_WaylandStreamWindow != nullptr) {
-        if (fullScreen) {
+        if (mode != WindowMode::Windowed) {
             m_WaylandStreamWindow->showFullScreen();
         } else {
             m_WaylandStreamWindow->showNormal();
+            if (m_WindowedBounds.isValid())
+                m_WaylandStreamWindow->setGeometry(m_WindowedBounds);
+            if (m_WindowedMaximized)
+                m_WaylandStreamWindow->showMaximized();
         }
         processQtOverlayEvents();
     } else {
-        SDL_SetWindowFullscreen(m_Window, fullScreen ? m_FullScreenFlag : 0);
+        const Uint32 flags = mode == WindowMode::Windowed     ? 0
+                             : mode == WindowMode::Borderless ? SDL_WINDOW_FULLSCREEN_DESKTOP
+                                                              : SDL_WINDOW_FULLSCREEN;
+        if (SDL_SetWindowFullscreen(m_Window, flags) < 0) {
+            accepted = false;
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Live SDL_SetWindowFullscreen() failed: %s",
+                        SDL_GetError());
+            showStreamingToast(
+                tr("Could not change window mode: %1").arg(QString::fromUtf8(SDL_GetError())),
+                4500);
+        } else if (mode == WindowMode::Windowed) {
+            // Explicit remembered bounds also avoid SDL's macOS exclusive-exit
+            // giant-window bug; fullscreen-to-fullscreen never overwrites them.
+            SDL_SetWindowBordered(m_Window, SDL_TRUE);
+            if (m_WindowedBounds.isValid()) {
+                SDL_SetWindowSize(m_Window, m_WindowedBounds.width(), m_WindowedBounds.height());
+                SDL_SetWindowPosition(m_Window, m_WindowedBounds.x(), m_WindowedBounds.y());
+            }
+            if (m_WindowedMaximized)
+                SDL_MaximizeWindow(m_Window);
+        }
     }
 
-#ifdef Q_OS_DARWIN
-    // SDL on macOS has a bug that causes the window size to be reset to crazy
-    // large dimensions when exiting out of true fullscreen mode. We can work
-    // around the issue by manually resetting the position and size here.
-    if (!fullScreen && m_FullScreenFlag == SDL_WINDOW_FULLSCREEN) {
-        int x, y, width, height;
-        getWindowDimensions(x, y, width, height);
-        SDL_SetWindowSize(m_Window, width, height);
-        SDL_SetWindowPosition(m_Window, x, y);
+    // A failed/no-size-change SDL transition still needs to recreate a decoder
+    // destroyed by the platform workaround, not wait for a future resize.
+    if (decoderDestroyed) {
+        SDL_Event event = {};
+        event.type = SDL_RENDER_DEVICE_RESET;
+        pushEventOrWarn(event);
     }
-#endif
+
+    const bool changed = streamingWindowMode() == mode;
+    if (changed && mode != WindowMode::Windowed) {
+        m_FullScreenFlag =
+            mode == WindowMode::Borderless ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_FULLSCREEN;
+    }
+    if (!changed && m_WaylandStreamWindow != nullptr) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Qt did not enter the requested live window mode");
+        showStreamingToast(tr("The window system did not accept the requested window mode."), 3500);
+    }
 
     // Input handler might need to start/stop keyboard grab after changing modes
     m_InputHandler->updateKeyboardGrabState();
 
     // Input handler might need stop/stop mouse grab after changing modes
     m_InputHandler->updatePointerRegionLock();
+    syncQtOverlayWindowsWithSdlWindowState();
+    updateWindowModeMenuState();
+    return accepted && changed;
+}
+
+void Session::toggleFullscreen()
+{
+    WindowMode target = WindowMode::Windowed;
+    if (streamingWindowMode() == WindowMode::Windowed) {
+        target = m_FullScreenFlag == SDL_WINDOW_FULLSCREEN ? WindowMode::Fullscreen
+                                                           : WindowMode::Borderless;
+        if (!supportsStreamingWindowMode(target)) {
+            target = supportsStreamingWindowMode(WindowMode::Borderless) ? WindowMode::Borderless
+                                                                         : WindowMode::Fullscreen;
+        }
+    }
+    setStreamingWindowMode(target);
+}
+
+void Session::updateWindowModeMenuState()
+{
+    if (m_MenuPanel != nullptr) {
+        m_MenuPanel->updateWindowModeState(streamingWindowMode(),
+                                           supportsStreamingWindowMode(WindowMode::Windowed),
+                                           supportsStreamingWindowMode(WindowMode::Borderless),
+                                           supportsStreamingWindowMode(WindowMode::Fullscreen));
+    }
+}
+
+bool Session::handleWindowModeMenuAction(OverlayMenuPanel::MenuAction action)
+{
+    const auto mode = OverlayMenuPanel::windowModeForAction(action);
+    if (!mode)
+        return false;
+    m_DeferCaptureRestore = true;
+    setStreamingWindowMode(*mode);
+    restoreCaptureAfterWindowModeChange();
+    return true;
+}
+
+void Session::restoreCaptureAfterWindowModeChange()
+{
+    if (!m_DeferCaptureRestore)
+        return;
+    m_DeferCaptureRestore = false;
+    if (m_WasCapturedBeforeMenu) {
+        SDL_Delay(100);
+        SDL_FlushEvent(SDL_MOUSEMOTION);
+        if (isStreamingWindowVisible())
+            m_InputHandler->setCaptureActive(true);
+        m_WasCapturedBeforeMenu = false;
+    }
 }
 
 bool Session::isStreamingWindowFullscreen() const
@@ -2976,8 +3162,7 @@ bool Session::usesQtWaylandStreamWindow() const
 
 bool Session::isStreamingWindowBorderlessOnDisplay() const
 {
-    if (m_Preferences->windowMode != StreamingPreferences::WM_FULLSCREEN_DESKTOP ||
-        isStreamingWindowMinimized()) {
+    if (isStreamingWindowMinimized()) {
         return false;
     }
     if (m_WaylandStreamWindow != nullptr) {
@@ -3084,6 +3269,7 @@ void Session::syncWaylandSdlWindowState()
 
     if (qtStateChanged) {
         syncQtOverlayWindowsWithSdlWindowState();
+        updateWindowModeMenuState();
         if (m_InputHandler != nullptr) {
             m_InputHandler->refreshRemoteCursorScale();
             m_InputHandler->updateKeyboardGrabState();
@@ -3129,6 +3315,7 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition)
     // here: the menu now owns the pointer and restores capture when it closes.
     m_WasCapturedBeforeMenu =
         m_InputHandler->cancelMouseHoldRelease() || m_InputHandler->isCaptureActive();
+    m_PendingDesktopMouseMode.reset();
     if (m_WasCapturedBeforeMenu) {
         m_InputHandler->setCaptureActive(false);
     }
@@ -3158,6 +3345,9 @@ void Session::showQtOverlayMenu(std::optional<QPoint> pointerGlobalPosition)
     m_MenuPanel->updateMicrophoneState(m_MicStream != nullptr);
     m_MenuPanel->updateBitrateState(m_Preferences->bitrateKbps);
     updateStreamQualityMenuState();
+    updateWindowModeMenuState();
+    updateLiveMenuState();
+    updateConnectionMenuInfo();
     m_MenuPanel->updateGamepadMouseState(m_InputHandler->isMouseEmulationActive());
     // The trigger position controls where the menu opens; a manually dragged
     // position is the only independent location override.
@@ -3310,8 +3500,127 @@ void Session::syncQtOverlayWindowsWithSdlWindowState()
     }
 }
 
+void Session::updateAudioMuteState()
+{
+    m_AudioMuted = m_ManualAudioMuted || (m_Preferences->muteOnFocusLoss && !m_StreamInputFocused);
+}
+
+bool Session::handleOverlayMenuShortcutEvent(const SDL_KeyboardEvent& event)
+{
+    if (!m_MenuPanel || !m_MenuPanel->isCapturingShortcut()) {
+        return false;
+    }
+    Qt::KeyboardModifiers modifiers = Qt::NoModifier;
+    if (event.keysym.mod & KMOD_CTRL) {
+        modifiers |= Qt::ControlModifier;
+    }
+    if (event.keysym.mod & KMOD_ALT) {
+        modifiers |= Qt::AltModifier;
+    }
+    if (event.keysym.mod & KMOD_SHIFT) {
+        modifiers |= Qt::ShiftModifier;
+    }
+    if (event.keysym.mod & KMOD_GUI) {
+        modifiers |= Qt::MetaModifier;
+    }
+    m_MenuPanel->handleShortcutKey(event.keysym.scancode, modifiers, event.type == SDL_KEYDOWN);
+    return true;
+}
+
+void Session::finishOverlayMenuInput()
+{
+    if (m_PendingDesktopMouseMode) {
+        m_InputHandler->setAbsoluteMouseMode(*m_PendingDesktopMouseMode);
+        m_PendingDesktopMouseMode.reset();
+    }
+    if (m_WasCapturedBeforeMenu && !m_DeferCaptureRestore) {
+        if (isStreamingWindowVisible()) {
+            m_InputHandler->setCaptureActive(true);
+        }
+        m_WasCapturedBeforeMenu = false;
+    }
+}
+
+void Session::updateLiveMenuState()
+{
+    if (!m_MenuPanel || !m_InputHandler) {
+        return;
+    }
+    m_MenuPanel->updateInputState(
+        m_PendingDesktopMouseMode.value_or(m_InputHandler->isAbsoluteMouseMode()),
+        m_WasCapturedBeforeMenu, m_InputHandler->isCapturedCursorVisible(),
+        m_InputHandler->isPointerRegionLockEnabled(),
+        m_InputHandler->isSystemKeyCaptureEnabledForWindow());
+    m_MenuPanel->updateAudioState(m_ManualAudioMuted, m_Preferences->muteOnFocusLoss);
+    const Uint32 now = SDL_GetTicks();
+    const bool canMatch = !m_SuppressConnectionErrorDialog && !m_PendingStreamQuality &&
+                          !m_ResolutionMatch.oneShot &&
+                          (m_ResolutionMatch.requestTicks == 0 ||
+                           SDL_TICKS_PASSED(now, m_ResolutionMatch.requestTicks + 5000)) &&
+                          (m_ResolutionMatch.lastAttemptTicks == 0 ||
+                           SDL_TICKS_PASSED(now, m_ResolutionMatch.lastAttemptTicks + 400));
+    m_MenuPanel->updateResolutionMatchState(m_ResolutionMatch.hostSupported,
+                                            m_Preferences->resolutionMatchWindow,
+                                            isStreamingWindowFullscreen(), canMatch);
+}
+
+bool Session::handleLiveMenuAction(OverlayMenuPanel::MenuAction action)
+{
+    using Action = OverlayMenuPanel::MenuAction;
+    switch (action) {
+    case Action::UngrabInput:
+        m_WasCapturedBeforeMenu = false;
+        m_InputHandler->setCaptureActive(false);
+        m_InputHandler->raiseAllKeys();
+        showStreamingToast(tr("Click the stream to recapture"), 3000);
+        return true;
+    case Action::SetMouseModeGame:
+    case Action::SetMouseModeDesktop:
+        m_PendingDesktopMouseMode = action == Action::SetMouseModeDesktop;
+        break;
+    case Action::ToggleAudioMute:
+        m_ManualAudioMuted = !m_ManualAudioMuted;
+        updateAudioMuteState();
+        break;
+    case Action::ToggleMuteOnFocusLoss:
+        m_Preferences->muteOnFocusLoss = !m_Preferences->muteOnFocusLoss;
+        m_Preferences->save();
+        updateAudioMuteState();
+        break;
+    case Action::ToggleResolutionMatch:
+        m_Preferences->resolutionMatchWindow = !m_Preferences->resolutionMatchWindow;
+        m_Preferences->save();
+        if (m_Preferences->resolutionMatchWindow) {
+            scheduleWindowResolutionMatch();
+        }
+        break;
+    case Action::MatchResolutionNow:
+        if (requestWindowResolutionMatchNow()) {
+            showStreamingToast(tr("Window-size request queued; host support is best-effort"), 3000);
+        } else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Match now is not available");
+            showStreamingToast(tr("Window-size request is not available right now"), 3000);
+        }
+        break;
+    case Action::ToggleCursorHide:
+    case Action::TogglePointerRegionLock:
+        if (!m_PendingDesktopMouseMode.value_or(m_InputHandler->isAbsoluteMouseMode())) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "This control requires Desktop mouse mode");
+            return true;
+        }
+        return false;
+    default:
+        return false;
+    }
+    updateLiveMenuState();
+    return true;
+}
+
 void Session::dispatchQtMenuAction(OverlayMenuPanel::MenuAction action)
 {
+    if (handleLiveMenuAction(action)) {
+        return;
+    }
     if (const auto placement = menuPlacementForAction(action)) {
         // The original positions also bring back their own placement
         m_Preferences->setOverlayMenuPosition(*placement);
@@ -3324,6 +3633,9 @@ void Session::dispatchQtMenuAction(OverlayMenuPanel::MenuAction action)
         return;
     }
     if (handleStatsOverlayMenuAction(action)) {
+        return;
+    }
+    if (handleWindowModeMenuAction(action)) {
         return;
     }
 
@@ -3427,24 +3739,10 @@ void Session::dispatchQtMenuAction(OverlayMenuPanel::MenuAction action)
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                 "Qt overlay menu action: %d", (int)action);
     m_InputHandler->getShortcutDispatcher().trigger(shortcutAction);
+    updateLiveMenuState();
 
     // Restore mouse capture after window-state-changing actions complete
-    if (m_DeferCaptureRestore) {
-        m_DeferCaptureRestore = false;
-        if (m_WasCapturedBeforeMenu) {
-            // Allow the window to settle after fullscreen/minimize toggle
-            SDL_Delay(100);
-            SDL_FlushEvent(SDL_MOUSEMOTION);
-
-            // Recapture via the proper input handler path, which handles
-            // pointer region lock, keyboard grab, and relative mouse mode
-            m_InputHandler->setCaptureActive(true);
-            m_WasCapturedBeforeMenu = false;
-
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Deferred capture restore completed after window state change");
-        }
-    }
+    restoreCaptureAfterWindowModeChange();
 }
 
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
@@ -4678,10 +4976,9 @@ HostConnectionInfoSnapshot captureHostConnectionInfoSnapshot(NvComputer* compute
     return snapshot;
 }
 
-void updateHostConnectionInfoFromServerInfo(const QString& serverInfo,
-                                            NvComputer* computer,
+void updateHostConnectionInfoFromServerInfo(const QString& serverInfo, NvComputer* computer,
                                             HostConnectionInfoSnapshot* snapshot,
-                                            bool resumingSession)
+                                            const char* operation)
 {
     QString refreshedCodecSupport = NvHTTP::getXmlString(serverInfo, "ServerCodecModeSupport");
     QString refreshedAppVersion = NvHTTP::getXmlString(serverInfo, "appversion");
@@ -4692,10 +4989,8 @@ void updateHostConnectionInfoFromServerInfo(const QString& serverInfo,
 
         if (refreshedServerCodecModeSupport != snapshot->serverCodecModeSupport) {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Host codec mode support changed after %s: %d -> %d",
-                        resumingSession ? "resume" : "launch",
-                        snapshot->serverCodecModeSupport,
-                        refreshedServerCodecModeSupport);
+                        "Host codec mode support changed after %s: %d -> %d", operation,
+                        snapshot->serverCodecModeSupport, refreshedServerCodecModeSupport);
         }
 
         snapshot->serverCodecModeSupport = refreshedServerCodecModeSupport;
@@ -4752,11 +5047,6 @@ void prepareServerInformation(const HostConnectionInfoSnapshot& snapshot,
 // Called in a non-main thread
 bool Session::startConnectionAsync()
 {
-    // The UI should have ensured the old game was already quit
-    // if we decide to stream a different game.
-    Q_ASSERT(m_Computer->currentGameId == 0 ||
-             m_Computer->currentGameId == m_App.id);
-
     bool enableGameOptimizations;
     if (m_Computer->isNvidiaServerSoftware) {
         // GFE will set all settings to 720p60 if it doesn't recognize
@@ -4781,7 +5071,6 @@ bool Session::startConnectionAsync()
     }
 
     HostConnectionInfoSnapshot hostConnectionInfo = captureHostConnectionInfoSnapshot(m_Computer);
-    const bool resumingSession = hostConnectionInfo.currentGameId != 0;
 
     QString rtspSessionUrl;
 
@@ -4848,6 +5137,17 @@ bool Session::startConnectionAsync()
 
     try {
         NvHTTP http(m_Computer);
+        if (m_SuppressConnectionErrorDialog) {
+            // Polling is stopped while streaming. A respawned host can have
+            // lost its app state, so choose the retry verb from its fresh state.
+            updateHostConnectionInfoFromServerInfo(
+                http.getAuthenticatedServerInfo(NvHTTP::NVLL_NONE, true), m_Computer,
+                &hostConnectionInfo, "reconnect");
+        }
+        if (hostConnectionInfo.currentGameId != 0 && hostConnectionInfo.currentGameId != m_App.id) {
+            throw GfeHttpResponseException(409, "A different app is running on the host");
+        }
+        const bool resumingSession = hostConnectionInfo.currentGameId != 0;
         RemoteStreamConfig remoteStreamConfig(
             remoteResolution, m_Preferences->remoteResolutionWidth,
             m_Preferences->remoteResolutionHeight, remoteFps, m_Preferences->remoteFpsRate,
@@ -4869,9 +5169,8 @@ bool Session::startConnectionAsync()
 
         try {
             updateHostConnectionInfoFromServerInfo(http.getServerInfo(NvHTTP::NVLL_NONE, true),
-                                                   m_Computer,
-                                                   &hostConnectionInfo,
-                                                   resumingSession);
+                                                   m_Computer, &hostConnectionInfo,
+                                                   resumingSession ? "resume" : "launch");
         } catch (const GfeHttpResponseException& e) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "Failed to refresh server info after %s: %s",
@@ -4884,11 +5183,15 @@ bool Session::startConnectionAsync()
                         qPrintable(e.toQString()));
         }
     } catch (const GfeHttpResponseException& e) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Connection launch failed: %s",
+                    qPrintable(e.toQString()));
         if (!m_SuppressConnectionErrorDialog) {
             emit displayLaunchError(tr("Host returned error: %1").arg(e.toQString()));
         }
         return false;
     } catch (const QtNetworkReplyException& e) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Connection launch failed: %s",
+                    qPrintable(e.toQString()));
         if (!m_SuppressConnectionErrorDialog) {
             emit displayLaunchError(e.toQString());
         }
@@ -5376,6 +5679,7 @@ void Session::exec()
 
     int x, y, width, height;
     getWindowDimensions(x, y, width, height);
+    m_WindowedBounds = QRect(x, y, width, height);
 
     // 全屏会话：让串流窗口从 Qt 界面窗口所在的位置和尺寸起步。
     //
@@ -5384,8 +5688,8 @@ void Session::exec()
     // 界面窗口毫无关系的矩形开始放大，看起来像凭空弹出一个空窗口再被撑大。
     // 用界面窗口自己的 frame 起步，动画读起来就是「刚才那个窗口变成了全屏」。
     //
-    // 这里只改初始创建；运行中 Ctrl+Alt+Shift+F 退出全屏时走的是 toggleFullscreen()
-    // 里的那次 getWindowDimensions()，恢复的仍然是串流分辨率大小。
+    // Only initial creation uses the GUI frame. Live mode changes restore
+    // the remembered streaming window's windowed bounds.
     if (m_IsFullScreen && m_QtWindow != nullptr) {
         const QRect creationGeometry = qtWindowCreationGeometryForSdl(m_QtWindow);
         if (creationGeometry.isValid()) {
@@ -5553,6 +5857,8 @@ void Session::exec()
         }
     }
 
+    scheduleInitialWindowResolutionMatch(awaitingFullScreenEntry);
+
     // 串流窗口就位之后才隐藏界面窗口。
     //
     // 以前这件事在 QML 的退场动画末尾做（hideForStreaming），时机太早：macOS 上
@@ -5659,6 +5965,15 @@ void Session::exec()
     m_MenuPanel->setActionCallback([this](OverlayMenuPanel::MenuAction action) {
         dispatchQtMenuAction(action);
     });
+    auto menuStateTimer = new QTimer(m_MenuPanel);
+    menuStateTimer->setInterval(250);
+    QObject::connect(menuStateTimer, &QTimer::timeout, m_MenuPanel, [this] {
+        if (m_MenuPanel->isMenuVisible()) {
+            updateLiveMenuState();
+            updateConnectionMenuInfo();
+        }
+    });
+    menuStateTimer->start();
     m_MenuPanel->setShortcutProfileCallback(
         [this](const ShortcutProfile& profile) { m_InputHandler->reloadShortcuts(profile); });
     m_MenuPanel->setRemoteUsbDeviceCallback([this](const QString& deviceId) {
@@ -5710,12 +6025,7 @@ void Session::exec()
         // Note: for actions that change window state (fullscreen, minimize),
         // we defer capture restoration to after the action completes.
         // See dispatchQtMenuAction() for those cases.
-        if (m_WasCapturedBeforeMenu && !m_DeferCaptureRestore) {
-            if (isStreamingWindowVisible()) {
-                m_InputHandler->setCaptureActive(true);
-            }
-            m_WasCapturedBeforeMenu = false;
-        }
+        finishOverlayMenuInput();
 
         syncQtOverlayWindowsWithSdlWindowState();
 
@@ -6041,9 +6351,8 @@ void Session::exec()
             switch (event.window.event) {
             case SDL_WINDOWEVENT_FOCUS_LOST:
                 m_WaylandOverlayShortcutPressed = false;
-                if (m_Preferences->muteOnFocusLoss) {
-                    m_AudioMuted = true;
-                }
+                m_StreamInputFocused = false;
+                updateAudioMuteState();
                 m_InputHandler->notifyFocusLost();
                 // Close overlay menu when main window loses focus
                 if (m_MenuPanel && m_MenuPanel->isMenuVisible()) {
@@ -6052,9 +6361,8 @@ void Session::exec()
                 break;
             case SDL_WINDOWEVENT_FOCUS_GAINED:
                 m_InputHandler->reloadShortcuts();
-                if (m_Preferences->muteOnFocusLoss) {
-                    m_AudioMuted = false;
-                }
+                m_StreamInputFocused = true;
+                updateAudioMuteState();
                 m_InputHandler->notifyFocusGained();
                 break;
             case SDL_WINDOWEVENT_LEAVE:
@@ -6073,6 +6381,7 @@ void Session::exec()
                 // Cocoa 在全屏切换结束之后才发这个事件，拿它当「窗口已落定」的信号
                 hideGuiWindowWhenSettled(true);
                 syncQtOverlayWindowsWithSdlWindowState();
+                updateWindowModeMenuState();
                 // 远端光标的尺寸是按窗口的 backing 比例算的（见 getRemoteCursorScale()），
                 // 换屏、改分辨率、改缩放都会让它失效。挂在这一组事件上而不是只挂
                 // DISPLAY_CHANGED：同一块屏上改系统缩放只会发 SIZE_CHANGED。
@@ -6383,6 +6692,9 @@ void Session::exec()
         case SDL_KEYUP:
         case SDL_KEYDOWN: {
             presence.runCallbacks();
+            if (handleOverlayMenuShortcutEvent(event.key)) {
+                break;
+            }
             // Escape follows the same back/close rule as the controller. Swallow
             // both halves of the key press so it cannot reach the remote app.
             if (m_MenuPanel && (m_MenuPanel->isMenuVisible() || m_MenuPanel->isClosing()) &&
@@ -6782,8 +7094,9 @@ DispatchDeferredCleanup:
     // routinely maximize the streaming window simply to view the stream
     // in a larger window, but they don't necessarily want the UI in such
     // a large window.
-    const bool keepGuiMinimized = !m_IsFullScreen && isStreamingWindowMinimized();
-    if (!m_IsFullScreen && m_QtWindow != nullptr && m_Window != nullptr) {
+    const bool endedWindowed = streamingWindowMode() == WindowMode::Windowed;
+    const bool keepGuiMinimized = endedWindowed && isStreamingWindowMinimized();
+    if (endedWindowed && m_QtWindow != nullptr && m_Window != nullptr) {
 #if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
         if (keepGuiMinimized) {
             m_QtWindow->setWindowStates(m_QtWindow->windowStates() | Qt::WindowMinimized);

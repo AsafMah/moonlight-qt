@@ -20,27 +20,29 @@ struct OverlayFonts
     QFont big;
 };
 
-// Fixed pixel sizes for the same reason as OverlayToast: point sizes go
-// through the platform font DPI, which differs from Qt's UI scale on Linux
-inline OverlayFonts overlayFonts(int scalePercent = 100)
+inline QFont stripFont(int pixels = 18, bool label = false)
 {
-    const qreal scale = clampScalePercent(scalePercent) / 100.0;
-    OverlayFonts fonts;
-    fonts.label.setFamilies(UiFont::familyChain(QStringLiteral("DM Mono")));
-    // The painter scales the whole panel; preserve readable text at small zooms.
-    fonts.label.setPixelSize(std::max(10, int(std::ceil(11 / scale))));
-    fonts.label.setCapitalization(QFont::AllUppercase);
-    fonts.label.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
+    QFont font;
+    // Windows faces are not bundled or redistributed. Other platforms retain
+    // the bundled, normal-width face before their script-specific fallbacks.
+    font.setFamilies(QStringList{ QStringLiteral("Segoe UI"), QStringLiteral("Manrope"),
+                                  QStringLiteral("Arial") } +
+                     UiFont::systemHanFallbackFamilies());
+    font.setPixelSize(pixels);
+    font.setWeight(label ? QFont::Bold : QFont::DemiBold);
+    font.setStretch(QFont::Unstretched);
+    font.setHintingPreference(QFont::PreferFullHinting);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    font.setFeature("tnum", 1);
+#endif
+    return font;
+}
 
-    fonts.value.setFamilies(UiFont::familyChain(QStringLiteral("Manrope")));
-    fonts.value.setPixelSize(std::max(14, int(std::ceil(12 / scale))));
-    fonts.value.setWeight(QFont::DemiBold);
-    fonts.value.setStyleHint(QFont::SansSerif);
-
-    fonts.big = fonts.value;
-    fonts.big.setPixelSize(30);
-    fonts.big.setWeight(QFont::Bold);
-    return fonts;
+inline OverlayFonts overlayFonts(int = 100)
+{
+    // Fixed pixels, then one uniform painter scale; platform point DPI must
+    // not change the strip's geometry.
+    return { stripFont(14, true), stripFont(), stripFont(30, true) };
 }
 
 class FontTextMeasurer : public TextMeasurer

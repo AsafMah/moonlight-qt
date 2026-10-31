@@ -91,13 +91,18 @@ old-product removal, obsolete-file removal and preservation of user settings.
 Without `-Install` it only builds fixtures; installation is refused outside
 disposable GitHub-hosted runners. It never launches Moonlight.
 
-`stats_overlay_layout` also exercises the production overlay painter at 75/80/100% and
+`stats_overlay_layout` also exercises the production overlay painter at 75/80/100/150% and
 1/1.5/2 device-pixel ratios, verifies readable Compact labels, all 13 metrics, flush-top
-placement/editing, 55% metric chips with transparent gaps and soft shadows,
+placement/editing, the continuous black strip with a fresh 72% backing, normal-width
+Semibold type and tabular figures (where Qt supports the feature), nominal 4.5:1
+text contrast over white behind the default backing,
 generous resize zones, exact free dragging with 4 px magnets, conditional edit-on-click,
 and preserves explicit settings when defaults change. Compact reflows all 13 labels and
-values at 12 widths and DPR 1/1.5/2 even with a stale 25 px saved height; narrow Compact
-does not inherit Custom graphs. Real controller/window clicks cover every edit control,
+values and metric tooltips at 12 widths and DPR 1/1.5/2 even with a stale 25 px saved
+height. Groups wrap; narrower-than-group layouts stack labels above complete values.
+The inline trace measures frame time, not maximum FPS. Minimal retains FPS/low/latency;
+Custom retains its selection; Detailed gates unmeasured Present/FEC and retains 0.1% low.
+Real controller/window clicks cover every edit control,
 Custom return, live cycling, local Reset and attachment round-trips. A fresh subprocess
 verifies detached/attached flags before the first show, not just a cached settings object.
 Set

@@ -188,18 +188,23 @@ private:
     };
 
     Cell cellFor(StatsOverlay::Metric metric) const;
+    static QString dash();
+    static QString number(double value, int decimals);
+    static QString milliseconds(double value, int decimals = 1);
     QVector<Cell> cellsFor(const QVector<StatsOverlay::Metric>& metrics) const;
     QVector<StatsOverlay::Metric> panelMetrics() const;
     bool panelHas(StatsOverlay::Metric metric) const;
 
     // Each layout function measures when painter is null, and returns the
-    // unscaled size of the body (without the hard shadow)
+    // Unscaled content geometry.
     QSize layoutMinimal(QPainter* painter) const;
     QSize layoutCompact(QPainter* painter) const;
+    QSize layoutStrip(QPainter* painter, int requestedWidth = 0) const;
     QSize layoutBody(QPainter* painter) const;
 
     StatsOverlay::PanelContent panelContent(QVector<Cell>& cells) const;
     QSize panelBodySize() const;
+    QSize metricBodySize() const;
     void paintPanel(QPainter* painter, const StatsOverlay::PanelLayout& layout,
                     const StatsOverlay::PanelContent& content, const QVector<Cell>& cells) const;
     void paintFrameTimeGraph(QPainter* painter, const QRect& area) const;

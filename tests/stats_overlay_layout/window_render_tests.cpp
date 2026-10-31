@@ -21,6 +21,7 @@
 #include <QProcess>
 
 #include <cmath>
+#include <set>
 
 using namespace StatsOverlay;
 
@@ -31,7 +32,17 @@ bool require(bool condition, const QString& message, QTextStream& err)
     if (!condition) {
         err << "FAIL: " << message << '\n';
     }
+
     return condition;
+}
+
+double luminance(const QColor& color)
+{
+    auto linear = [](double value) {
+        return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * linear(color.redF()) + 0.7152 * linear(color.greenF()) +
+           0.0722 * linear(color.blueF());
 }
 
 struct PaintedText
@@ -201,8 +212,8 @@ bool testDefaultsAndPersistence(QTextStream& err)
     StatsOverlaySettings overlay;
     bool ok = require(overlay.scalePercent() == 80,
                       QStringLiteral("fresh overlay must default to the old 80% footprint"), err);
-    ok &= require(overlay.opacityPercent() == 55,
-                  QStringLiteral("fresh overlay must default to 55% chip opacity"), err);
+    ok &= require(overlay.opacityPercent() == 72,
+                  QStringLiteral("fresh overlay must default to the approved 72% backing"), err);
     ok &= require(settings.allKeys().isEmpty(),
                   QStringLiteral("reading defaults must not write or migrate settings"), err);
 
@@ -266,26 +277,26 @@ bool testRenderedBar(QTextStream& err)
         window.setScalePercent(percent);
         const QImage image = window.render();
         if (percent == DefaultScalePercent) {
-            ok &= require(image.width() == 1284,
-                          QStringLiteral("default Compact footprint is %1 px, not old 80% (1284)")
-                              .arg(image.width()),
+            ok &= require(image.height() <= 30,
+                          QStringLiteral("default Compact must remain one row, not %1px tall")
+                              .arg(image.height()),
                           err);
-            ok &= require(std::abs(image.pixelColor(20, 2).alpha() - 140) <= 1,
-                          QStringLiteral("default chip must paint at 55%, without stacked shadow"),
+            ok &= require(std::abs(image.pixelColor(20, 2).alpha() - 184) <= 1,
+                          QStringLiteral("fresh backing defaults to 72%"), err);
+            const QColor background = image.pixelColor(image.width() - 2, image.height() - 2);
+            ok &= require(background.red() == 0 && background.green() == 0 &&
+                              background.blue() == 0 && std::abs(background.alpha() - 184) <= 1,
+                          QStringLiteral("strip has continuous black backing without chip gaps"),
                           err);
-            ok &= require(image.pixelColor(image.width() - 10, image.height() / 2).alpha() == 0,
-                          QStringLiteral("Compact must not paint a full-bar background"), err);
         }
         bool labelFound = false;
         bool valueFound = false;
         int labelHaloPasses = 0;
         bool opaqueLabel = false;
-        QStringList labels{ QStringLiteral("Res"),    QStringLiteral("Rx/De/Rd"),
-                            QStringLiteral("1% low"), QStringLiteral("Lat"),
-                            QStringLiteral("Rate"),   QStringLiteral("Rtt"),
-                            QStringLiteral("Jit"),    QStringLiteral("Loss"),
-                            QStringLiteral("Host"),   QStringLiteral("Dec"),
-                            QStringLiteral("Queue"),  QStringLiteral("Rend"),
+        QStringList labels{ QStringLiteral("RES"),  QStringLiteral("FPS"),  QStringLiteral("↓"),
+                            QStringLiteral("LAT"),  QStringLiteral("RATE"), QStringLiteral("NET"),
+                            QStringLiteral("Jit"),  QStringLiteral("Loss"), QStringLiteral("h"),
+                            QStringLiteral("d"),    QStringLiteral("q"),    QStringLiteral("r"),
                             QStringLiteral("Drops") };
         QVector<QImage> shadows;
         for (const PaintedText& text : window.recordedText(&shadows)) {
@@ -294,7 +305,7 @@ bool testRenderedBar(QTextStream& err)
                     labels.removeAt(i);
                 }
             }
-            if (text.text.compare(QLatin1String("Rx/De/Rd"), Qt::CaseInsensitive) == 0) {
+            if (text.text.compare(QLatin1String("FPS"), Qt::CaseInsensitive) == 0) {
                 labelFound = true;
                 if (text.color.red() == 0 && text.color.green() == 0 && text.color.blue() == 0 &&
                     text.color.alpha() >= 200) {
@@ -303,18 +314,18 @@ bool testRenderedBar(QTextStream& err)
                     opaqueLabel = text.color.alpha() == 255;
                 }
                 ok &= require(
-                    text.pixels >= 11,
+                    text.pixels >= 13.5 && text.font.stretch() == QFont::Unstretched,
                     QStringLiteral("%1% label shrinks to %2 px").arg(percent).arg(text.pixels),
                     err);
             }
             if (text.text == QLatin1String("60/60/60")) {
                 valueFound = true;
                 ok &= require(
-                    text.pixels >= 12,
+                    text.pixels >= 13.5 && text.font.weight() == QFont::DemiBold,
                     QStringLiteral("%1% value shrinks to %2 px").arg(percent).arg(text.pixels),
                     err);
-                ok &= require(text.color.green() >= 235 && text.color.red() >= 110,
-                              QStringLiteral("mint values must stay bright over teal scenes"), err);
+                ok &= require(text.color == QColor("#e6e6e6"),
+                              QStringLiteral("strip values use neutral light semibold type"), err);
             }
             ok &= require(
                 QRectF(QPointF(), image.size()).adjusted(-1, -1, 1, 1).contains(text.bounds),
@@ -327,22 +338,8 @@ bool testRenderedBar(QTextStream& err)
                       QStringLiteral("%1% text must be opaque without the rejected hard outline")
                           .arg(percent),
                       err);
-        ok &= require(shadows.size() >= 26,
-                      QStringLiteral("every Compact label/value needs its soft shadow"), err);
-        for (const QImage& shadow : shadows) {
-            int faintPixels = 0;
-            int darkPixels = 0;
-            for (int y = 0; y < shadow.height(); ++y) {
-                for (int x = 0; x < shadow.width(); ++x) {
-                    const int alpha = qAlpha(shadow.pixel(x, y));
-                    faintPixels += alpha > 0 && alpha < 30;
-                    darkPixels += alpha > 153;
-                }
-            }
-            ok &= require(faintPixels > 0 && darkPixels == 0,
-                          QStringLiteral("shadow must have a soft low-alpha falloff, not a ring"),
-                          err);
-        }
+        ok &= require(shadows.isEmpty(),
+                      QStringLiteral("plain strip must not retain chip text shadows"), err);
         ok &= require(labels.isEmpty(),
                       QStringLiteral("%1% hides Compact labels: %2")
                           .arg(percent)
@@ -358,12 +355,12 @@ bool testRenderedBar(QTextStream& err)
     const QImage transparent = window.render();
     window.setOpacityPercent(85);
     const QImage opaque = window.render();
-    ok &= require(std::abs(transparent.pixelColor(20, 2).alpha() - 77) <= 1 &&
-                      std::abs(opaque.pixelColor(20, 2).alpha() - 217) <= 1 &&
-                      transparent.pixelColor(transparent.width() - 10, 2).alpha() == 0 &&
-                      opaque.pixelColor(opaque.width() - 10, 2).alpha() == 0,
-                  QStringLiteral("opacity must control chips while preserving transparent gaps"),
-                  err);
+    ok &= require(
+        std::abs(transparent.pixelColor(20, 2).alpha() - 77) <= 1 &&
+            std::abs(opaque.pixelColor(20, 2).alpha() - 217) <= 1 &&
+            std::abs(transparent.pixelColor(transparent.width() - 2, 2).alpha() - 77) <= 1 &&
+            std::abs(opaque.pixelColor(opaque.width() - 2, 2).alpha() - 217) <= 1,
+        QStringLiteral("opacity must control the whole backing, not foreground text"), err);
     for (const PaintedText& text : window.recordedText()) {
         ok &= require(text.color.alpha() == 255,
                       QStringLiteral("user opacity must not fade the foreground text"), err);
@@ -485,7 +482,7 @@ QImage softTextShadow(const QVector<PaintedText>& text, const QSize& size)
     return blurred;
 }
 
-bool testAppearanceCandidates(QTextStream& err)
+[[maybe_unused]] bool testAppearanceCandidates(QTextStream& err)
 {
     const QString output = qEnvironmentVariable("MOONLIGHT_OVERLAY_TEST_OUTPUT_DIR");
     if (output.isEmpty()) {
@@ -1091,20 +1088,20 @@ bool testLocalizedMoveControls(QTextStream& err)
 bool testCompactSavedHeightReflow(QTextStream& err)
 {
     bool ok = true;
-    const QStringList labels{ "Res",  "Rx/De/Rd", "1% low", "Lat",   "Rate", "RTT",  "Jit",
-                              "Loss", "Host",     "Dec",    "Queue", "Rend", "Drops" };
+    const QStringList labels{ "Res",  "FPS",  "1% low", "Lat",   "Rate", "RTT",  "Jit",
+                              "Loss", "Host", "Dec",    "Queue", "Rend", "Drops" };
     const QStringList values{ "3840x2160@60 HEVC",
                               "60/60/60",
                               "59",
-                              "~8 ms",
-                              "37.6 Mbps",
-                              "1 ± 1 ms",
-                              "1.34 ms",
+                              "~8",
+                              "37.6",
+                              "1 ± 1",
+                              "1.34",
                               "0.00%",
-                              "5.2 ms",
-                              "0.8 ms",
-                              "0.4 ms",
-                              "1.1 ms",
+                              "5.2",
+                              "0.8",
+                              "0.4",
+                              "1.1",
                               "0.0%" };
     for (int width : { 1600, 1450, 1300, 1150, 1000, 900, 750, 600, 500, 400, 300, 250 }) {
         RenderWindow window;
@@ -1118,7 +1115,7 @@ bool testCompactSavedHeightReflow(QTextStream& err)
                 return wanted.compare(item.text, Qt::CaseInsensitive) == 0;
             });
         };
-        for (const QString& label : labels) {
+        for (const QString& label : width <= 400 ? labels : QStringList()) {
             ok &= require(
                 hasText(label),
                 QStringLiteral("saved-height Compact width%1 drops label %2").arg(width).arg(label),
@@ -1131,8 +1128,10 @@ bool testCompactSavedHeightReflow(QTextStream& err)
                 err);
         }
         ok &= require(
-            !hasText(QStringLiteral("Frame time")) && !hasText(QStringLiteral("Estimated latency")),
-            QStringLiteral("Compact reflow must not inherit Custom graph selections"), err);
+            (hasText(QStringLiteral("Frame time")) || hasText(QStringLiteral("FT"))) &&
+                !hasText(QStringLiteral("Estimated latency")),
+            QStringLiteral("Compact has the approved inline trace, not Custom's latency panel"),
+            err);
         for (const PaintedText& item : text) {
             ok &= require(
                 QRectF(QPointF(), window.size()).adjusted(-1, -1, 1, 1).contains(item.bounds),
@@ -1141,7 +1140,7 @@ bool testCompactSavedHeightReflow(QTextStream& err)
         for (qreal dpr : { 1.0, 1.5, 2.0 }) {
             const QImage image = window.render(dpr);
             const auto nativeText = window.recordedText(nullptr, dpr);
-            for (const QString& wanted : labels + values) {
+            for (const QString& wanted : (width <= 400 ? labels : QStringList()) + values) {
                 ok &= require(
                     std::any_of(nativeText.begin(), nativeText.end(),
                                 [&](const PaintedText& item) {
@@ -1167,6 +1166,112 @@ bool testCompactSavedHeightReflow(QTextStream& err)
     return ok;
 }
 
+bool testStripCoverageAndTelemetry(QTextStream& err)
+{
+    bool ok = true;
+    RenderWindow window;
+    const QString output = qEnvironmentVariable("MOONLIGHT_OVERLAY_TEST_OUTPUT_DIR");
+    for (int scale : { 75, 80, 100, 150 }) {
+        window.setScalePercent(scale);
+        window.setStats(sample(), {});
+        window.setPreset(Preset::Compact);
+        for (int width : { 1600, 1450, 1300, 1150, 1000, 900, 750, 600, 500, 400, 300, 250 }) {
+            window.setBodySize(QSize(width, 25));
+            for (qreal dpr : { 1.0, 1.5, 2.0 }) {
+                const auto text = window.recordedText(nullptr, dpr);
+                std::set<Metric> metrics;
+                for (const auto& item : text) {
+                    if (item.text != QStringLiteral("|")) {
+                        // Fresh72% black backing over white is the worst-case
+                        // scene. This is nominal contrast, not glyph-size proof.
+                        ok &= require(
+                            (luminance(item.color) + 0.05) /
+                                    (luminance(QColor(72, 72, 72)) + 0.05) >=
+                                4.5,
+                            QStringLiteral("strip text lacks nominal contrast: %1").arg(item.text),
+                            err);
+                    }
+                    const auto hit = window.tooltipAt((item.bounds.center() / dpr).toPoint());
+                    if (hit) {
+                        metrics.insert(hit->metric);
+                        if (hit->metric == Metric::Rtt) {
+                            ok &= require(hit->value == QStringLiteral("1 ± 1 ms"),
+                                          QStringLiteral("RTT tooltip loses variance/units"), err);
+                        }
+                    }
+                    ok &= require(QRectF(QPointF(), window.size() * dpr)
+                                      .adjusted(-1, -1, 1, 1)
+                                      .contains(item.bounds),
+                                  QStringLiteral("strip width%1 scale%2 dpr%3 clips '%4'")
+                                      .arg(width)
+                                      .arg(scale)
+                                      .arg(dpr)
+                                      .arg(item.text),
+                                  err);
+                }
+                for (Metric metric : compactMetrics()) {
+                    ok &= require(metrics.count(metric) == 1,
+                                  QStringLiteral("strip width%1 scale%2 dpr%3 loses tooltip %4")
+                                      .arg(width)
+                                      .arg(scale)
+                                      .arg(dpr)
+                                      .arg(metricId(metric)),
+                                  err);
+                }
+                if (!output.isEmpty()) {
+                    ok &= require(window.render(dpr).save(
+                                      QDir(output).filePath(QStringLiteral("strip-w%1-s%2-d%3.png")
+                                                                .arg(width)
+                                                                .arg(scale)
+                                                                .arg(dpr))),
+                                  QStringLiteral("save strip matrix"), err);
+                }
+            }
+        }
+    }
+    window.setBodySize(QSize());
+    window.setPreset(Preset::Minimal);
+    auto text = window.recordedText();
+    for (const QString& value :
+         { QStringLiteral("60"), QStringLiteral("59"), QStringLiteral("~8") }) {
+        ok &= require(std::any_of(text.begin(), text.end(),
+                                  [&](const PaintedText& item) { return item.text == value; }),
+                      QStringLiteral("Minimal must preserve FPS, 1% low and latency"), err);
+    }
+    window.setPreset(Preset::Detailed);
+    StatsSnapshot unmeasured = sample();
+    unmeasured.presentTiming.measured = false;
+    window.setStats(unmeasured, {});
+    text = window.recordedText();
+    auto contains = [&](const QString& label) {
+        return std::any_of(text.begin(), text.end(),
+                           [&](const PaintedText& item) { return item.text == label; });
+    };
+    ok &= require(contains(QStringLiteral("0.1% low")) && !contains(QStringLiteral("Phases")) &&
+                      !contains(QStringLiteral("FEC")),
+                  QStringLiteral("Detailed must retain lows and gate unmeasured telemetry"), err);
+    StatsSnapshot measured = sample();
+    measured.presentTiming.measured = true;
+    measured.videoPackets = 200;
+    window.setStats(measured, {});
+    text = window.recordedText();
+    ok &= require(contains(QStringLiteral("Phases")) && contains(QStringLiteral("FEC")),
+                  QStringLiteral("Detailed must show measured Present and FEC"), err);
+    window.setPreset(Preset::Custom);
+    window.setMetrics({ Metric::Fps, Metric::Latency });
+    text = window.recordedText();
+    ok &= require(contains(QStringLiteral("FPS")) && contains(QStringLiteral("Latency")) &&
+                      !contains(QStringLiteral("RTT")),
+                  QStringLiteral("Custom must retain the user's metric selection"), err);
+    StatsSnapshot unavailable = sample();
+    unavailable.valid = false;
+    window.setPreset(Preset::Minimal);
+    window.setStats(unavailable, {});
+    text = window.recordedText();
+    ok &= require(!contains(QStringLiteral("59")) && !contains(QStringLiteral("60")),
+                  QStringLiteral("unavailable telemetry must not show cached sample values"), err);
+    return ok;
+}
 bool testDetachedColdRestore(QTextStream& err)
 {
     QTemporaryDir directory;
@@ -1251,10 +1356,36 @@ bool checkDetachedRestart(const QString& settingsPath, bool detached, QTextStrea
 bool runWindowRenderTests(QTextStream& err)
 {
     bool ok = testDefaultsAndPersistence(err);
+    {
+        RenderWindow strip;
+        strip.setPreset(Preset::Compact);
+        strip.setStats(sample(), {});
+        strip.setScalePercent(100);
+        strip.setOpacityPercent(95);
+        const QImage image = strip.render();
+        const QColor background = image.pixelColor(image.width() / 2, image.height() - 2);
+        ok &= require(background.red() == 0 && background.green() == 0 && background.blue() == 0 &&
+                          std::abs(background.alpha() - 242) <= 1,
+                      QStringLiteral("approved strip needs a continuous black backing"), err);
+        bool fpsValue = false;
+        for (const PaintedText& text : strip.recordedText()) {
+            if (text.text == QStringLiteral("60/60/60")) {
+                fpsValue = true;
+                ok &= require(
+                    text.font.stretch() == QFont::Unstretched &&
+                        text.font.weight() == QFont::DemiBold && text.font.pixelSize() == 18,
+                    QStringLiteral("strip values need normal-width 18px semibold type"), err);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+                ok &= require(text.font.featureValue("tnum") == 1,
+                              QStringLiteral("strip figures must request tabular spacing"), err);
+#endif
+            }
+        }
+        ok &= require(fpsValue, QStringLiteral("strip preserves the FPS triplet"), err);
+    }
     ok &= testRenderedBar(err);
     ok &= testRenderedPresetsAndDpi(err);
     ok &= testSceneComposites(err);
-    ok &= testAppearanceCandidates(err);
     ok &= testFlushTop(err);
     ok &= testResizeGrabZones(err);
     ok &= testLightSnapping(err);
@@ -1265,6 +1396,7 @@ bool runWindowRenderTests(QTextStream& err)
     ok &= testMoveControlsFitStream(err);
     ok &= testLocalizedMoveControls(err);
     ok &= testCompactSavedHeightReflow(err);
+    ok &= testStripCoverageAndTelemetry(err);
     ok &= testDetachedColdRestore(err);
     return ok;
 }

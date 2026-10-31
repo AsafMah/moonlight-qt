@@ -124,24 +124,6 @@ QColor gradeColor(Grade grade)
     }
 }
 
-QString dash()
-{
-    return QStringLiteral("–");
-}
-
-QString number(double value, int decimals)
-{
-    if (!std::isfinite(value)) {
-        return dash();
-    }
-    return QString::number(value, 'f', decimals);
-}
-
-QString milliseconds(double value, int decimals = 1)
-{
-    return number(value, decimals) + QStringLiteral(" ms");
-}
-
 const Thresholds& thresholds()
 {
     static const Thresholds defaults;
@@ -149,6 +131,24 @@ const Thresholds& thresholds()
 }
 
 } // namespace
+
+QString OverlayStatsWindow::dash()
+{
+    return QStringLiteral("–");
+}
+
+QString OverlayStatsWindow::number(double value, int decimals)
+{
+    if (!std::isfinite(value)) {
+        return dash();
+    }
+    return QString::number(value, 'f', decimals);
+}
+
+QString OverlayStatsWindow::milliseconds(double value, int decimals)
+{
+    return number(value, decimals) + QStringLiteral(" ms");
+}
 
 OverlayStatsWindow::OverlayStatsWindow(QWindow* parent, OverlayWindowMode windowMode)
     : OverlayRasterWindow(parent, windowMode), m_WindowMode(windowMode)
@@ -279,8 +279,8 @@ void OverlayStatsWindow::updateInputFlags()
 QSize OverlayStatsWindow::preferredSize() const
 {
     const QSize body = layoutBody(nullptr);
-    return QSize(static_cast<int>(std::ceil((body.width() + kShadowOffset) * scale())),
-                 static_cast<int>(std::ceil((body.height() + kShadowOffset) * scale())));
+    return QSize((body.width() * m_ScalePercent + 99) / 100,
+                 (body.height() * m_ScalePercent + 99) / 100);
 }
 
 void OverlayStatsWindow::repaintNow()
@@ -330,7 +330,8 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         break;
     case Metric::OnePercentLow:
         cell.label = tr("1% low");
-        cell.value = s.frameTimes.samples > 0 ? number(s.frameTimes.onePercentLowFps, 0) : dash();
+        cell.value =
+            s.valid && s.frameTimes.samples > 0 ? number(s.frameTimes.onePercentLowFps, 0) : dash();
         cell.grade = gradeLow(s.frameTimes.onePercentLowFps, s.frameTimes.fps, t);
         break;
     case Metric::Latency:
@@ -1094,10 +1095,10 @@ QSize OverlayStatsWindow::layoutBody(QPainter* painter) const
     QSize content;
     switch (m_Preset) {
     case Preset::Minimal:
-        content = layoutMinimal(painter);
-        break;
     case Preset::Compact:
     case Preset::Detailed:
+        content = layoutStrip(painter);
+        break;
     case Preset::Custom: {
         content = panelBodySize();
         if (painter != nullptr) {
@@ -1160,8 +1161,8 @@ void OverlayStatsWindow::paintOverlay(QPainter& painter)
     const QRect body(QPoint(), bodySize);
 
     // Align the body inside a window that may be larger than it
-    const double spareWidth = width() / scale() - (bodySize.width() + kShadowOffset);
-    const double spareHeight = height() / scale() - (bodySize.height() + kShadowOffset);
+    const double spareWidth = width() / scale() - bodySize.width();
+    const double spareHeight = height() / scale() - bodySize.height();
     double dx = 0;
     double dy = 0;
     if (m_BodyAlignment.testFlag(Qt::AlignRight)) {
@@ -1178,22 +1179,10 @@ void OverlayStatsWindow::paintOverlay(QPainter& painter)
     painter.translate(m_BodyOffset);
     const qreal opacity = m_OpacityPercent / 100.0;
 
-    if (m_Preset != Preset::Compact) {
-        QColor shadow = kShadow;
-        shadow.setAlphaF(shadow.alphaF() * opacity);
-        // Keep the shadow outside the body so it cannot darken a transparent bar.
-        painter.fillRect(QRect(body.width(), kShadowOffset, kShadowOffset, body.height()), shadow);
-        painter.fillRect(
-            QRect(kShadowOffset, body.height(), body.width() - kShadowOffset, kShadowOffset),
-            shadow);
-        QColor surface = kSurface;
-        surface.setAlphaF(opacity);
-        painter.fillRect(body, surface);
-        painter.setPen(
-            QPen(m_Editing ? kAccent : kLine, 1, m_Editing ? Qt::DashLine : Qt::SolidLine));
-        painter.drawRect(body.adjusted(0, 0, -1, -1));
-        painter.fillRect(QRect(0, 0, kAccentBar, body.height()), kAccent);
-    } else if (m_Editing) {
+    QColor surface(Qt::black);
+    surface.setAlphaF(opacity);
+    painter.fillRect(body, surface);
+    if (m_Editing) {
         painter.setPen(QPen(kAccent, 1, Qt::DashLine));
         painter.drawRect(body.adjusted(0, 0, -1, -1));
     }
@@ -1240,13 +1229,18 @@ QPoint OverlayStatsWindow::localPosition(QMouseEvent* event) const
 #endif
 }
 
+QSize OverlayStatsWindow::metricBodySize() const
+{
+    return m_Preset == Preset::Custom ? panelBodySize() : layoutStrip(nullptr);
+}
+
 int OverlayStatsWindow::edgesAt(const QPoint& local) const
 {
     if (!isInteractive() || !isResizable()) {
         return 0;
     }
 
-    const QSize body = panelBodySize();
+    const QSize body = metricBodySize();
     const QRectF rect(m_BodyOffset * scale(), QSizeF(body) * scale());
     // Keep a central move zone even on the short Compact strip. The whole
     // painted instruction footer belongs to the bottom resize edge.
@@ -1312,7 +1306,7 @@ void OverlayStatsWindow::resizeTo(const QPoint& pointer)
     }
 
     m_BodySize = body;
-    m_BodySize = panelBodySize(); // clamped
+    m_BodySize = metricBodySize(); // clamped
 
     // The dragged edges move; the opposite ones stay put
     const QSize windowSize = preferredSize();
@@ -1356,7 +1350,7 @@ void OverlayStatsWindow::mousePressEvent(QMouseEvent* event)
         if (m_ResizeEdges != 0) {
             // Start from exactly the painted size, without the slack the
             // controller may have left around the body
-            m_PressBodySize = panelBodySize();
+            m_PressBodySize = metricBodySize();
             m_BodyAlignment = Qt::AlignLeft | Qt::AlignTop;
             m_PressGeometry =
                 QRect(position() + (m_BodyOffset * scale()).toPoint(), preferredSize());

@@ -39,6 +39,7 @@ SOURCES += \
     ../../app/streaming/video/overlaystatspreset.cpp \
     ../../app/streaming/video/overlaystatslayout.cpp \
     ../../app/streaming/video/overlaystatswindow.cpp
+SOURCES += ../../app/streaming/video/overlaystatsstrip.cpp
 
 HEADERS += \
     panel_layout_tests.h \

@@ -304,6 +304,7 @@ SOURCES += \
     streaming/video/overlaystatspreset.cpp \
     streaming/video/overlaystatslayout.cpp \
     streaming/video/overlaystatswindow.cpp \
+    streaming/video/overlaystatsstrip.cpp \
     streaming/video/overlaystatstooltip.cpp \
     streaming/video/overlaystatscontroller.cpp \
     streaming/sessionstatsmenu.cpp \

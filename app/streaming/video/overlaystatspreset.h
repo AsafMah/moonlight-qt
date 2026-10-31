@@ -16,9 +16,9 @@ namespace StatsOverlay {
 enum class Preset
 {
     Off = 0,
-    Minimal,  // one chip: FPS, 1% low, latency
+    Minimal,  // one strip: FPS, 1% low, latency
     Compact,  // dense, resizable strip of the core session metrics
-    Detailed, // panel with frame time graph, latency bar and a key/value grid
+    Detailed, // grouped strip with frame times, pipeline and transport details
     Custom,   // the metrics the user picked
 };
 
@@ -121,7 +121,7 @@ constexpr int MaxScalePercent = 200;
 constexpr int DefaultScalePercent = 80;
 constexpr int MinOpacityPercent = 30;
 constexpr int MaxOpacityPercent = 100;
-constexpr int DefaultOpacityPercent = 55;
+constexpr int DefaultOpacityPercent = 72;
 
 int clampScalePercent(int percent);
 int clampOpacityPercent(int percent);

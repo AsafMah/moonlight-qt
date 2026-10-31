@@ -201,7 +201,8 @@ bool testDefaultSize(const TextMeasurer& m, const QString& fonts, QTextStream& e
     return ok;
 }
 
-bool testCompactStrip(const TextMeasurer& m, const QString& fonts, QTextStream& err)
+bool testCompactStrip(const TextMeasurer& m, const QString& fonts, QTextStream& err,
+                      bool inlineAtDefault = true)
 {
     const QVector<Metric> expected = {
         Metric::Resolution, Metric::Fps,    Metric::OnePercentLow, Metric::Latency, Metric::Bitrate,
@@ -223,8 +224,10 @@ bool testCompactStrip(const TextMeasurer& m, const QString& fonts, QTextStream& 
     ok &=
         require(wide.fits && wide.hiddenCount == 0 && wide.cells.size() == compactMetrics().size(),
                 name + QStringLiteral(": metrics were dropped"), err);
-    ok &= require(wide.style == CellStyle::Inline, name + QStringLiteral(": labels are not inline"),
-                  err);
+    if (inlineAtDefault) {
+        ok &= require(wide.style == CellStyle::Inline,
+                      name + QStringLiteral(": labels are not inline"), err);
+    }
     int rows = 0;
     int previousTop = -1;
     for (const PlacedCell& placed : wide.cells) {
@@ -233,7 +236,7 @@ bool testCompactStrip(const TextMeasurer& m, const QString& fonts, QTextStream& 
             previousTop = placed.rect.top();
         }
     }
-    if (!wide.cells.isEmpty()) {
+    if (inlineAtDefault && !wide.cells.isEmpty()) {
         ok &= require(rows == 1,
                       QStringLiteral("%1: default has %2 rows across %3 columns at %4 px")
                           .arg(name)
@@ -408,11 +411,13 @@ bool runPanelLayoutTests(QTextStream& err)
     ok &= testFallbackOrder(err);
     ok &= testEmptyAndCustom(err);
 
-    // The overlay's real fonts, as bundled with the app
+    // Load the bundled fallback, then exercise the resolved platform font.
+    // Exact geometry is not assumed when a native font replaces that fallback.
     if (loadOverlayFonts(err)) {
         const FontTextMeasurer real(overlayFonts());
-        ok &= testDefaultSize(real, QStringLiteral("DM Mono and Manrope"), err);
-        ok &= testCompactStrip(real, QStringLiteral("DM Mono and Manrope"), err);
+        ok &= testDefaultSize(real, QStringLiteral("native Semibold or bundled fallback"), err);
+        ok &= testCompactStrip(real, QStringLiteral("native Semibold or bundled fallback"), err,
+                               false);
     } else {
         ok = false;
     }

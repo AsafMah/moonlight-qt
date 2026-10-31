@@ -65,6 +65,11 @@ def normalize_explicit_version(version: str) -> str:
     return version
 
 
+def tagged_revision(version: str) -> int:
+    match = re.match(r"^v?\d+\.\d+\.\d+\.(\d+)(?:[+-]|$)", version)
+    return int(match.group(1)) if match else 0
+
+
 def derive(source_root: Path) -> dict[str, str]:
     ci_version = os.environ.get("CI_VERSION", "").strip()
     fallback = read_fallback_version(source_root)
@@ -78,7 +83,11 @@ def derive(source_root: Path) -> dict[str, str]:
         revision = re.search(r"[+-](\d+)\.g[0-9a-fA-F]+(?:\.dirty)?$", display)
         if revision is None:
             revision = re.fullmatch(r"\d+\.\d+\.\d+\.(\d+)", display)
-        count = clamp_u16(int(revision.group(1))) if revision else 0
+        distance = int(revision.group(1)) if revision else 0
+        # A four-component fork tag already carries its build revision.
+        count = clamp_u16(tagged_revision(display) + distance)
+        if re.fullmatch(r"\d+\.\d+\.\d+\.\d+", display):
+            count = clamp_u16(tagged_revision(display))
         return {
             "base": base,
             "display": display,
@@ -122,7 +131,7 @@ def derive(source_root: Path) -> dict[str, str]:
                 "base": base,
                 "display": display,
                 "artifact": display.replace("+", "-"),
-                "numeric": f"{major}.{minor}.{patch}.{clamp_u16(count)}",
+                "numeric": f"{major}.{minor}.{patch}.{clamp_u16(tagged_revision(version) + count)}",
                 "describe": describe,
                 "commit": commit,
             }

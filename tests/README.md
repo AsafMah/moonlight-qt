@@ -10,6 +10,32 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 
 ## CI 覆盖(.github/workflows/build.yml)
 
+### Fork updates and release publication
+
+`tests/fork_updates` compiles the actual checker/installer paths against scripted Qt
+replies, verifies x64/arm64 portable and Setup selection, fork ownership, versions,
+prerelease rejection, required SHA256, streaming guards and download cancellation.
+Its real QML confirmation tests assert safe Cancel focus, no download on opening,
+decline or Escape, and one exact selected URL on confirmation. Disposable Windows
+helper tests never execute an installer: UAC/process/dialog APIs are faked for
+success, user cancellation, hash rejection, installer failure and relaunch.
+The portable invalid-archive regression protects the original installation.
+
+Clean CI builds bind `UPDATE_REPOSITORY` to `GITHUB_REPOSITORY`; qmake can set it
+explicitly and otherwise defaults upstream. Local/dirty builds do not automatically
+check. Four-component release tags preserve revision ordering. Only green integration
+CI publishes original packages through `publish-integration-release.py`; it rejects
+dirty/local sources and missing/duplicate assets, verifies GitHub SHA256 digests
+before publishing, and never replaces existing release assets.
+
+An explicitly invoked full-app fixture uses `prepare_portable_e2e.py` plus
+`run_portable_e2e.ps1`: older-version full Moonlight, fixture-only QML confirmation,
+real fork HTTPS release/asset, verified replacement executable, preserved actual
+QSettings sentinel and observed relaunch. It is not a production endpoint/digest
+bypass and does not run by default. Real Setup/MSI/UAC installation is untested and
+must not be run on the user's machine without separate approval. Old r43 requires
+one manual upgrade because its checker still points upstream.
+
 | 目录 | 验证内容 | CI 平台 |
 |---|---|---|
 | derive_version | scripts/derive-version.py 版本号推导 | Ubuntu(unittest) |

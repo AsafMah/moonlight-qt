@@ -48,6 +48,13 @@ class DeriveVersionTests(unittest.TestCase):
         self.assertEqual(result["artifact"], "6.3.13")
         self.assertEqual(result["numeric"], "6.3.13.0")
 
+    def test_fork_release_revision_survives_exact_tag_and_distance(self) -> None:
+        self.assertEqual(self.derive_from_git("v6.5.3.181-0-ge8ef36a8")["numeric"],
+                         "6.5.3.181")
+        local = self.derive_from_git("v6.5.3.181-2-gfeedface")
+        self.assertEqual(local["numeric"], "6.5.3.183")
+        self.assertEqual(self.derive_from_ci(local["artifact"])["numeric"], "6.5.3.183")
+
     def test_exact_legacy_dot_prerelease_tag(self) -> None:
         result = self.derive_from_git("v6.3.10.beta-0-g4af38f30")
 

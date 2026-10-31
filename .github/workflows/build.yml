@@ -2,17 +2,10 @@ name: Build Moonlight V+ for PC
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ master, main, integration ]
   pull_request:
     branches: [ master, main ]
-  release:
-    types: [ published ]
   workflow_dispatch:
-    inputs:
-      publish_release:
-        description: Rebuild a version tag and replace its existing release assets
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -239,6 +232,19 @@ jobs:
         if errorlevel 1 exit /b %ERRORLEVEL%
 
         echo Build Windows x64 completed successfully!
+
+    - name: Test fork update selection, consent and installer lifecycle
+      shell: cmd
+      run: |
+        call scripts\find-vswhere.bat
+        for /f "usebackq delims=" %%i in (`%VSWHERE% -latest -version "[17.0,18.0)" -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvarsall.bat" AMD64
+        python -m unittest discover -s tests\fork_updates -p "test_*.py"
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        set QT_QPA_PLATFORM=offscreen
+        set QT_QUICK_CONTROLS_STYLE=FluentWinUI3
+        set QML_XHR_ALLOW_FILE_READ=1
+        qmltestrunner -input tests\fork_updates -import tests\fork_updates\mocks -import tests\settings_search\mocks
+        if errorlevel 1 exit /b %ERRORLEVEL%
 
     - name: Test input & overlay logic
       shell: cmd
@@ -952,30 +958,23 @@ jobs:
         path: build/installer-release/Moonlight-VPlus-SteamLink-*.zip
 
   release:
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish_release && github.ref_type == 'tag')
+    if: github.ref == 'refs/heads/integration' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [qml-lint, version-tests, cpp-format, build-windows, build-macos, build-linux, build-steamlink]
     runs-on: ubuntu-latest
 
     steps:
-    - name: Verify existing release before replacing assets
-      if: github.event_name == 'workflow_dispatch'
-      env:
-        GH_TOKEN: ${{ github.token }}
-        RELEASE_TAG: ${{ github.ref_name }}
-      run: gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
-
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-
-    - name: Upload release assets
-      uses: softprops/action-gh-release@v1
+    - name: Checkout verified source head
+      uses: actions/checkout@v4
       with:
-        tag_name: ${{ github.event.release.tag_name || github.ref_name }}
-        files: |
-          **/*.exe
-          **/*.zip
-          **/*.dmg
-          **/*.AppImage
-          **/*.AppImage.zsync
+        fetch-depth: 0
+
+    - name: Download verified package artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: Moonlight-VPlus-*
+        path: ${{ runner.temp }}/release-artifacts
+
+    - name: Publish full release without rebuilding or replacing assets
+      run: python3 scripts/publish-integration-release.py --artifacts "${{ runner.temp }}/release-artifacts"
       env:
-        GITHUB_TOKEN: ${{ secrets.GH_BOT_TOKEN }}
+        GH_TOKEN: ${{ secrets.GH_BOT_TOKEN || github.token }}

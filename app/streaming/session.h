@@ -644,7 +644,9 @@ private:
     bool m_WasCapturedBeforeStylusReplayPanel;
 #endif
     Uint32 m_LastAbrFeedbackTicks;
-    RTP_VIDEO_STATS m_LastAbrVideoStats;
+    uint64_t m_LastAbrFramesTotal = 0;
+    uint64_t m_LastAbrFramesDropped = 0;
+    uint64_t m_LastAbrStatsSequence = 0;
     std::shared_ptr<SunshineAbrRuntime> m_AbrRuntime;
     // Runtime bitrate requests coalesce here; a single background worker
     // applies the newest value so HTTP never blocks the stream loop.

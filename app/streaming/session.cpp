@@ -1750,7 +1750,6 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences* prefere
       m_FileMappingSessionId(QUuid::createUuid().toString(QUuid::WithoutBraces)),
       m_MenuCloseTicks(0), m_MicStream(nullptr)
 {
-    memset(&m_LastAbrVideoStats, 0, sizeof(m_LastAbrVideoStats));
     m_ClipboardHelper = nullptr;
     connect(
         m_Preferences, &StreamingPreferences::enableSunshineAbrChanged, this,
@@ -4547,13 +4546,11 @@ void Session::startSunshineAbr()
     stopSunshineAbr();
     auto job =
         m_AbrRuntime->begin(m_Preferences->enableSunshineAbr && m_Computer, m_StreamConfig.bitrate);
-    const RTP_VIDEO_STATS* videoStats = LiGetRTPVideoStats();
-    if (videoStats != nullptr) {
-        memcpy(&m_LastAbrVideoStats, videoStats, sizeof(m_LastAbrVideoStats));
-    } else {
-        memset(&m_LastAbrVideoStats, 0, sizeof(m_LastAbrVideoStats));
-    }
     m_LastAbrFeedbackTicks = SDL_GetTicks();
+    const auto baseline = m_StatsModel.snapshot(LiGetMicroseconds());
+    m_LastAbrFramesTotal = baseline.sessionFramesTotal;
+    m_LastAbrFramesDropped = baseline.sessionFramesNetworkDropped;
+    m_LastAbrStatsSequence = baseline.sequence;
     if (!job.cancelled->load()) {
         QThreadPool::globalInstance()->start(new AbrConfigureTask(
             m_Computer->activeAddress, m_Computer->activeHttpsPort, m_Computer->serverCert,
@@ -4855,29 +4852,31 @@ void Session::sendSunshineAbrFeedback()
         return;
     }
 
+    const auto stats = m_StatsModel.snapshot(LiGetMicroseconds());
+    if (!stats.valid || stats.sequence == m_LastAbrStatsSequence) {
+        return;
+    }
     auto job = m_AbrRuntime->beginFeedback();
     if (!job) {
         return;
     }
 
-    const RTP_VIDEO_STATS* videoStats = LiGetRTPVideoStats();
-    if (videoStats == nullptr) {
-        m_AbrRuntime->finish(*job, SunshineAbrRuntime::State::Active);
-        return;
-    }
+    const uint64_t totalFrames = stats.sessionFramesTotal >= m_LastAbrFramesTotal
+                                     ? stats.sessionFramesTotal - m_LastAbrFramesTotal
+                                     : stats.sessionFramesTotal;
+    const uint64_t lostFrames = stats.sessionFramesNetworkDropped >= m_LastAbrFramesDropped
+                                    ? stats.sessionFramesNetworkDropped - m_LastAbrFramesDropped
+                                    : stats.sessionFramesNetworkDropped;
+    m_LastAbrFramesTotal = stats.sessionFramesTotal;
+    m_LastAbrFramesDropped = stats.sessionFramesNetworkDropped;
+    m_LastAbrStatsSequence = stats.sequence;
 
-    const uint32_t deltaVideo = videoStats->packetCountVideo - m_LastAbrVideoStats.packetCountVideo;
-    const uint32_t deltaFec = videoStats->packetCountFec - m_LastAbrVideoStats.packetCountFec;
-    const uint32_t deltaFecFailed = videoStats->packetCountFecFailed - m_LastAbrVideoStats.packetCountFecFailed;
-    const uint32_t deltaOos = videoStats->packetCountOOS - m_LastAbrVideoStats.packetCountOOS;
-    const uint32_t deltaInvalid = videoStats->packetCountInvalid - m_LastAbrVideoStats.packetCountInvalid;
-    const uint32_t deltaFecInvalid = videoStats->packetCountFecInvalid - m_LastAbrVideoStats.packetCountFecInvalid;
-    memcpy(&m_LastAbrVideoStats, videoStats, sizeof(m_LastAbrVideoStats));
-
-    const uint64_t packetCount = static_cast<uint64_t>(deltaVideo) + deltaFec;
-    const uint64_t lossIndicators = static_cast<uint64_t>(deltaFecFailed) + deltaOos + deltaInvalid + deltaFecInvalid;
-    const double packetLoss = packetCount > 0 ? qMin(100.0, (static_cast<double>(lossIndicators) * 100.0) / packetCount) : 0.0;
-    const int droppedFrames = static_cast<int>(deltaFecFailed + deltaOos + deltaInvalid);
+    // The API's packetLoss field carries post-FEC frame loss as a congestion proxy.
+    // RTP_VIDEO_STATS failure counters are only incremented by the audio queue.
+    const double packetLoss =
+        totalFrames > 0 ? qMin(100.0, static_cast<double>(lostFrames) * 100.0 / totalFrames) : 0.0;
+    const int droppedFrames =
+        static_cast<int>(qMin(lostFrames, uint64_t((std::numeric_limits<int>::max)())));
 
     uint32_t rtt = 0;
     uint32_t rttVariance = 0;
@@ -4886,7 +4885,7 @@ void Session::sendSunshineAbrFeedback()
     QThreadPool::globalInstance()->start(
         new AbrFeedbackTask(m_Computer->activeAddress, m_Computer->activeHttpsPort,
                             m_Computer->serverCert, m_Computer->uuid, packetLoss, rtt,
-                            m_ActiveVideoFrameRate, droppedFrames, m_AbrRuntime, std::move(*job)));
+                            stats.decodedFps, droppedFrames, m_AbrRuntime, std::move(*job)));
 }
 
 void Session::notifyMouseEmulationMode(bool enabled)

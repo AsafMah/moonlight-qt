@@ -22,6 +22,14 @@ def function(source, signature):
 
 
 class AbrClientTests(unittest.TestCase):
+    def test_measured_feedback_telemetry(self):
+        source = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
+        harness = Path(__file__).with_name("telemetry_harness.cpp").read_text(encoding="utf-8")
+        harness = harness.replace("// TELEMETRY",
+                                  function(source, "void Session::sendSunshineAbrFeedback("))
+        self.build_and_run(harness, "telemetry-regressions",
+                           ("streaming/stats/streamstatsmodel.cpp", "streaming/stats/statsmath.cpp"))
+
     def test_overlay_status(self):
         harness = Path(__file__).with_name("overlay_harness.cpp").read_text(encoding="utf-8")
         self.build_and_run(harness, "overlay-regressions", (

@@ -354,6 +354,11 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         cell.shortLabel = m_Extras.abr.state == SunshineAbrRuntime::State::Active
                               ? tr("ABR")
                               : tr("Rate", "Short form of the Bitrate label");
+        if (m_Extras.abr.state != SunshineAbrRuntime::State::Disabled &&
+            m_Extras.abr.state != SunshineAbrRuntime::State::Active) {
+            cell.label += QStringLiteral(" · ") + tr("ABR: %1").arg(cellFor(Metric::Abr).value);
+            cell.shortLabel = tr("ABR: %1").arg(cellFor(Metric::Abr).value);
+        }
         if (s.valid) {
             cell.value = number(s.bitrateMbps, 1);
             if (m_Extras.targetBitrateKbps > 0) {

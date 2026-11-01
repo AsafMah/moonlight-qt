@@ -730,8 +730,9 @@ Column {
             HardButton {
                 anchors.right: parent.right
                 anchors.rightMargin: Theme.spaceMd
-                text: qsTr("Use recommended bitrate (%1 Mbps)").arg(defaultBitrate / 1000)
-                      + (pyrowaveSelected ? qsTr(" — experimental PyroWave budget, not a network guarantee") : "")
+                text: pyrowaveSelected
+                      ? qsTr("Use PyroWave budget (%1 Mbps, experimental)").arg(defaultBitrate / 1000)
+                      : qsTr("Use recommended bitrate (%1 Mbps)").arg(defaultBitrate / 1000)
                 readonly property bool pyrowaveSelected:
                     StreamingPreferences.videoCodecConfig === StreamingPreferences.VCC_FORCE_PYROWAVE
                 readonly property int defaultBitrate: pyrowaveSelected

@@ -16,7 +16,7 @@ TestCase {
         request.open("GET", Qt.resolvedUrl("../../app/gui/settings/BasicSettingsPage.qml"), false)
         request.send()
         var source = request.responseText
-        var title = source.indexOf('text: qsTr("Use recommended bitrate')
+        var title = source.indexOf('readonly property bool pyrowaveSelected')
         verify(title >= 0)
         var start = source.lastIndexOf("HardButton {", title)
         var end = source.indexOf("\n            }", title)
@@ -40,6 +40,7 @@ TestCase {
         tryCompare(button, "defaultBitrate", 400000)
         compare(preferences.bitrateKbps, 123000, "codec choice must not overwrite manual bitrate")
         verify(button.text.indexOf("experimental") >= 0)
+        verify(button.width <= testCase.width, "Pyro guidance must fit the settings column")
         mouseClick(button, button.width / 2, button.height / 2)
         compare(preferences.bitrateKbps, 400000)
         compare(preferences.autoAdjustBitrate, false, "Pyro guidance is an explicit fixed budget")

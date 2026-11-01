@@ -187,14 +187,8 @@ public:
         static QCoreApplication application;
         return &application;
     }
-    static void reset()
-    {
-        instance()->quitCount = 0;
-    }
-    void quit()
-    {
-        ++quitCount;
-    }
+    static void reset() { instance()->quitCount = 0; }
+    void quit() { ++quitCount; }
     int quitCount = 0;
 };
 
@@ -614,8 +608,8 @@ int main()
         session.processRecoveryStatus();
         check(session.toasts.empty(), "cancelled recovery must not claim success");
     }
-    for (const char* source : { "plain keyboard quit combo", "gamepad quit combo",
-                                "Wayland stream-window close" }) {
+    for (const char* source :
+         { "plain keyboard quit combo", "gamepad quit combo", "Wayland stream-window close" }) {
         reset();
         Session session;
         SDL_Event event = {};

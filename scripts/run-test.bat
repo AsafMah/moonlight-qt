@@ -3,6 +3,7 @@ rem Usage: scripts\run-test.bat <test_dir> <target_exe> [args passed to the test
 rem Builds and runs one test under tests\<test_dir>: qmake -> jom release -> run.
 rem Exits with the failing step's error code. Shared by CI (build.yml) and local runs:
 rem   - qmake must already be on PATH (Qt bin dir);
+rem   - pwsh must already be on PATH (PowerShell 7 safe/logging test runner);
 rem   - the MSVC environment is set up here via vswhere + vcvarsall;
 rem   - jom parallelism: set JOM_JOBS=-j8 locally; leave empty in CI so
 rem     JOM_MAX_CPUS (set by build.yml) governs it;
@@ -13,6 +14,15 @@ rem non-ASCII comments get misparsed into bogus commands.
 setlocal
 if "%~1"=="" echo usage: run-test.bat ^<test_dir^> ^<target_exe^> & exit /b 2
 if "%~2"=="" echo usage: run-test.bat ^<test_dir^> ^<target_exe^> & exit /b 2
+
+rem Resolve before the lifecycle test restricts PATH to its runtime directories.
+set "TEST_PWSH="
+for /f "delims=" %%p in ('where pwsh.exe') do if not defined TEST_PWSH set "TEST_PWSH=%%p"
+if not defined TEST_PWSH (
+    echo PowerShell 7 is required to run tests with loader-dialog suppression
+    exit /b 1
+)
+set "TEST_RUNNER=%~dp0run-built-test.ps1"
 
 for /f "usebackq delims=" %%i in (`%~dp0vswhere.exe -latest -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvarsall.bat" AMD64
 if errorlevel 1 exit /b %ERRORLEVEL%
@@ -61,7 +71,7 @@ popd
 exit /b 1
 :run_binary
 setlocal EnableDelayedExpansion
-release\%TARGET_EXE%.exe !TESTARGS!
+"%TEST_PWSH%" -NoProfile -File "%TEST_RUNNER%" -Exe "release\%TARGET_EXE%.exe" -UseBatchArguments
 endlocal & set "RC=%ERRORLEVEL%"
 popd
 exit /b %RC%

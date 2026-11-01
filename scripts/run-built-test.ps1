@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory)][string]$Exe,
     [string]$Platform,
     [string]$QtBin,
+    [switch]$UseBatchArguments,
     [Parameter(ValueFromRemainingArguments)][string[]]$TestArgs
 )
 
@@ -30,8 +31,26 @@ $env:QT_FORCE_STDERR_LOGGING = '1'
 if ($Platform) { $env:QT_QPA_PLATFORM = $Platform }
 Push-Location (Split-Path -Parent $exePath)
 try {
-    & $exePath @TestArgs 2>&1 | ForEach-Object { "$_" }
-    $result = $LASTEXITCODE
+    if ($UseBatchArguments) {
+        # Preserve cmd's native argument quoting without PowerShell binding -o/--hardware.
+        $startInfo = [System.Diagnostics.ProcessStartInfo]::new($exePath, [string]$env:TESTARGS)
+        $startInfo.UseShellExecute = $false
+        $startInfo.WorkingDirectory = Split-Path -Parent $exePath
+        $process = [System.Diagnostics.Process]::new()
+        $process.StartInfo = $startInfo
+        try {
+            if (-not $process.Start()) { throw "Could not start test $exePath" }
+            $process.WaitForExit()
+            $result = $process.ExitCode
+        }
+        finally {
+            $process.Dispose()
+        }
+    }
+    else {
+        & $exePath @TestArgs 2>&1 | ForEach-Object { "$_" }
+        $result = $LASTEXITCODE
+    }
 }
 finally {
     Pop-Location

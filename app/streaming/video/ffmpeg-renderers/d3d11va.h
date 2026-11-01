@@ -124,6 +124,8 @@ private:
     Microsoft::WRL::ComPtr<IDXGISwapChain4> m_SwapChain;
     // Signaled when the swapchain can take another frame without blocking
     HANDLE m_FrameLatencyWaitable = nullptr;
+    Microsoft::WRL::ComPtr<IDXGISwapChainMedia> m_SwapChainMedia;
+    D3D11PresentPolicy::NewestWinsGate m_NewestWins{ false };
     // The last waitToRender() saw the waitable object signaled
     bool m_ReadyToPresent = false;
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> m_RenderTargetView;

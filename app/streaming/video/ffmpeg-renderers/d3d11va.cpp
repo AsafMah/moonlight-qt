@@ -138,6 +138,7 @@ D3D11VARenderer::~D3D11VARenderer()
         CloseHandle(m_FrameLatencyWaitable);
         m_FrameLatencyWaitable = nullptr;
     }
+    m_SwapChainMedia.Reset();
     m_SwapChain.Reset();
 
     // Release AMF interfaces before unloading its runtime and D3D devices.
@@ -860,6 +861,19 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "IDXGISwapChain2::SetMaximumFrameLatency() failed: %x", hr);
         }
+
+        // Newest-wins presents while DXGI reports independent flip (V-Sync only)
+        bool newestWins = !m_AllowTearing && m_FrameLatencyWaitable != nullptr;
+        if (Utils::getEnvironmentVariableOverride("D3D11VA_NEWEST_WINS", &newestWins)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "D3D11VA_NEWEST_WINS override: %s",
+                        newestWins ? "on" : "off");
+        }
+        if (newestWins && FAILED(m_SwapChain.As(&m_SwapChainMedia))) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "IDXGISwapChainMedia unavailable; frames always wait for the swapchain");
+            newestWins = false;
+        }
+        m_NewestWins = D3D11PresentPolicy::NewestWinsGate(newestWins);
     }
 
     // Disable Alt+Enter, PrintScreen, and window message snooping. This makes
@@ -1045,6 +1059,29 @@ void D3D11VARenderer::renderFrame(AVFrame* frame)
     m_RenderTiming.prePresentUs = presentStartUs - renderStartUs;
     m_RenderTiming.presentUs = presentEndUs - presentStartUs;
     m_HasRenderTiming = true;
+
+    if (m_SwapChainMedia != nullptr) {
+        // How DWM showed the last frame decides whether the next one waits
+        D3D11PresentPolicy::PresentationMode mode = D3D11PresentPolicy::PresentationMode::Unknown;
+        DXGI_FRAME_STATISTICS_MEDIA stats = {};
+        if (SUCCEEDED(m_SwapChainMedia->GetFrameStatisticsMedia(&stats))) {
+            if (stats.CompositionMode == DXGI_FRAME_PRESENTATION_MODE_OVERLAY) {
+                mode = D3D11PresentPolicy::PresentationMode::IndependentFlip;
+            } else if (stats.CompositionMode == DXGI_FRAME_PRESENTATION_MODE_COMPOSED) {
+                mode = D3D11PresentPolicy::PresentationMode::Composed;
+            }
+        }
+        if (m_NewestWins.observe(mode)) {
+            if (m_NewestWins.bypassWaitable()) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "DXGI independent flip: presenting the newest frame at once");
+            } else {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "DXGI composition mode %d: frames wait for the swapchain again",
+                            static_cast<int>(stats.CompositionMode));
+            }
+        }
+    }
 }
 
 bool D3D11VARenderer::prepareFrameForPresent(AVFrame* frame, uint64_t decodeBoundary)
@@ -1894,6 +1931,14 @@ void D3D11VARenderer::waitToRender()
 {
     m_ReadyToPresent = false;
     if (m_FrameLatencyWaitable != nullptr) {
+        if (m_NewestWins.bypassWaitable()) {
+            // Independent flip: a present replaces one still waiting for the
+            // V-blank, so don't wait. Take a free slot if there is one, so
+            // the waitable's count stays right for when composition returns.
+            WaitForSingleObject(m_FrameLatencyWaitable, 0);
+            m_ReadyToPresent = true;
+            return;
+        }
         // Bounded so a lost device can't hang the render thread
         m_ReadyToPresent = WaitForSingleObject(m_FrameLatencyWaitable, 1000) == WAIT_OBJECT_0;
     }

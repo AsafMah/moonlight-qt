@@ -24,6 +24,43 @@ constexpr unsigned int MaxFrameLatency = 1;
 // take it without blocking, and then picks the newest one.
 constexpr bool WaitBeforeLatch = true;
 
+// How DWM showed the last present (DXGI_FRAME_STATISTICS_MEDIA.CompositionMode)
+enum class PresentationMode
+{
+    Unknown,
+    Composed,
+    // Flipped to the screen directly or in a hardware overlay (independent flip)
+    IndependentFlip,
+};
+
+// Newest wins: while the swapchain is flipped independently, a Present() with
+// SyncInterval 0 replaces a frame that is still waiting for the V-blank, so
+// the render thread need not wait on the frame latency waitable first. When
+// DWM composes the window it does not replace queued frames (it takes the
+// oldest each refresh, field run r33), so the waitable is used again as soon
+// as a present is reported composed or unknown.
+class NewestWinsGate
+{
+public:
+    explicit NewestWinsGate(bool enabled = true) : m_Enabled(enabled) {}
+
+    // The mode the last present was shown in. True when this changed whether
+    // the waitable is bypassed (to log it once).
+    bool observe(PresentationMode mode)
+    {
+        const bool bypass = m_Enabled && mode == PresentationMode::IndependentFlip;
+        const bool changed = bypass != m_Bypass;
+        m_Bypass = bypass;
+        return changed;
+    }
+
+    bool bypassWaitable() const { return m_Bypass; }
+
+private:
+    bool m_Enabled;
+    bool m_Bypass = false;
+};
+
 // --- Nonary VRR presenter ---
 
 

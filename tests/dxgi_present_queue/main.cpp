@@ -150,6 +150,135 @@ static Result simulate(const std::vector<uint64_t>& in, uint64_t refreshUs, unsi
              presentSum / rendered, displaySum / std::max(1, shown) };
 }
 
+using ModeAt = D3D11PresentPolicy::PresentationMode (*)(uint64_t nowUs);
+
+struct FlipResult
+{
+    Result r;
+    int framesPresentedTwice; // must stay 0
+    int transitions;          // gate changes logged
+    bool bypassAtEnd;
+};
+
+// The renderer with the waitable (max latency 1) and NewestWinsGate, on a
+// display at a fixed refresh whose presentation mode modeAt(now) reports
+// after each present. Composed: as simulate() (DWM takes the oldest queued
+// frame each refresh, Present() blocks while the queue is full).
+// IndependentFlip: a Present() replaces a frame still waiting for the
+// refresh and never blocks; the refresh shows the newest one.
+static FlipResult simulateFlip(const std::vector<uint64_t>& in, uint64_t refreshUs, ModeAt modeAt,
+                               bool gateEnabled, uint64_t phaseUs = 0)
+{
+    using D3D11PresentPolicy::PresentationMode;
+    const uint64_t renderUs = 300;
+    D3D11PresentPolicy::NewestWinsGate gate(gateEnabled);
+    std::deque<size_t> pacerQueue;
+    std::deque<size_t> dxgiQueue;
+    std::vector<int> presentedCount(in.size(), 0);
+    size_t next = 0;
+    int drops = 0, rendered = 0, shown = 0, transitions = 0;
+    double queueSum = 0, presentSum = 0, displaySum = 0;
+    uint64_t nextRefreshUs = refreshUs + phaseUs;
+    uint64_t now = in.front();
+
+    auto advance = [&](uint64_t untilUs) {
+        for (;;) {
+            const uint64_t arrival = next < in.size() ? in[next] : UINT64_MAX;
+            if (std::min(arrival, nextRefreshUs) > untilUs) {
+                break;
+            }
+            if (nextRefreshUs <= arrival) {
+                if (!dxgiQueue.empty()) {
+                    displaySum += (nextRefreshUs - in[dxgiQueue.front()]) / 1000.0;
+                    shown++;
+                    dxgiQueue.pop_front();
+                }
+                nextRefreshUs += refreshUs;
+            } else {
+                if (pacerQueue.size() == 3) {
+                    pacerQueue.pop_front();
+                    drops++;
+                }
+                pacerQueue.push_back(next++);
+            }
+        }
+        now = std::max(now, untilUs);
+    };
+    auto untilSlotFree = [&]() {
+        while (!dxgiQueue.empty()) {
+            advance(nextRefreshUs);
+        }
+    };
+
+    while (next < in.size() || !pacerQueue.empty()) {
+        // waitToRender()
+        if (!gate.bypassWaitable()) {
+            untilSlotFree();
+        }
+        while (pacerQueue.empty() && next < in.size()) {
+            advance(in[next]);
+        }
+        if (pacerQueue.empty()) {
+            break;
+        }
+        // readyToPresentAfterWait(): the Pacer takes the newest frame
+        while (pacerQueue.size() > 1) {
+            pacerQueue.pop_front();
+            drops++;
+        }
+        const size_t frame = pacerQueue.front();
+        pacerQueue.pop_front();
+        queueSum += (now - in[frame]) / 1000.0;
+        advance(now + renderUs);
+
+        const PresentationMode mode = modeAt(now);
+        const uint64_t presentStart = now;
+        if (mode == PresentationMode::IndependentFlip) {
+            // Replaces the frame waiting for the refresh, if any
+            if (!dxgiQueue.empty()) {
+                dxgiQueue.pop_front();
+                drops++;
+            }
+        } else {
+            untilSlotFree();
+        }
+        presentSum += (now - presentStart) / 1000.0;
+        dxgiQueue.push_back(frame);
+        presentedCount[frame]++;
+        rendered++;
+        transitions += gate.observe(mode) ? 1 : 0;
+    }
+
+    int twice = 0;
+    for (int c : presentedCount) {
+        twice += c > 1 ? 1 : 0;
+    }
+    const double seconds = (in.back() - in.front()) / 1e6;
+    return { { rendered / seconds, 100.0 * drops / in.size(), queueSum / rendered,
+               presentSum / rendered, displaySum / std::max(1, shown) },
+             twice,
+             transitions,
+             gate.bypassWaitable() };
+}
+
+static D3D11PresentPolicy::PresentationMode alwaysIndependent(uint64_t)
+{
+    return D3D11PresentPolicy::PresentationMode::IndependentFlip;
+}
+
+static D3D11PresentPolicy::PresentationMode alwaysComposed(uint64_t)
+{
+    return D3D11PresentPolicy::PresentationMode::Composed;
+}
+
+// An overlay window shown and hidden every 0.5 s, ending composed
+static D3D11PresentPolicy::PresentationMode flapping(uint64_t nowUs)
+{
+    return (nowUs / 500000) % 2 == 0 || nowUs > 9500000
+               ? D3D11PresentPolicy::PresentationMode::Composed
+               : D3D11PresentPolicy::PresentationMode::IndependentFlip;
+}
+
 static void print(const char* name, const Result& r)
 {
     std::printf("%-40s %6.1f FPS rendered, %4.1f%% dropped, queue %5.2f ms, Present %5.2f ms, "
@@ -200,6 +329,58 @@ int main()
     CHECK(slow.dropPercent < 0.5);
     CHECK(slow.pacerQueueMs < 0.5);
     CHECK(slow.displayDelayMs < refresh180 / 1000.0 + 0.5);
+
+    // V-Sync at a matched 120 FPS / 120 Hz with network jitter
+    const uint64_t refresh120 = 8333;
+    const auto jittered120 = arrivals(120, durationUs);
+
+    // Flipped independently: an early frame replaces its predecessor instead
+    // of waiting on the waitable for it to be latched. Worst over where the
+    // refreshes fall relative to the frames.
+    auto worst = [&](ModeAt modeAt, bool enabled) {
+        FlipResult w = simulateFlip(jittered120, refresh120, modeAt, enabled, 0);
+        for (uint64_t phaseUs = 250; phaseUs < refresh120; phaseUs += 250) {
+            const FlipResult r = simulateFlip(jittered120, refresh120, modeAt, enabled, phaseUs);
+            w.r.pacerQueueMs = std::max(w.r.pacerQueueMs, r.r.pacerQueueMs);
+            w.r.presentCallMs = std::max(w.r.presentCallMs, r.r.presentCallMs);
+            w.framesPresentedTwice += r.framesPresentedTwice;
+        }
+        return w;
+    };
+    const FlipResult independent = worst(alwaysIndependent, true);
+    const FlipResult independentOff = worst(alwaysIndependent, false);
+    print("120 FPS, 120 Hz, independent flip, waitable", independentOff.r);
+    print("120 FPS, 120 Hz, independent flip", independent.r);
+    CHECK(independent.r.pacerQueueMs < 0.25);
+    CHECK(independent.r.presentCallMs < 0.1);
+    CHECK(independent.framesPresentedTwice == 0);
+    CHECK(independent.bypassAtEnd && independent.transitions == 1);
+
+    // Composed: exactly today's waitable path, so r33's fix holds
+    const FlipResult composed = worst(alwaysComposed, true);
+    const Result waitable = simulate(jittered120, refresh120, MaxFrameLatency, WaitBeforeLatch);
+    print("120 FPS, 120 Hz, composed", composed.r);
+    CHECK(!composed.bypassAtEnd && composed.transitions == 0);
+    CHECK(std::fabs(composed.r.pacerQueueMs - independentOff.r.pacerQueueMs) < 0.01);
+    const FlipResult composedPhase0 = simulateFlip(jittered120, refresh120, alwaysComposed, true);
+    CHECK(composedPhase0.r.dropPercent == waitable.dropPercent);
+    CHECK(std::fabs(composedPhase0.r.pacerQueueMs - waitable.pacerQueueMs) < 0.01);
+    const FlipResult composedField = simulateFlip(stream180, fieldDrainUs, alwaysComposed, true);
+    CHECK(composedField.r.presentCallMs < 0.5);
+    CHECK(composedField.r.pacerQueueMs < fieldDrainUs / 2 / 1000.0);
+
+    // Overlays shown and hidden: follows each change, never presents a frame
+    // twice, and ends on the waitable once composition is back
+    const FlipResult flap = simulateFlip(jittered120, refresh120, flapping, true);
+    print("120 FPS, 120 Hz, flapping", flap.r);
+    CHECK(flap.framesPresentedTwice == 0);
+    CHECK(!flap.bypassAtEnd);
+    CHECK(flap.transitions >= 18);
+    CHECK(flap.r.pacerQueueMs <= composed.r.pacerQueueMs);
+
+    // Turned off, it is the waitable path in every mode
+    const FlipResult off = simulateFlip(jittered120, refresh120, alwaysIndependent, false);
+    CHECK(!off.bypassAtEnd && off.transitions == 0);
 
     if (s_Failures != 0) {
         std::fprintf(stderr, "%d DXGI present queue check(s) failed\n", s_Failures);

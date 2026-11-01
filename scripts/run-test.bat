@@ -37,9 +37,9 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 rem Forward every extra arg (%3 and beyond) to the test binary. Batch tops out
 rem at %9, so collect them with a shift loop instead of listing %3..%9.
 rem Capture and accumulate with delayed expansion DISABLED so argument content
-rem (quotes, literal !, %VAR% references) survives verbatim; the invoke line
-rem turns delayed expansion ON, which substitutes !TESTARGS! verbatim after
-rem parsing, so the content never goes through batch syntax re-parsing.
+rem (quotes, literal !, %VAR% references) survives verbatim. The safe runner
+rem reads TESTARGS from the inherited environment and passes the raw command
+rem line to ProcessStartInfo, without PowerShell parameter binding or re-parsing.
 rem Known limit: an UNQUOTED & in an extra arg can still split the accumulate
 rem line (batch quoting has no way to fully shield it); no test needs that.
 rem Capture %~2 BEFORE shifting: shift moves it to old %3's slot.

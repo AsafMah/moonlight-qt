@@ -92,7 +92,7 @@ enum class EdgeZone
 QString edgeZoneId(EdgeZone zone);
 EdgeZone edgeZoneFromId(const QString& id, EdgeZone fallback);
 
-constexpr int MinScalePercent = 75;
+constexpr int MinScalePercent = 40;
 constexpr int MaxScalePercent = 150;
 constexpr int DefaultScalePercent = 100;
 constexpr int MinOpacityPercent = 40;

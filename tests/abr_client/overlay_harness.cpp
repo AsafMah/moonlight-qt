@@ -8,6 +8,7 @@
 #include <QTranslator>
 #include <QMetaProperty>
 #include <QSignalSpy>
+#include <QScreen>
 #include <stdexcept>
 
 class PaintedOverlay : public OverlayStatsWindow
@@ -16,10 +17,23 @@ public:
     void render()
     {
         resize(preferredSize());
-        QImage image(size(), QImage::Format_ARGB32_Premultiplied);
+        QImage image(size() * devicePixelRatio(), QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(devicePixelRatio());
         image.fill(Qt::transparent);
         QPainter painter(&image);
         paintOverlay(painter);
+        painter.end();
+        const QString artifacts = qEnvironmentVariable("OVERLAY_UI_ARTIFACTS");
+        if (!artifacts.isEmpty()) {
+            image.save(artifacts + "/stats-compact-dpr2.png");
+            QImage composite(QSize(3840, 2160), QImage::Format_ARGB32_Premultiplied);
+            composite.setDevicePixelRatio(2);
+            composite.fill(QColor("#303841"));
+            QPainter canvas(&composite);
+            canvas.drawImage(QPoint(20, 20), image);
+            canvas.end();
+            composite.save(artifacts + "/stats-4k-200percent.png");
+        }
     }
 };
 
@@ -35,6 +49,11 @@ protected:
 int main(int argc, char** argv)
 {
     QGuiApplication app(argc, argv);
+    if (qEnvironmentVariableIsSet("OVERLAY_HIDPI_REPRO")) {
+        if (app.primaryScreen()->geometry().size() != QSize(1920, 1080) ||
+            app.primaryScreen()->devicePixelRatio() != 2)
+            return 2;
+    }
 #ifdef Q_OS_WIN
     QFontDatabase::addApplicationFont(QStringLiteral("C:\\Windows\\Fonts\\segoeui.ttf"));
     QFontDatabase::addApplicationFont(QStringLiteral("C:\\Windows\\Fonts\\msyh.ttc"));
@@ -149,6 +168,42 @@ int main(int argc, char** argv)
                 }
             }
             app.removeTranslator(&translator);
+        }
+        window.setPreset(StatsOverlay::Preset::Custom);
+        window.setMetrics({ StatsOverlay::Metric::Bitrate });
+        StatsSnapshot measured;
+        measured.valid = true;
+        measured.bitrateMbps = 70;
+        window.setScalePercent(100);
+        const QSize fullScale = window.preferredSize();
+        window.setScalePercent(40);
+        require(window.preferredSize().width() <= fullScale.width() * 0.45 &&
+                    window.preferredSize().height() <= fullScale.height() * 0.45,
+                "Stats compact scale must shrink the actual rendered geometry");
+        for (auto entry : { std::pair<State, QString>{ State::Disabled, "Off" },
+                            { State::Enabling, "Enabling" },
+                            { State::Active, "Active" },
+                            { State::Degraded, "Degraded" } }) {
+            OverlayStatsWindow::Extras extras;
+            extras.abr.state = entry.first;
+            extras.targetBitrateKbps = 400000;
+            window.setStats(measured, extras);
+            window.render();
+            std::optional<OverlayStatsWindow::TooltipInfo> bitrate;
+            for (int y = 0; y < window.height() && !bitrate; ++y)
+                for (int x = 0; x < window.width(); ++x) {
+                    auto hit = window.tooltipAt({ x, y });
+                    if (hit && hit->metric == StatsOverlay::Metric::Bitrate) {
+                        bitrate = hit;
+                        break;
+                    }
+                }
+            require(bitrate.has_value(), "Bitrate tooltip must remain reachable");
+            require(bitrate->value.contains("ABR: " + entry.second),
+                    "Bitrate must expose actual ABR state even without the ABR row");
+            require(bitrate->value.contains("Received") && bitrate->value.contains("70.0") &&
+                        bitrate->value.contains("400"),
+                    "Bitrate must distinguish received rate from target budget");
         }
     } catch (const std::exception& error) {
         qCritical("FAIL: %s", error.what());

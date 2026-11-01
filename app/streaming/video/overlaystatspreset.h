@@ -116,7 +116,7 @@ Grade gradePresent(double prePresentMs, double presentMs, int targetFps,
                    const Thresholds& thresholds = Thresholds());
 
 // Scale and background opacity limits, in percent
-constexpr int MinScalePercent = 75;
+constexpr int MinScalePercent = 40;
 constexpr int MaxScalePercent = 200;
 constexpr int DefaultScalePercent = 80;
 constexpr int MinOpacityPercent = 30;

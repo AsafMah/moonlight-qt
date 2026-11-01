@@ -1,6 +1,7 @@
 """Exercise the production JSON transport with deterministic Qt replies, never a host."""
 
 import os
+import json
 import re
 from pathlib import Path
 import shutil
@@ -88,6 +89,11 @@ class AbrClientTests(unittest.TestCase):
         self.assertIsNotNone(qmake, "Run with existing Qt qmake and compiler on PATH")
         with tempfile.TemporaryDirectory(prefix="moonlight-abr-") as directory:
             path = Path(directory)
+            if os.environ.get("OVERLAY_HIDPI_REPRO"):
+                (path / "screen.json").write_text(json.dumps({
+                    "screens": [{"name": "4k", "width": 3840, "height": 2160,
+                                 "logicalDpi": 96, "logicalBaseDpi": 96, "dpr": 1.0}]
+                }), encoding="utf-8")
             (path / "main.cpp").write_text(source, encoding="utf-8")
             (path / "abr.pro").write_text(
                 "QT = core network gui testlib\nCONFIG += console c++17 release\n"
@@ -122,7 +128,9 @@ class AbrClientTests(unittest.TestCase):
                 runner = ROOT / "scripts/run-built-test.ps1"
                 executable = next(path.rglob("abr.exe"))
                 command = ["pwsh", "-NoProfile", "-File", str(runner),
-                           "-Exe", str(executable), "-Platform", "offscreen"]
+                           "-Exe", str(executable), "-Platform",
+                           "offscreen:configfile=screen.json" if os.environ.get("OVERLAY_HIDPI_REPRO")
+                           else "offscreen"]
                 if args:
                     command.extend(["-TestArgs", *args])
             else:

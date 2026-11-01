@@ -731,12 +731,17 @@ Column {
                 anchors.right: parent.right
                 anchors.rightMargin: Theme.spaceMd
                 text: qsTr("Use recommended bitrate (%1 Mbps)").arg(defaultBitrate / 1000)
-                readonly property int defaultBitrate: StreamingPreferences.getDefaultBitrate(
+                      + (pyrowaveSelected ? qsTr(" — experimental PyroWave budget, not a network guarantee") : "")
+                readonly property bool pyrowaveSelected:
+                    StreamingPreferences.videoCodecConfig === StreamingPreferences.VCC_FORCE_PYROWAVE
+                readonly property int defaultBitrate: pyrowaveSelected
+                    ? PyrowaveStatus.recommendedBitrateKbps
+                    : StreamingPreferences.getDefaultBitrate(
                     StreamingPreferences.width, StreamingPreferences.height,
                     StreamingPreferences.fps, StreamingPreferences.enableYUV444)
                 enabled: !StreamingPreferences.autoAdjustBitrate || StreamingPreferences.bitrateKbps !== defaultBitrate
                 onClicked: {
-                    StreamingPreferences.autoAdjustBitrate = true
+                    StreamingPreferences.autoAdjustBitrate = !pyrowaveSelected
                     StreamingPreferences.bitrateKbps = defaultBitrate
                 }
             }

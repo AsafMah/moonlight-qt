@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QImage>
 #include <QFontDatabase>
+#include <QScreen>
 
 using A = OverlayMenuPanel::MenuAction;
 using T = OverlayMenuPanel::MenuTab;
@@ -32,6 +33,55 @@ private:
     }
 private slots:
     void init() { QSettings().clear(); }
+    void compactHighDpiScale()
+    {
+        OverlayMenuPanel p;
+        p.setPayloadActionCallback([&](A action, const QString& payload) {
+            if (action == A::SetMenuScale)
+                p.setStyle(OverlayMenu::Layout::Compact, payload.toInt(), 100);
+        });
+        open(p, QSize(1920, 1080));
+        if (qEnvironmentVariableIsSet("OVERLAY_HIDPI_REPRO")) {
+            QCOMPARE(QGuiApplication::primaryScreen()->geometry().size(), QSize(1920, 1080));
+            QCOMPARE(p.devicePixelRatio(), 2.0);
+        }
+        p.setStyle(OverlayMenu::Layout::Compact, 100, 100);
+        const QSize baseline = p.size();
+        p.setStyle(OverlayMenu::Layout::Compact, 50, 100);
+        QCOMPARE(p.effectiveScalePercent(), 50);
+        QVERIFY(p.width() <= baseline.width() * 0.55);
+        QVERIFY(p.height() <= baseline.height() * 0.55);
+        QVERIFY(p.rowGeometry(0).height() >= 12);
+        click(p, A::OpenMenuSettings);
+        click(p, A::OpenMenuLayout);
+        QVERIFY(p.rowOfAction(A::SetMenuScale, "40") >= 0);
+        click(p, A::SetMenuScale, "40");
+        QCOMPARE(p.effectiveScalePercent(), 40);
+        const QString artifacts = qEnvironmentVariable("MENU_PHASE1_ARTIFACTS");
+        if (!artifacts.isEmpty()) {
+            p.renderImage().save(artifacts + "/compact-dpr2-scale40.png");
+            QImage composite(QSize(3840, 2160), QImage::Format_ARGB32_Premultiplied);
+            composite.setDevicePixelRatio(2);
+            composite.fill(QColor("#303841"));
+            QPainter painter(&composite);
+            painter.drawImage(QPoint(20, 20), p.renderImage());
+            painter.end();
+            composite.save(artifacts + "/menu-4k-200percent.png");
+        }
+    }
+    void pyrowaveCodecIsVisibleAndTruthful()
+    {
+        OverlayMenuPanel p;
+        OverlayMenuPanel::StreamConfigurationState state;
+        state.currentCodec = "AV1";
+        p.updateStreamConfigurationState(state);
+        open(p);
+        QVERIFY(p.showLevel(A::OpenStreamConfiguration));
+        const int pyro = p.rowOfAction(A::SelectStreamCodec, "5");
+        QVERIFY(pyro >= 0);
+        QVERIFY(!p.rowEnabled(pyro));
+        QVERIFY(p.rowDetail(pyro).contains("new stream"));
+    }
     void mouseChoices()
     {
         OverlayMenuPanel p;

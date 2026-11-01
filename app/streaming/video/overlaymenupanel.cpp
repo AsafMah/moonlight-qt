@@ -1205,7 +1205,7 @@ void OverlayMenuPanel::buildMenuLevels()
                                  MenuAction::SetMenuLayoutComfortable, 0, true, false, false });
     menuLayout.items.push_back({ tr("Side panel"), QString(), MenuItemType::Action,
                                  MenuAction::SetMenuLayoutSidePanel, 0, true, false, true });
-    for (int percent : { 75, 100, 125, 150 }) {
+    for (int percent : { 40, 50, 60, 75, 100, 125, 150 }) {
         menuLayout.items.push_back({ tr("Scale %1%").arg(percent), QString(), MenuItemType::Action,
                                      MenuAction::SetMenuScale, 0, true, false, false,
                                      QString::number(percent) });
@@ -2942,7 +2942,8 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamConfigurationLevel() co
     const QList<int> codecs = { StreamingPreferences::VCC_AUTO,
                                 StreamingPreferences::VCC_FORCE_H264,
                                 StreamingPreferences::VCC_FORCE_HEVC,
-                                StreamingPreferences::VCC_FORCE_AV1 };
+                                StreamingPreferences::VCC_FORCE_AV1,
+                                StreamingPreferences::VCC_FORCE_PYROWAVE };
     for (int codec : codecs) {
         const bool selected =
             m_PendingCodec == codec ||
@@ -2951,12 +2952,15 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamConfigurationLevel() co
         const QString note =
             m_StreamConfiguration.pyrowaveSelected
                 ? tr("PyroWave remains selected; changing codecs requires a new stream")
+            : codec == StreamingPreferences::VCC_FORCE_PYROWAVE
+                ? tr("Select PyroWave in settings before starting a new stream")
             : m_StreamConfiguration.requestedCodec == codec ? tr("Requested")
                                                             : QString();
         level.items.push_back({ codecName(codec), detailText(selected, note), MenuItemType::Action,
                                 MenuAction::SelectStreamCodec, 0,
-                                !operationBusy && !m_StreamConfiguration.pyrowaveSelected, false,
-                                false, QString::number(codec) });
+                                !operationBusy && !m_StreamConfiguration.pyrowaveSelected &&
+                                    codec != StreamingPreferences::VCC_FORCE_PYROWAVE,
+                                false, false, QString::number(codec) });
     }
 
     level.items.push_back({ tr("HDR"), QString(), MenuItemType::Header, MenuAction::MenuActionMax,

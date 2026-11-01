@@ -370,7 +370,7 @@ public:
                            int parentH, std::optional<QPoint> pointerPosition,
                            std::optional<QPointF> draggedPosition);
 
-    // Layout, scale (75-150%) and opacity (40-100%) of the panel
+    // Layout, scale (40-150%) and opacity (40-100%) of the panel
     void setStyle(OverlayMenu::Layout layout, int scalePercent, int opacityPercent);
     OverlayMenu::Layout menuLayout() const { return m_Layout; }
     // The chosen scale; tall levels scroll without reducing typography.

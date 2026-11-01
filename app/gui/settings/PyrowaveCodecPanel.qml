@@ -244,7 +244,7 @@ Column {
         Text {
             width: parent.width - useRecommendedBitrateButton.width - parent.spacing
             anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("Your bitrate is %1 Mbps. PyroWave needs far more than other codecs; %2 Mbps is a good start on wired LAN.")
+            text: qsTr("Your bitrate is %1 Mbps. PyroWave's experimental guidance is %2 Mbps; this is a target budget, not a guarantee that your network can sustain it. Reduce it if frames are lost.")
                     .arg(StreamingPreferences.bitrateKbps / 1000)
                     .arg(PyrowaveStatus.recommendedBitrateKbps / 1000)
             color: panel.warnColor

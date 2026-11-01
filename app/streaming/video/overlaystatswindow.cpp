@@ -349,8 +349,11 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         }
         break;
     case Metric::Bitrate:
-        cell.label = tr("Bitrate");
-        cell.shortLabel = tr("Rate", "Short form of the Bitrate label");
+        cell.label = m_Extras.abr.state == SunshineAbrRuntime::State::Active ? tr("ABR bitrate")
+                                                                             : tr("Bitrate");
+        cell.shortLabel = m_Extras.abr.state == SunshineAbrRuntime::State::Active
+                              ? tr("ABR")
+                              : tr("Rate", "Short form of the Bitrate label");
         if (s.valid) {
             cell.value = number(s.bitrateMbps, 1);
             if (m_Extras.targetBitrateKbps > 0) {
@@ -1233,6 +1236,15 @@ OverlayStatsWindow::tooltipAt(const QPoint& windowPoint) const
     for (const HitRegion& region : m_HitRegions) {
         if (region.rect.contains(point)) {
             QString value = region.value;
+            if (region.metric == Metric::Bitrate) {
+                value = tr("Received: %1 Mbps")
+                            .arg(m_Snapshot.valid ? number(m_Snapshot.bitrateMbps, 1) : dash());
+                if (m_Extras.targetBitrateKbps > 0)
+                    value += QStringLiteral("\n") +
+                             tr("Target budget: %1 Mbps")
+                                 .arg(number(m_Extras.targetBitrateKbps / 1000.0, 0));
+                value += QStringLiteral("\n") + tr("ABR: %1").arg(cellFor(Metric::Abr).value);
+            }
             if (region.metric == Metric::Abr) {
                 if (!m_Extras.abr.detail.isEmpty()) {
                     const QString detail = m_Extras.abr.detail.simplified();

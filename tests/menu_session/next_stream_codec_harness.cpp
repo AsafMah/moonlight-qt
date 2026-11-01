@@ -6,22 +6,36 @@
 #include <QTest>
 #include <stdexcept>
 
-struct Preferences {
+struct Preferences
+{
     StreamingPreferences::VideoCodecConfig videoCodecConfig = StreamingPreferences::VCC_FORCE_AV1;
     int saves = 0;
-    void save() {
+    void save()
+    {
         ++saves;
         QSettings().setValue("codec", int(videoCodecConfig));
     }
 };
-struct PyrowaveRuntime {
-    static PyrowaveRuntime& get() { static PyrowaveRuntime runtime; return runtime; }
+struct PyrowaveRuntime
+{
+    static PyrowaveRuntime& get()
+    {
+        static PyrowaveRuntime runtime;
+        return runtime;
+    }
     bool isAvailable() const { return available; }
     bool available = true;
 };
-struct OverlayMenuSettings { void setScalePercent(int) {} };
-struct FakeStatsOverlay { void setOpacityPercent(int) {} };
-class Session {
+struct OverlayMenuSettings
+{
+    void setScalePercent(int) {}
+};
+struct FakeStatsOverlay
+{
+    void setOpacityPercent(int) {}
+};
+class Session
+{
 public:
     Preferences preferences;
     Preferences* m_Preferences = &preferences;
@@ -32,7 +46,8 @@ public:
     QString toast;
     static QString tr(const char* text) { return QString::fromUtf8(text); }
     void showStreamingToast(const QString& text) { toast = text; }
-    void updateStreamConfigurationMenuState() {
+    void updateStreamConfigurationMenuState()
+    {
         state.nextStreamCodec = preferences.videoCodecConfig;
         panel.updateStreamConfigurationState(state);
     }
@@ -41,7 +56,8 @@ public:
 
 // METHOD
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     QGuiApplication app(argc, argv);
     QTemporaryDir directory;
     QSettings::setDefaultFormat(QSettings::IniFormat);
@@ -49,7 +65,8 @@ int main(int argc, char** argv) {
     QCoreApplication::setOrganizationName("MenuPreferenceTest");
     QCoreApplication::setApplicationName("NextStream");
     auto require = [](bool ok, const char* message) {
-        if (!ok) throw std::runtime_error(message);
+        if (!ok)
+            throw std::runtime_error(message);
     };
     try {
         Session session;
@@ -63,8 +80,8 @@ int main(int argc, char** argv) {
             require(session.handleOverlayMenuOptionPayload(action, payload),
                     "Native next-stream click did not reach production preference handler");
         });
-        panel.showWithPlacement(OverlayMenu::Placement::TopLeft, 0, 0, 1920, 1080,
-                                std::nullopt, std::nullopt);
+        panel.showWithPlacement(OverlayMenu::Placement::TopLeft, 0, 0, 1920, 1080, std::nullopt,
+                                std::nullopt);
         QTest::qWait(160);
         require(panel.showLevel(OverlayMenuPanel::MenuAction::OpenStreamConfiguration),
                 "Codec menu did not open");
@@ -87,7 +104,7 @@ int main(int argc, char** argv) {
         PyrowaveRuntime::get().available = false;
         session.preferences.videoCodecConfig = StreamingPreferences::VCC_FORCE_AV1;
         session.handleOverlayMenuOptionPayload(OverlayMenuPanel::MenuAction::SelectNextStreamCodec,
-                                              "5");
+                                               "5");
         require(session.preferences.saves == 1 &&
                     session.preferences.videoCodecConfig == StreamingPreferences::VCC_FORCE_AV1 &&
                     session.toast.contains("unavailable"),

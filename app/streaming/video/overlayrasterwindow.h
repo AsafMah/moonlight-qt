@@ -11,18 +11,14 @@
 class OverlayRasterWindow : public QRasterWindow
 {
     Q_OBJECT
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    Q_PROPERTY(qreal opacity READ opacity WRITE setOpacity NOTIFY opacityChanged)
-#else
-    // Qt 5 moc cannot validate QWindow's inherited notify signal with an
-    // argument. Property animations only need the reader and writer.
-    Q_PROPERTY(qreal opacity READ opacity WRITE setOpacity)
-#endif
+    Q_PROPERTY(qreal opacity READ opacity WRITE setOpacity NOTIFY overlayOpacityChanged)
 
 public:
     explicit OverlayRasterWindow(QWindow* parent, OverlayWindowMode mode)
         : QRasterWindow(parent), m_Mode(mode)
     {
+        // Older moc cannot resolve QWindow's inherited notify signal signature.
+        connect(this, &QWindow::opacityChanged, this, &OverlayRasterWindow::overlayOpacityChanged);
     }
 
     qreal opacity() const
@@ -59,6 +55,9 @@ public:
             QRasterWindow::setOpacity(currentOpacity);
         }
     }
+
+signals:
+    void overlayOpacityChanged(qreal opacity);
 
 protected:
     virtual void paintOverlay(QPainter& painter) = 0;

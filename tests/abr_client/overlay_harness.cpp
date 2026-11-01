@@ -6,6 +6,8 @@
 #include <QPainter>
 #include <QDebug>
 #include <QTranslator>
+#include <QMetaProperty>
+#include <QSignalSpy>
 #include <stdexcept>
 
 class PaintedOverlay : public OverlayStatsWindow
@@ -19,6 +21,15 @@ public:
         QPainter painter(&image);
         paintOverlay(painter);
     }
+};
+
+class OpacityOverlay : public OverlayRasterWindow
+{
+public:
+    explicit OpacityOverlay(OverlayWindowMode mode) : OverlayRasterWindow(nullptr, mode) {}
+
+protected:
+    void paintOverlay(QPainter&) override {}
 };
 
 int main(int argc, char** argv)
@@ -35,6 +46,25 @@ int main(int argc, char** argv)
             throw std::runtime_error(message);
     };
     try {
+        for (auto mode : { OverlayWindowMode::Detached, OverlayWindowMode::WaylandSubsurface }) {
+            OpacityOverlay opacityWindow(mode);
+            opacityWindow.create();
+            const auto property = opacityWindow.metaObject()->property(
+                opacityWindow.metaObject()->indexOfProperty("opacity"));
+            require(property.hasNotifySignal(),
+                    "Opacity property must retain change notifications");
+            QSignalSpy propertyChanges(&opacityWindow, property.notifySignal());
+            QSignalSpy windowChanges(&opacityWindow, &QWindow::opacityChanged);
+            opacityWindow.setOpacity(0.5);
+            require(opacityWindow.opacity() == 0.5, "Opacity setter must retain its value");
+            require(propertyChanges.count() == 1 && windowChanges.count() == 1,
+                    "Opacity must notify property and QWindow subscribers exactly once");
+            require(propertyChanges.at(0).at(0).toReal() == 0.5,
+                    "Opacity property notification must carry the current value");
+            opacityWindow.setOpacity(0.5);
+            require(propertyChanges.count() == 1 && windowChanges.count() == 1,
+                    "Unchanged opacity must not notify again");
+        }
         for (const QString& language :
              { QString(), QStringLiteral("zh_CN"), QStringLiteral("zh_TW") }) {
             QTranslator translator;

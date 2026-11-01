@@ -127,8 +127,9 @@ class AbrClientTests(unittest.TestCase):
                     command.extend(["-TestArgs", *args])
             else:
                 command = [str(path / "abr"), *args]
-            result = subprocess.run(command, capture_output=True, text=True, timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout)
             self.assertIn(name + " passed", result.stdout)
 
 

@@ -45,8 +45,11 @@ class MenuSessionTests(unittest.TestCase):
             command = (["pwsh", "-NoProfile", "-File", str(ROOT / "scripts/run-built-test.ps1"),
                         "-Exe", str(next(path.rglob("next.exe"))), "-Platform", "offscreen"]
                        if os.name == "nt" else [str(path / "next")])
+            environment = os.environ.copy()
+            environment["QT_QPA_PLATFORM"] = "offscreen"
             result = subprocess.run(command, cwd=path, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True, timeout=30)
+                                    stderr=subprocess.STDOUT, text=True, timeout=30,
+                                    env=environment)
             self.assertEqual(result.returncode, 0, result.stdout)
             self.assertIn("next-stream-codec passed", result.stdout)
 

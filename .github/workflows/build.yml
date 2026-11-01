@@ -264,7 +264,6 @@ jobs:
         set QT_QPA_PLATFORM=offscreen
         set QT_QUICK_CONTROLS_STYLE=FluentWinUI3
         set QML_XHR_ALLOW_FILE_READ=1
-        set QML_XHR_ALLOW_FILE_READ=1
         qmltestrunner -input tests\fork_updates -import tests\fork_updates\mocks -import tests\settings_search\mocks
         if errorlevel 1 exit /b %ERRORLEVEL%
 

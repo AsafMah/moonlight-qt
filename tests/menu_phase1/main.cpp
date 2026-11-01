@@ -428,6 +428,10 @@ private slots:
     void quitAndRelease()
     {
         OverlayMenuPanel p;
+        const auto* timer = p.findChild<QTimer*>(QStringLiteral("quitConfirmationTimer"));
+        QVERIFY(timer);
+        QCOMPARE(timer->interval(), 3000);
+        QCOMPARE(timer->timerType(), Qt::PreciseTimer);
         std::vector<A> actions;
         p.setActionCallback([&](A a) { actions.push_back(a); });
         open(p);

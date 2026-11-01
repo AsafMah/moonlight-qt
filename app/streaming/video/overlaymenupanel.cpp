@@ -258,7 +258,10 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent, OverlayWindowMode windowMode
     };
     m_QuickPins =
         QSettings().value(QStringLiteral("overlay-menu/quick-pins"), defaultPins).toStringList();
+    m_QuitConfirmTimer.setParent(this);
+    m_QuitConfirmTimer.setObjectName(QStringLiteral("quitConfirmationTimer"));
     m_QuitConfirmTimer.setSingleShot(true);
+    m_QuitConfirmTimer.setTimerType(Qt::PreciseTimer);
     m_QuitConfirmTimer.setInterval(3000);
     connect(&m_QuitConfirmTimer, &QTimer::timeout, this, [this] {
         applyOwnedState();

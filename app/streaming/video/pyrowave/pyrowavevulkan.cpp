@@ -21,6 +21,7 @@ const char* pyrowaveStageName(PyrowaveStage stage)
 #ifdef HAVE_LIBPLACEBO_VULKAN
 
 #include "pyrowavecapabilities.h"
+#include "pyrowaveframefeed.h"
 #include "pyrowaveruntime.h"
 #include "streaming/streamutils.h"
 
@@ -1282,15 +1283,20 @@ PyrowaveVulkanRenderer::submitFrame(const uint8_t* data, size_t length,
 
     // The frame is one complete codec payload. The decoder walks the packets
     // inside it and tells us whether every one it needs arrived.
-    if (m_PwPushPacket(m_Decoder, data, length) != PYROWAVE_SUCCESS) {
+    const PyrowaveFrameFeed::Result fed = PyrowaveFrameFeed::feed(
+        [this] { m_PwClearDecoder(m_Decoder); },
+        [this, data, length] {
+            return m_PwPushPacket(m_Decoder, data, length) == PYROWAVE_SUCCESS;
+        },
+        [this] { return m_PwDecodeIsReady(m_Decoder, false); });
+    if (fed == PyrowaveFrameFeed::Result::Rejected) {
         failure.stage = PyrowaveStage::Decode;
         failure.reason = tr("The PyroWave decoder rejected a frame.");
         return FrameResult::Failed;
     }
-    if (!m_PwDecodeIsReady(m_Decoder, false)) {
+    if (fed == PyrowaveFrameFeed::Result::Incomplete) {
         // Keep the decoder and the last shown image (client contract,
         // section 6). Only the incomplete frame is thrown away.
-        m_PwClearDecoder(m_Decoder);
         return FrameResult::Dropped;
     }
     if (!checkColorMetadata(failure)) {

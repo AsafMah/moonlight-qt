@@ -458,6 +458,7 @@ HEADERS += \
     streaming/video/pyrowave/pyrowaveabi.h \
     streaming/video/pyrowave/pyrowavecapabilities.h \
     streaming/video/pyrowave/pyrowavecolor.h \
+    streaming/video/pyrowave/pyrowaveframefeed.h \
     streaming/video/pyrowave/pyrowavehoststore.h \
     streaming/video/pyrowave/pyrowavepacing.h \
     streaming/video/pyrowave/pyrowavepreflightstore.h \

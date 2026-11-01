@@ -341,6 +341,8 @@ QString StatsOverlaySettings::metricName(Metric metric)
         return tr("Bitrate");
     case Metric::Loss:
         return tr("Frames lost by the network");
+    case Metric::LocalDrops:
+        return tr("Local drops");
     case Metric::Rtt:
         return tr("Round trip time");
     case Metric::Jitter:
@@ -393,6 +395,9 @@ QString StatsOverlaySettings::metricDescription(Metric metric)
     case Metric::Loss:
         return tr("Frames lost on the network. Above 0.25% shows as glitches; above 1% the "
                   "network is struggling.");
+    case Metric::LocalDrops:
+        return tr("Complete frames discarded by the client before decoding, separate from "
+                  "network loss and frames dropped by pacing.");
     case Metric::Rtt:
         return tr("Round trip time to the host, and how much it varies. Under 20 ms is good; "
                   "over 50 ms adds noticeable input delay.");

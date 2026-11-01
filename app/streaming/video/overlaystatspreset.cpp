@@ -23,7 +23,7 @@ const PresetName k_Presets[] = {
 const char* const k_MetricIds[MetricCount] = {
     "resolution", "fps",  "low1",   "latency", "bitrate",    "loss",    "rtt",
     "jitter",     "host", "decode", "queue",   "render",     "fec",     "abr",
-    "pacerdrops", "hz",   "time",   "graph",   "latencybar", "present",
+    "pacerdrops", "hz",   "time",   "graph",   "latencybar", "present", "localdrops",
 };
 
 const char* const k_AnchorIds[] = {

@@ -1087,6 +1087,51 @@ bool testLocalizedMoveControls(QTextStream& err)
     return ok;
 }
 
+bool testLocalDropsAreVisibleAndSeparate(QTextStream& err)
+{
+    bool ok = true;
+    StatsSnapshot snapshot = sample();
+    snapshot.networkLossPercent = 1.25;
+    snapshot.localDropPercent = 12.5;
+    snapshot.pacerDropPercent = 3.5;
+    for (Preset preset : { Preset::Compact, Preset::Detailed, Preset::Custom }) {
+        for (int scale : { 40, 80 }) {
+            RenderWindow window;
+            window.setStats(snapshot, {});
+            window.setPreset(preset);
+            if (preset == Preset::Custom) {
+                window.setMetrics({ Metric::Loss, Metric::LocalDrops, Metric::PacerDrops });
+            }
+            window.setScalePercent(scale);
+            window.setBodySize(QSize(preset == Preset::Compact ? 250 : 500, 0));
+            const auto text = window.recordedText();
+            const auto contains = [&](const QString& value) {
+                return std::any_of(text.begin(), text.end(),
+                                   [&](const PaintedText& item) { return item.text == value; });
+            };
+            ok &= require(contains(QStringLiteral("Local drops")) ||
+                              contains(QStringLiteral("Local")),
+                          QStringLiteral("local-drop category missing from rendered overlay"), err);
+            ok &= require(contains(QStringLiteral("12.50%")) && contains(QStringLiteral("1.25%")) &&
+                              contains(QStringLiteral("3.5%")),
+                          QStringLiteral("local drops must remain visible apart from network "
+                                         "loss and pacer drops at 40% scale"),
+                          err);
+            bool localTooltip = false;
+            for (const PaintedText& item : text) {
+                const auto hit = window.tooltipAt(item.bounds.center().toPoint());
+                if (hit && hit->metric == Metric::LocalDrops) {
+                    localTooltip = hit->value.contains(QStringLiteral("12.50%")) &&
+                                   hit->value.contains(QStringLiteral("not network loss"));
+                }
+            }
+            ok &= require(localTooltip,
+                          QStringLiteral("local-drop tooltip must distinguish network loss"), err);
+        }
+    }
+    return ok;
+}
+
 bool testCompactSavedHeightReflow(QTextStream& err)
 {
     bool ok = true;
@@ -1625,6 +1670,7 @@ bool runWindowRenderTests(QTextStream& err)
     ok &= testMoveControlLifecycle(err);
     ok &= testMoveControlsFitStream(err);
     ok &= testLocalizedMoveControls(err);
+    ok &= testLocalDropsAreVisibleAndSeparate(err);
     ok &= testCompactSavedHeightReflow(err);
     ok &= testStripCoverageAndTelemetry(err);
     ok &= testLiveStripWrapStability(err);

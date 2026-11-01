@@ -91,6 +91,8 @@ PanelCell compactCell(Metric metric)
         return cell(metric, "Bitrate", "Rate", QStringLiteral("148.7 / 150 Mbps"));
     case Metric::Loss:
         return cell(metric, "Loss", "", QStringLiteral("0.00%"));
+    case Metric::LocalDrops:
+        return cell(metric, "Local drops", "Local", QStringLiteral("12.50%"));
     case Metric::Rtt:
         return cell(metric, "RTT", "", QStringLiteral("12 ± 3 ms"));
     case Metric::Jitter:
@@ -205,9 +207,10 @@ bool testCompactStrip(const TextMeasurer& m, const QString& fonts, QTextStream& 
                       bool inlineAtDefault = true)
 {
     const QVector<Metric> expected = {
-        Metric::Resolution, Metric::Fps,    Metric::OnePercentLow, Metric::Latency, Metric::Bitrate,
-        Metric::Rtt,        Metric::Jitter, Metric::Loss,          Metric::Host,    Metric::Decode,
-        Metric::Queue,      Metric::Render, Metric::PacerDrops,
+        Metric::Resolution, Metric::Fps,        Metric::OnePercentLow, Metric::Latency,
+        Metric::Bitrate,    Metric::Rtt,        Metric::Jitter,        Metric::Loss,
+        Metric::Host,       Metric::Decode,     Metric::Queue,         Metric::Render,
+        Metric::PacerDrops, Metric::LocalDrops,
     };
     bool ok = require(compactMetrics() == expected,
                       QStringLiteral("Compact does not preserve the legacy stats and timing "

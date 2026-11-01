@@ -434,10 +434,10 @@ PanelLayout buildCompactStrip(const PanelContent& content, int width, const Text
 
 QVector<Metric> compactMetrics()
 {
-    return { Metric::Resolution, Metric::Fps,    Metric::OnePercentLow, Metric::Latency,
-             Metric::Bitrate,    Metric::Rtt,    Metric::Jitter,        Metric::Loss,
-             Metric::Host,       Metric::Decode, Metric::Queue,         Metric::Render,
-             Metric::PacerDrops };
+    return { Metric::Resolution, Metric::Fps,       Metric::OnePercentLow, Metric::Latency,
+             Metric::Bitrate,    Metric::Rtt,       Metric::Jitter,        Metric::Loss,
+             Metric::Host,       Metric::Decode,    Metric::Queue,         Metric::Render,
+             Metric::PacerDrops, Metric::LocalDrops };
 }
 
 bool presetIsResizable(Preset preset)
@@ -464,6 +464,8 @@ int metricPriority(Metric metric)
         return 90;
     case Metric::Loss:
         return 85;
+    case Metric::LocalDrops:
+        return 84;
     case Metric::Bitrate:
         return 80;
     case Metric::Resolution:

@@ -383,6 +383,13 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
             cell.grade = gradeAbove(s.networkLossPercent, t.lossWarnPercent, t.lossBadPercent);
         }
         break;
+    case Metric::LocalDrops:
+        cell.label = tr("Local drops");
+        cell.shortLabel = tr("Local", "Short form of the Local drops label");
+        if (s.valid) {
+            cell.value = number(s.localDropPercent, 2) + QStringLiteral("%");
+        }
+        break;
     case Metric::Rtt:
         cell.label = tr("RTT");
         if (s.valid) {
@@ -558,9 +565,9 @@ QVector<Metric> OverlayStatsWindow::panelMetrics() const
         return compactMetrics();
     }
 
-    QVector<Metric> metrics = { Metric::Rtt,  Metric::Jitter,     Metric::Bitrate,
-                                Metric::Loss, Metric::PacerDrops, Metric::DisplayHz,
-                                Metric::Abr,  Metric::SessionTime };
+    QVector<Metric> metrics = { Metric::Rtt,       Metric::Jitter,     Metric::Bitrate,
+                                Metric::Loss,      Metric::LocalDrops, Metric::PacerDrops,
+                                Metric::DisplayHz, Metric::Abr,        Metric::SessionTime };
     if (m_Snapshot.presentTiming.measured) {
         metrics.append(Metric::Present);
     }
@@ -1249,6 +1256,11 @@ OverlayStatsWindow::tooltipAt(const QPoint& windowPoint) const
     for (const HitRegion& region : m_HitRegions) {
         if (region.rect.contains(point)) {
             QString value = region.value;
+            if (region.metric == Metric::LocalDrops) {
+                value += QStringLiteral("\n") +
+                         tr("Complete frames discarded by the client before decoding; not "
+                            "network loss or pacer drops.");
+            }
             if (region.metric == Metric::Bitrate) {
                 value = tr("Received: %1 Mbps")
                             .arg(m_Snapshot.valid ? number(m_Snapshot.bitrateMbps, 1) : dash());

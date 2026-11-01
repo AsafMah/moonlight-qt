@@ -89,6 +89,7 @@ QSize OverlayStatsWindow::layoutStrip(QPainter* painter, int requestedWidth) con
         add(fps, Metric::Latency, latencyColor);
     } else {
         add(fps, Metric::PacerDrops, white);
+        add(fps, Metric::LocalDrops, white);
         if (m_Preset == Preset::Detailed) {
             fps.items.append({ tr("0.1% low"),
                                m_Snapshot.valid && m_Snapshot.frameTimes.samples > 0
@@ -178,6 +179,7 @@ QSize OverlayStatsWindow::layoutStrip(QPainter* painter, int requestedWidth) con
         case Metric::Jitter:
             return QStringLiteral("99.99 ms");
         case Metric::Loss:
+        case Metric::LocalDrops:
             return QStringLiteral("100.00%");
         case Metric::PacerDrops:
             return QStringLiteral("100.0%");

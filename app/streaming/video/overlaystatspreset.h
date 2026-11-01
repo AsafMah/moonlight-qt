@@ -52,9 +52,10 @@ enum class Metric
     FrameTimeGraph,
     LatencyBar,
     Present,
+    LocalDrops,
 };
 
-constexpr int MetricCount = static_cast<int>(Metric::Present) + 1;
+constexpr int MetricCount = static_cast<int>(Metric::LocalDrops) + 1;
 
 QVector<Metric> allMetrics();
 // Metrics shown by the dense Compact preset, in reading order.

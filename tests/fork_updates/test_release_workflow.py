@@ -16,7 +16,19 @@ class ReleaseWorkflowTests(unittest.TestCase):
         release = workflow[workflow.index("\n  release:\n"):]
         self.assertIn("github.ref == 'refs/heads/integration'", release)
         self.assertIn("github.token", release)
+        self.assertIn("secrets.GH_RELEASE_TOKEN", release)
+        self.assertLess(release.index("--preflight"), release.index("actions/download-artifact"))
+        self.assertNotIn("secrets.GH_BOT_TOKEN", release)
+        global_permissions = workflow.split("concurrency:")[0]
+        self.assertNotIn("contents: write", global_permissions)
+        self.assertIn("contents: write", release)
         self.assertIn("needs: [qml-lint, version-tests, cpp-format, build-windows, build-macos, build-linux, build-steamlink]",
                       release)
         self.assertNotIn("softprops/action-gh-release", release,
                          "Verified artifact publication must not silently overwrite existing assets")
+
+    def test_side_branch_cannot_publish(self):
+        workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+        release = workflow[workflow.index("\n  release:\n"):]
+        self.assertIn("github.ref == 'refs/heads/integration'", release)
+        self.assertNotIn("fix/updater-release-batch", workflow)

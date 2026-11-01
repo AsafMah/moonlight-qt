@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
+from urllib.parse import quote
 
 
 def packages(root: Path, version: str) -> list[Path]:
@@ -59,8 +61,8 @@ def numeric_tag(tag: str) -> tuple[int, ...]:
     return parts if len(parts) == 4 else parts + (0,)
 
 
-def verify_assets(repo: str, tag: str, assets: list[Path]):
-    release = json.loads(gh("api", f"repos/{repo}/releases/tags/{tag}"))
+def verify_assets(repo: str, release_id: int, assets: list[Path]):
+    release = json.loads(gh("api", f"repos/{repo}/releases/{release_id}"))
     uploaded = {asset["name"]: asset.get("digest", "") for asset in release["assets"]}
     expected = {path.name: "sha256:" + sha256(path) for path in assets}
     if uploaded != expected:
@@ -68,9 +70,69 @@ def verify_assets(repo: str, tag: str, assets: list[Path]):
     return release
 
 
+def find_draft(repo: str, tag: str, head: str):
+    drafts = []
+    page = 1
+    while True:
+        releases = json.loads(gh("api", f"repos/{repo}/releases?per_page=100&page={page}"))
+        for release in releases:
+            if release["tag_name"] == tag and release["draft"]:
+                if release["target_commitish"] != head:
+                    raise RuntimeError("Existing draft belongs to another commit")
+                drafts.append(release)
+        if len(releases) < 100:
+            break
+        page += 1
+    if len(drafts) > 1:
+        raise RuntimeError("Multiple matching drafts require manual reconciliation; refusing duplication")
+    return drafts[0] if drafts else None
+
+
+def upload_missing_assets(repo: str, release: dict, assets: list[Path]):
+    expected = {path.name: "sha256:" + sha256(path) for path in assets}
+    uploaded = {asset["name"]: asset.get("digest", "") for asset in release["assets"]}
+    if any(name not in expected or digest != expected[name] for name, digest in uploaded.items()):
+        raise RuntimeError("Existing draft has conflicting assets; refusing replacement")
+    for path in assets:
+        if path.name not in uploaded:
+            gh("api", f"https://uploads.github.com/repos/{repo}/releases/{release['id']}/assets?name={quote(path.name)}",
+               "--method", "POST",
+               "-H", "Content-Type: application/octet-stream", "--input", str(path))
+
+
+def workflow_tree(repo: str, ref: str):
+    commit = json.loads(gh("api", f"repos/{repo}/commits/{quote(ref, safe='')}"))
+    tree_id = commit["commit"]["tree"]["sha"]
+    for name in (".github", "workflows"):
+        tree = json.loads(gh("api", f"repos/{repo}/git/trees/{tree_id}"))
+        if tree.get("truncated"):
+            raise RuntimeError("Cannot verify workflow tree permissions: GitHub truncated the tree")
+        entry = next((item for item in tree["tree"] if item["path"] == name), None)
+        if entry is None:
+            return None
+        if entry["type"] != "tree":
+            raise RuntimeError(f"Cannot verify workflow directory {name}")
+        tree_id = entry["sha"]
+    return tree_id
+
+
+def preflight_token(repo: str, head: str):
+    if os.environ.get("GH_RELEASE_TOKEN"):
+        return
+    default = json.loads(gh("api", f"repos/{repo}"))["default_branch"]
+    if not re.fullmatch(r"[\w./-]+", default) or default.startswith("-"):
+        raise RuntimeError("Invalid default branch from GitHub")
+    if workflow_tree(repo, default) != workflow_tree(repo, head):
+        raise RuntimeError(
+            f"Release target changes workflows relative to default branch {default}. GITHUB_TOKEN cannot create "
+            "this release tag: configure GH_RELEASE_TOKEN with Contents and Workflows write, "
+            "or make integration the default branch before publishing.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifacts", type=Path, required=True)
+    parser.add_argument("--artifacts", type=Path)
+    parser.add_argument("--preflight", action="store_true")
     args = parser.parse_args()
     if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("GITHUB_REF") != "refs/heads/integration":
         raise RuntimeError("Only integration GitHub Actions runs may publish")
@@ -81,8 +143,13 @@ def main():
     run = os.environ["GITHUB_RUN_NUMBER"]
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo) or not re.fullmatch(r"[0-9a-f]{40}", head) or not run.isdecimal():
         raise RuntimeError("Invalid CI identity")
-    if subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=no"], text=True).strip():
+    if subprocess.check_output(["git", "status", "--porcelain"], text=True).strip():
         raise RuntimeError("Refusing to publish a dirty source checkout")
+    preflight_token(repo, head)
+    if args.preflight:
+        return
+    if args.artifacts is None:
+        parser.error("--artifacts is required for publication")
     script = Path(__file__).with_name("derive-version.py")
     version = subprocess.check_output(["python3", str(script), "--field", "artifact"], text=True).strip()
     numeric = subprocess.check_output(["python3", str(script), "--field", "numeric"], text=True).strip()
@@ -91,30 +158,37 @@ def main():
     assets = packages(args.artifacts, version)
     tag = "v" + numeric
     existing = optional_release(repo, f"tags/{tag}")
-    if existing:
-        release = verify_assets(repo, tag, assets)
-        if not release["draft"]:
-            reference = json.loads(gh("api", f"repos/{repo}/git/ref/tags/{tag}"))
-            if reference["object"]["type"] != "commit" or reference["object"]["sha"] != head:
-                raise RuntimeError("Existing release tag belongs to another commit")
-            print(f"Verified existing release {release['html_url']}; no assets replaced")
-            return
-        if release["target_commitish"] != head:
-            raise RuntimeError("Existing draft belongs to another commit")
-    else:
+    if existing and not existing["draft"]:
+        release = verify_assets(repo, existing["id"], assets)
+        reference = json.loads(gh("api", f"repos/{repo}/git/ref/tags/{tag}"))
+        if reference["object"]["type"] != "commit" or reference["object"]["sha"] != head:
+            raise RuntimeError("Existing release tag belongs to another commit")
+        print(f"Verified existing release {release['html_url']}; no assets replaced")
+        return
+    latest = optional_release(repo, "latest")
+    make_latest = not latest
+    if latest:
+        try:
+            make_latest = numeric_tag(tag) >= numeric_tag(latest["tag_name"])
+        except ValueError:
+            # An uncomparable incumbent must not be displaced automatically.
+            print(f"Warning: keeping nonnumeric latest release {latest['tag_name']}", file=sys.stderr)
+    release = find_draft(repo, tag, head)
+    if release is None:
         notes = ("Old r43 builds check upstream: manually upgrade once to this fork-aware build. "
                  "Future releases are checked automatically; download and installation require confirmation. "
                  "Finish streaming before installing or restarting.\n\n"
                  f"Verified integration build {head}.\n\nCI: {os.environ['GITHUB_SERVER_URL']}/{repo}/actions/runs/{os.environ['GITHUB_RUN_ID']}\n\n")
         notes += "\n".join(f"- `{path.name}` SHA256 `{sha256(path)}`" for path in assets)
-        gh("release", "create", tag, *(str(path) for path in assets), "--repo", repo,
-           "--target", head, "--title", f"Moonlight V+ r{run} ({numeric})",
-           "--notes", notes, "--draft")
-        verify_assets(repo, tag, assets)
-    latest = optional_release(repo, "latest")
-    latest_flag = "--latest" if not latest or numeric_tag(tag) >= numeric_tag(latest["tag_name"]) else "--latest=false"
-    gh("release", "edit", tag, "--repo", repo, "--draft=false", "--prerelease=false", latest_flag)
-    final = verify_assets(repo, tag, assets)
+        release = json.loads(gh("api", f"repos/{repo}/releases", "--method", "POST",
+                                "-f", f"tag_name={tag}", "-f", f"target_commitish={head}",
+                                "-f", f"name=Moonlight V+ r{run} ({numeric})", "-f", f"body={notes}",
+                                "-F", "draft=true", "-F", "prerelease=false"))
+    upload_missing_assets(repo, release, assets)
+    verify_assets(repo, release["id"], assets)
+    gh("api", f"repos/{repo}/releases/{release['id']}", "--method", "PATCH",
+       "-F", "draft=false", "-F", "prerelease=false", "-f", f"make_latest={str(make_latest).lower()}")
+    final = verify_assets(repo, release["id"], assets)
     print(final["html_url"])
 
 

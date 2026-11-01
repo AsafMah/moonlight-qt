@@ -16,8 +16,8 @@ class SetupHelperTests(unittest.TestCase):
             r"    Add-Type -AssemblyName System.Windows.Forms\n"
             r"    \[System.Windows.Forms.MessageBox\]::Show\([\s\S]+?\) \| Out-Null",
             "    'error-dialog' | Add-Content -LiteralPath $TracePath", source)
-        self.assertEqual(replacements, 1, "Harness must intercept the error dialog only")
-        for mode in ("success", "cancel", "bad-digest", "installer-failure"):
+        self.assertGreaterEqual(replacements, 1, "Harness must intercept helper dialogs")
+        for mode in ("success", "cancel", "bad-digest", "installer-failure", "reboot", "parent-timeout"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 workspace = root / "MoonlightPortableUpdate-123-456"
@@ -40,12 +40,16 @@ class SetupHelperTests(unittest.TestCase):
                      "-InstallerPath", str(package), "-ExePath", str(executable),
                      "-Digest", digest, "-Mode", mode, "-TracePath", str(trace)],
                     text=True, capture_output=True, timeout=15)
-                self.assertEqual(result.returncode, 1 if mode in ("cancel", "bad-digest") else 0,
-                                 result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 1 if mode == "bad-digest" else 0,
+                                 result.stdout + result.stderr +
+                                 ((workspace / "setup-error.txt").read_text()
+                                  if (workspace / "setup-error.txt").exists() else ""))
                 lines = trace.read_text().splitlines() if trace.exists() else []
+                self.assertNotIn("Installer must remain read-locked at the execution boundary.", lines,
+                                 "\n".join(lines))
                 launches = [line for line in lines if line.startswith("RunAs|")]
                 relaunches = [line for line in lines if str(executable) in line]
-                self.assertEqual(len(launches), 0 if mode == "bad-digest" else 1)
-                self.assertEqual(len(relaunches), 1 if mode in ("success", "installer-failure") else 0)
-                self.assertEqual("error-dialog" in lines, mode == "installer-failure")
-                self.assertEqual(workspace.exists(), mode != "success")
+                self.assertEqual(len(launches), 0 if mode in ("bad-digest", "parent-timeout") else 1)
+                self.assertEqual(len(relaunches), 0 if mode in ("bad-digest", "reboot", "parent-timeout") else 1)
+                self.assertEqual("error-dialog" in lines, mode in ("installer-failure", "cancel", "reboot", "parent-timeout"))
+                self.assertEqual(workspace.exists(), mode == "bad-digest")

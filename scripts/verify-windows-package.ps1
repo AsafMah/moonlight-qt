@@ -18,7 +18,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Failed to derive artifact version' }
 
 # Check independently of derive-version's numeric path, which once dropped CI's count.
 if ($artifact -match '[+-](\d+)\.g[0-9a-fA-F]+(?:\.dirty)?$') {
-    $revision = [Math]::Min([long]$Matches[1], 65535)
+    $distance = [long]$Matches[1]
+    $tagRevision = 0L
+    if ($artifact -match '^v?\d+\.\d+\.\d+\.(\d+)(?:[+-]|$)') {
+        $tagRevision = [long]$Matches[1]
+    }
+    $revision = [Math]::Min($tagRevision + $distance, 65535)
     if (([version]$expected).Revision -ne $revision) {
         throw "Development build $artifact lost its revision in numeric version $expected"
     }

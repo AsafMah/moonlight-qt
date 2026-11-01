@@ -8,8 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
   actions: read
 
 concurrency:
@@ -978,12 +977,21 @@ jobs:
     if: github.ref == 'refs/heads/integration' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [qml-lint, version-tests, cpp-format, build-windows, build-macos, build-linux, build-steamlink]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
 
     steps:
     - name: Checkout verified source head
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+
+    - name: Check release token workflow permissions before creating a draft
+      run: python3 scripts/publish-integration-release.py --preflight
+      env:
+        GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || github.token }}
+        GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
 
     - name: Download verified package artifacts
       uses: actions/download-artifact@v4
@@ -994,4 +1002,5 @@ jobs:
     - name: Publish full release without rebuilding or replacing assets
       run: python3 scripts/publish-integration-release.py --artifacts "${{ runner.temp }}/release-artifacts"
       env:
-        GH_TOKEN: ${{ secrets.GH_BOT_TOKEN || github.token }}
+        GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || github.token }}
+        GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}

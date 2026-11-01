@@ -38,7 +38,6 @@ static_assert(PACER_MAX_OUTSTANDING_FRAMES == MAX_QUEUED_FRAMES + 2,
 // the next V-sync period. It also takes some amount of time
 // to do the render itself, so we can't render right before
 // V-sync happens.
-#define TIMER_SLACK_MS 3
 
 #ifdef Q_OS_WIN32
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
@@ -246,8 +245,12 @@ int Pacer::renderThread(void* context)
 
             // The renderer only reports ready once it can present without
             // blocking, so frames queued behind the newest one are already
-            // stale. (VRR mode applies its own rule above.)
-            if (!me->m_VrrLimiter.isEnabled() && me->m_VsyncRenderer->readyToPresentAfterWait()) {
+            // stale. With frame pacing the render thread only presents the
+            // newest frame either. (VRR mode applies its own rule above.)
+            if (FramePacing::presentNewestOnly(
+                    me->m_VrrLimiter.isEnabled(), me->m_VsyncRenderer->readyToPresentAfterWait(),
+                    me->m_VsyncSource != nullptr,
+                    (me->m_RendererAttributes & RENDERER_ATTRIBUTE_NO_BUFFERING) != 0)) {
                 while (me->m_RenderQueue.count() > 1) {
                     AVFrame* stale = me->m_RenderQueue.dequeue();
                     me->m_Stats->recordDrop();
@@ -292,63 +295,23 @@ void Pacer::enqueueFrameForRenderingAndUnlock(AVFrame *frame)
 // or an event synchronized with V-sync
 void Pacer::handleVsync(int timeUntilNextVsyncMillis)
 {
+    Q_UNUSED(timeUntilNextVsyncMillis);
+
     // Make sure initialize() has been called
     SDL_assert(m_MaxVideoFps != 0);
 
     m_FrameQueueLock.lock();
-
-    // If the queue length history entries are large, be strict
-    // about dropping excess frames.
-    int frameDropTarget = 1;
-
-    // If we may get more frames per second than we can display, use
-    // frame history to drop frames only if consistently above the
-    // one queued frame mark.
-    if (m_MaxVideoFps >= m_DisplayFps) {
-        for (int queueHistoryEntry : std::as_const(m_PacingQueueHistory)) {
-            if (queueHistoryEntry <= 1) {
-                // Be lenient as long as the queue length
-                // resolves before the end of frame history
-                frameDropTarget = 3;
-                break;
-            }
+    if (m_PacingGate.onVblank(!m_PacingQueue.isEmpty())) {
+        // Only the newest frame is worth presenting
+        while (m_PacingQueue.count() > 1) {
+            AVFrame* frame = m_PacingQueue.dequeue();
+            m_Stats->recordDrop();
+            av_frame_free(&frame);
         }
-
-        // Keep a rolling 500 ms window of pacing queue history
-        if (m_PacingQueueHistory.count() == m_DisplayFps / 2) {
-            m_PacingQueueHistory.dequeue();
-        }
-
-        m_PacingQueueHistory.enqueue(m_PacingQueue.count());
+        enqueueFrameForRenderingAndUnlock(m_PacingQueue.dequeue());
+        return;
     }
-
-    // Catch up if we're several frames ahead
-    while (m_PacingQueue.count() > frameDropTarget) {
-        AVFrame* frame = m_PacingQueue.dequeue();
-
-        // Drop the lock while we call av_frame_free()
-        m_FrameQueueLock.unlock();
-        m_Stats->recordDrop();
-        av_frame_free(&frame);
-        m_FrameQueueLock.lock();
-    }
-
-    if (m_PacingQueue.isEmpty()) {
-        // Wait for a frame to arrive or our V-sync timeout to expire
-        if (!m_PacingQueueNotEmpty.wait(&m_FrameQueueLock, SDL_max(timeUntilNextVsyncMillis, TIMER_SLACK_MS) - TIMER_SLACK_MS)) {
-            // Wait timed out - unlock and bail
-            m_FrameQueueLock.unlock();
-            return;
-        }
-
-        if (m_Stopping || m_PacingQueue.isEmpty()) {
-            m_FrameQueueLock.unlock();
-            return;
-        }
-    }
-
-    // Place the first frame on the render queue
-    enqueueFrameForRenderingAndUnlock(m_PacingQueue.dequeue());
+    m_FrameQueueLock.unlock();
 }
 
 // Selection logic ported from Nonary/moonlight-qt@c822745 Pacer::initialize()
@@ -801,13 +764,12 @@ void Pacer::submitFrame(AVFrame* frame)
             m_PlayoutClock.observe(sourceUs, static_cast<uint64_t>(frame->pkt_dts));
         }
     }
-    if (m_VsyncSource != nullptr) {
+    if (m_VsyncSource != nullptr && !m_PacingGate.releaseOnArrival()) {
         dropFrameForEnqueue(m_PacingQueue);
         m_PacingQueue.enqueue(frame);
         m_FrameQueueLock.unlock();
         m_PacingQueueNotEmpty.wakeOne();
-    }
-    else {
+    } else {
         enqueueFrameForRenderingAndUnlock(frame);
     }
 }

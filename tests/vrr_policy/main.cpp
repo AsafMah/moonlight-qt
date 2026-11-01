@@ -1,3 +1,4 @@
+#include "streaming/video/framepacingpolicy.h"
 #include "streaming/video/vrrpolicy.h"
 
 #include <algorithm>
@@ -770,6 +771,213 @@ static void testSmoothLoop()
     CHECK(atCapSmooth.minGapUs >= displayRefreshUs);
 }
 
+// A 120 FPS source with network jitter: arrivals 1.5 ms after capture, give
+// or take up to 1 ms (deterministic), always in order
+static std::vector<Arrival> jittered120Arrivals()
+{
+    std::vector<Arrival> out = exact120Arrivals(0);
+    for (size_t i = 0; i < out.size(); i++) {
+        out[i].arrivalUs += 1000;
+        out[i].arrivalUs -= static_cast<uint64_t>((i * 7919) % 2001);
+        if (i > 0) {
+            out[i].arrivalUs = std::max(out[i].arrivalUs, out[i - 1].arrivalUs + 30);
+        }
+    }
+    return out;
+}
+
+struct VsyncLoopResult
+{
+    double dropPercent;
+    // Overlay "Queue": decoded -> render starts
+    uint64_t averageQueueUs;
+    uint64_t p99QueueUs;
+    // Of that, time held in Pacer's pacing queue
+    uint64_t p99PacerHoldUs;
+    // Not in "Queue": presented -> latched by the display at a V-blank
+    uint64_t averageDisplayWaitUs;
+};
+
+// Mirrors Pacer with V-Sync and no VRR on D3D11 against a simulated clock:
+// V-blanks every num/den Hz starting at firstVblankUs; with frame pacing,
+// FramePacing::VblankGate decides when a frame leaves the pacing queue (one
+// release per V-blank, otherwise held to the next; 3 frames at most). The
+// render thread waits on the swapchain's frame latency waitable (max latency
+// 1: signalled once the previous present was latched at a V-blank), then takes
+// the newest queued frame, dropping older ones, and renders for 250 us.
+static VsyncLoopResult simulateVsyncLoop(const std::vector<Arrival>& arrivals, uint32_t num,
+                                         uint32_t den, bool pacing, double firstVblankUs)
+{
+    const double periodUs = 1e6 * den / num;
+    const uint64_t renderUs = 250;
+    const uint64_t never = UINT64_MAX;
+    const FramePacing::VblankGate gate;
+    std::deque<size_t> pacingQueue, renderQueue;
+    std::vector<uint64_t> enteredRenderQueueUs(arrivals.size(), 0);
+    std::vector<uint64_t> queue, hold;
+    uint64_t displayWaitTotalUs = 0;
+    int drops = 0;
+    size_t next = 0;
+    double nextVblankUs = firstVblankUs;
+    while (nextVblankUs < arrivals.front().arrivalUs) {
+        nextVblankUs += periodUs;
+    }
+    uint64_t renderReadyUs = 0;
+    uint64_t latchUs = 0;
+    uint64_t clockUs = 0;
+    auto toRender = [&](size_t frame, uint64_t nowUs) {
+        enteredRenderQueueUs[frame] = nowUs;
+        if (renderQueue.size() == 3) {
+            renderQueue.pop_front();
+            drops++;
+        }
+        renderQueue.push_back(frame);
+    };
+    while (next < arrivals.size() || !pacingQueue.empty() || !renderQueue.empty()) {
+        const uint64_t arrivalUs = next < arrivals.size() ? arrivals[next].arrivalUs : never;
+        const uint64_t vblankUs = static_cast<uint64_t>(nextVblankUs);
+        const uint64_t renderUsAt =
+            renderQueue.empty() ? never : std::max({ renderReadyUs, latchUs, clockUs });
+        const uint64_t nowUs = std::min({ arrivalUs, vblankUs, renderUsAt });
+        clockUs = nowUs;
+        if (nowUs == arrivalUs) {
+            const size_t frame = next++;
+            if (!pacing) {
+                toRender(frame, nowUs);
+            } else if (pacingQueue.empty() && gate.releaseOnArrival()) {
+                toRender(frame, nowUs);
+            } else {
+                if (pacingQueue.size() == 3) {
+                    pacingQueue.pop_front();
+                    drops++;
+                }
+                pacingQueue.push_back(frame);
+            }
+        } else if (nowUs == vblankUs) {
+            nextVblankUs += periodUs;
+            if (pacing && gate.onVblank(!pacingQueue.empty())) {
+                toRender(pacingQueue.front(), nowUs);
+                pacingQueue.pop_front();
+            }
+        } else {
+            while (FramePacing::presentNewestOnly(false, true, pacing, false) &&
+                   renderQueue.size() > 1) {
+                renderQueue.pop_front();
+                drops++;
+            }
+            const size_t frame = renderQueue.front();
+            renderQueue.pop_front();
+            queue.push_back(nowUs - arrivals[frame].arrivalUs);
+            hold.push_back(enteredRenderQueueUs[frame] - arrivals[frame].arrivalUs);
+            const uint64_t presentUs = nowUs + renderUs;
+            renderReadyUs = presentUs;
+            // Latched at the first V-blank after the present
+            const double vblanks = std::floor((presentUs - firstVblankUs) / periodUs) + 1;
+            latchUs = static_cast<uint64_t>(firstVblankUs + vblanks * periodUs);
+            displayWaitTotalUs += latchUs - presentUs;
+        }
+    }
+
+    auto average = [](const std::vector<uint64_t>& v) {
+        uint64_t total = 0;
+        for (uint64_t x : v) {
+            total += x;
+        }
+        return total / v.size();
+    };
+    auto p99 = [](std::vector<uint64_t> v) {
+        std::sort(v.begin(), v.end());
+        return v[v.size() * 99 / 100];
+    };
+    return { 100.0 * drops / arrivals.size(), average(queue), p99(queue), p99(hold),
+             displayWaitTotalUs / queue.size() };
+}
+
+// Worst case over where the V-blanks fall relative to the frames
+static VsyncLoopResult worstVsyncLoop(const std::vector<Arrival>& arrivals, uint32_t num,
+                                      uint32_t den, bool pacing)
+{
+    VsyncLoopResult worst = {};
+    for (int phaseUs = 0; phaseUs < 8500; phaseUs += 250) {
+        const VsyncLoopResult r = simulateVsyncLoop(arrivals, num, den, pacing, phaseUs);
+        worst.dropPercent = std::max(worst.dropPercent, r.dropPercent);
+        worst.averageQueueUs = std::max(worst.averageQueueUs, r.averageQueueUs);
+        worst.p99QueueUs = std::max(worst.p99QueueUs, r.p99QueueUs);
+        worst.p99PacerHoldUs = std::max(worst.p99PacerHoldUs, r.p99PacerHoldUs);
+        worst.averageDisplayWaitUs = std::max(worst.averageDisplayWaitUs, r.averageDisplayWaitUs);
+    }
+    return worst;
+}
+
+static void printVsyncLoop(const char* name, const VsyncLoopResult& r)
+{
+    std::printf("%-46s %5.2f%% dropped, queue avg %5llu us, p99 %5llu us (pacer hold p99 %5llu us)"
+                ", display wait avg %5llu us\n",
+                name, r.dropPercent, static_cast<unsigned long long>(r.averageQueueUs),
+                static_cast<unsigned long long>(r.p99QueueUs),
+                static_cast<unsigned long long>(r.p99PacerHoldUs),
+                static_cast<unsigned long long>(r.averageDisplayWaitUs));
+}
+
+// V-Sync without VRR, with and without frame pacing: a frame that is decoded
+// on time goes straight to the render thread and is presented at once. Any
+// wait for the V-blank is the display's, after Present(), not the Pacer's.
+static void testVsyncQueue()
+{
+    struct Display
+    {
+        const char* name;
+        uint32_t num, den;
+        // The display is slower than the 120 FPS stream: frames must wait or
+        // be dropped whatever the Pacer does
+        bool slowerThanStream;
+    };
+    const Display displays[] = { { "120.000 Hz", 120000, 1000, false },
+                                 { "119.88 Hz", 120000, 1001, true },
+                                 { "144 Hz", 144000, 1000, false } };
+    const auto onTime = exact120Arrivals(0);
+    const auto jittered = jittered120Arrivals();
+    for (const Display& d : displays) {
+        for (bool pacing : { false, true }) {
+            char name[96];
+            std::snprintf(name, sizeof(name), "V-Sync%s, 120 FPS on %s",
+                          pacing ? " + frame pacing" : "", d.name);
+            const VsyncLoopResult r = worstVsyncLoop(onTime, d.num, d.den, pacing);
+            printVsyncLoop(name, r);
+            std::snprintf(name, sizeof(name), "V-Sync%s, 120 FPS on %s, jitter",
+                          pacing ? " + frame pacing" : "", d.name);
+            printVsyncLoop(name, worstVsyncLoop(jittered, d.num, d.den, pacing));
+            if (!d.slowerThanStream) {
+                CHECK(r.dropPercent == 0);
+                CHECK(r.p99QueueUs <= 500);
+                CHECK(r.p99PacerHoldUs == 0);
+            }
+        }
+    }
+}
+
+// VRR, presenting on arrival and Smooth, in the same configurations
+static void testVrrQueueReport()
+{
+    const auto onTime = exact120Arrivals(0);
+    const auto jittered = jittered120Arrivals();
+    for (bool smooth : { false, true }) {
+        for (int i = 0; i < 3; i++) {
+            const uint32_t num[] = { 120000, 120000, 144000 };
+            const uint32_t den[] = { 1000, 1001, 1000 };
+            const int hz[] = { 120, 120, 144 };
+            const char* names[] = { "120.000 Hz", "119.88 Hz", "144 Hz" };
+            char name[96];
+            std::snprintf(name, sizeof(name), "VRR%s, 120 FPS on %s", smooth ? " Smooth" : "",
+                          names[i]);
+            printLoop(name, simulateVrrLoop(onTime, spinSleep, smooth, hz[i], num[i], den[i]));
+            std::snprintf(name, sizeof(name), "VRR%s, 120 FPS on %s, jitter",
+                          smooth ? " Smooth" : "", names[i]);
+            printLoop(name, simulateVrrLoop(jittered, spinSleep, smooth, hz[i], num[i], den[i]));
+        }
+    }
+}
+
 int main()
 {
     testMinInterval();
@@ -784,6 +992,8 @@ int main()
     testPlayoutClock();
     testSmoothLoop();
     testSmoothExactRefresh();
+    testVsyncQueue();
+    testVrrQueueReport();
 
     if (s_Failures != 0) {
         std::fprintf(stderr, "%d VRR policy check(s) failed\n", s_Failures);

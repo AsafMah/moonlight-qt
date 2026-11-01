@@ -15,6 +15,7 @@ StatsWindow toStatsWindow(const VIDEO_STATS& stats)
     window.totalFrames = stats.totalFrames;
     window.networkDroppedFrames = stats.networkDroppedFrames;
     window.pacerDroppedFrames = stats.pacerDroppedFrames;
+    window.localDroppedFrames = stats.localDroppedFrames;
     window.pacerDropEligibleFrames = stats.decodedFrames;
 
     window.framesWithHostProcessingLatency = stats.framesWithHostProcessingLatency;

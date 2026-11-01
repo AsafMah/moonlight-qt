@@ -48,6 +48,7 @@ void StreamStatsModel::publishWindow(const StatsWindow& recent, const StatsWindo
         m_SessionFramesNetworkDropped += completed.networkDroppedFrames;
         m_SessionFramesPacerDropped += completed.pacerDroppedFrames;
         m_SessionFramesPacerEligible += StatsMath::pacerDropDenominator(completed);
+        m_SessionFramesLocalDropped += completed.localDroppedFrames;
 
         // Bumped under the lock so a snapshot's sequence always matches its data
         m_Sequence.fetch_add(1, std::memory_order_acq_rel);
@@ -82,6 +83,7 @@ StatsSnapshot StreamStatsModel::snapshot(uint64_t nowUs) const
         snapshot.sessionFramesNetworkDropped = m_SessionFramesNetworkDropped;
         snapshot.sessionFramesPacerDropped = m_SessionFramesPacerDropped;
         snapshot.sessionFramesPacerEligible = m_SessionFramesPacerEligible;
+        snapshot.sessionFramesLocalDropped = m_SessionFramesLocalDropped;
     }
 
     // The percentile work happens outside the lock so the render thread is
@@ -118,6 +120,8 @@ StatsSnapshot StreamStatsModel::snapshot(uint64_t nowUs) const
         StatsMath::lossPercent(window.networkDroppedFrames, window.totalFrames);
     snapshot.pacerDropPercent =
         StatsMath::lossPercent(window.pacerDroppedFrames, StatsMath::pacerDropDenominator(window));
+    snapshot.localDropPercent =
+        StatsMath::lossPercent(window.localDroppedFrames, window.totalFrames);
     snapshot.queueSamples = window.queueMeasured ? window.renderedFrames : 0;
     snapshot.bitrateMbps = window.bitrateMbps;
     snapshot.bitrateTimestampUs = window.bitrateTimestampUs;
@@ -163,5 +167,6 @@ void StreamStatsModel::reset()
     m_SessionFramesNetworkDropped = 0;
     m_SessionFramesPacerDropped = 0;
     m_SessionFramesPacerEligible = 0;
+    m_SessionFramesLocalDropped = 0;
     m_Sequence.store(0, std::memory_order_release);
 }

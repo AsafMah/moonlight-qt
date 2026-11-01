@@ -6,6 +6,7 @@
 
 #include "../bandwidth.h"
 #include "decoder.h"
+#include "framegapclassifier.h"
 #include "ffmpeg-renderers/renderer.h"
 #include "ffmpeg-renderers/pacer/pacer.h"
 #include "streaming/video/videoenhancement.h"
@@ -134,6 +135,7 @@ private:
     int m_FramesOut;
 
     int m_LastFrameNumber;
+    FrameGapClassifier m_FrameGaps;
     int m_StreamFps;
     int m_OriginalVideoWidth;
     int m_OriginalVideoHeight;

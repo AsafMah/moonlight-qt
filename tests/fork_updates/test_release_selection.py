@@ -11,7 +11,20 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ForkUpdateTests(unittest.TestCase):
+    def test_automatic_preference_is_default_on_and_persisted(self):
+        source = (ROOT / "app/settings/streamingpreferences.cpp").read_text(encoding="utf-8")
+        self.assertIn("autoInstallUpdates = settings.value(SER_AUTOINSTALLUPDATES, true).toBool()", source)
+        self.assertIn("settings.setValue(SER_AUTOINSTALLUPDATES, autoInstallUpdates)", source)
+        header = (ROOT / "app/settings/streamingpreferences.h").read_text(encoding="utf-8")
+        self.assertIn("Q_PROPERTY(bool autoInstallUpdates MEMBER autoInstallUpdates NOTIFY autoInstallUpdatesChanged)", header)
+
+    def test_automatic_install_policy(self):
+        self.run_checker_harness("automatic_harness.cpp", "Automatic update policy passed")
+
     def test_production_fork_selection(self):
+        self.run_checker_harness("selection_harness.cpp", "Fork release selection passed")
+
+    def run_checker_harness(self, filename, marker):
         qmake = shutil.which("qmake") or shutil.which("qmake6")
         self.assertIsNotNone(qmake, "Qt and a C++ compiler must be on PATH")
         source = (ROOT / "app/backend/autoupdatechecker.cpp").read_text(encoding="utf-8")
@@ -19,7 +32,10 @@ class ForkUpdateTests(unittest.TestCase):
         source = source.replace("new QNetworkAccessManager(this)",
                                 "new ScriptedNetworkAccessManager(this)")
         source = source.replace("QSysInfo::buildCpuArchitecture()", "testArchitecture")
-        harness = Path(__file__).with_name("selection_harness.cpp").read_text(encoding="utf-8")
+        harness = Path(__file__).with_name(filename).read_text(encoding="utf-8")
+        if filename == "automatic_harness.cpp":
+            base = Path(__file__).with_name("selection_harness.cpp").read_text(encoding="utf-8")
+            harness = base[:base.index("int main(")] + harness
         with tempfile.TemporaryDirectory(prefix="moonlight-fork-selection-") as directory:
             path = Path(directory)
             header = (ROOT / "app/backend/autoupdatechecker.h").read_text(encoding="utf-8")
@@ -54,7 +70,7 @@ class ForkUpdateTests(unittest.TestCase):
                 command = [str(path / "selection")]
             result = subprocess.run(command, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("Fork release selection passed", result.stdout)
+            self.assertIn(marker, result.stdout)
 
 
 if __name__ == "__main__":

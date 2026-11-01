@@ -301,6 +301,7 @@ public:
     Q_PROPERTY(bool enableMicrophone MEMBER enableMicrophone NOTIFY enableMicrophoneChanged)
     Q_PROPERTY(OverlayMenuPosition overlayMenuPosition MEMBER overlayMenuPosition NOTIFY overlayMenuPositionChanged)
     Q_PROPERTY(bool autoUpdateCheck MEMBER autoUpdateCheck NOTIFY autoUpdateCheckChanged)
+    Q_PROPERTY(bool autoInstallUpdates MEMBER autoInstallUpdates NOTIFY autoInstallUpdatesChanged)
     Q_PROPERTY(bool usbForwardingEnabled MEMBER usbForwardingEnabled NOTIFY usbForwardingEnabledChanged)
     Q_PROPERTY(
         bool clipboardSyncEnabled MEMBER clipboardSyncEnabled NOTIFY clipboardSyncEnabledChanged)
@@ -394,6 +395,7 @@ public:
     bool enableMicrophone;
     OverlayMenuPosition overlayMenuPosition;
     bool autoUpdateCheck;
+    bool autoInstallUpdates;
     bool usbForwardingEnabled;
     // Clipboard sync was unconditionally on (text + images) before these
     // settings existed, so all three default to true.
@@ -477,6 +479,7 @@ signals:
     void enableMicrophoneChanged();
     void overlayMenuPositionChanged();
     void autoUpdateCheckChanged();
+    void autoInstallUpdatesChanged();
     void usbForwardingEnabledChanged();
     void usbForwardingBoundDevicesChanged();
     void clipboardSyncEnabledChanged();

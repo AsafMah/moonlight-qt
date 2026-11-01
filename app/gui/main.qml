@@ -652,6 +652,7 @@ ApplicationWindow {
                 property string releaseVersion: ""
 
                 id: updateButton
+                enabled: !AutoUpdateChecker.automaticUpdateInProgress
 
                 iconSource: "qrc:/res/fluent/tb-update.svg"
 
@@ -684,6 +685,8 @@ ApplicationWindow {
 
                 function portableUpdateStatusChanged(message)
                 {
+                    if (AutoUpdateChecker.automaticUpdateInProgress)
+                        return
                     portableUpdateDialog.text = message
                     if (!portableUpdateDialog.visible) {
                         portableUpdateDialog.open()
@@ -692,6 +695,8 @@ ApplicationWindow {
 
                 function portableUpdateFailed(message)
                 {
+                    if (AutoUpdateChecker.automaticUpdateInProgress)
+                        return
                     portableUpdateDialog.close()
                     portableUpdateErrorDialog.text = message
                     portableUpdateErrorDialog.open()
@@ -708,9 +713,9 @@ ApplicationWindow {
                         portableUpdateDialog.standardButtons = Dialog.NoButton
                         portableUpdateDialog.closePolicy = Popup.NoAutoClose
                     })
-                    if (StreamingPreferences.autoUpdateCheck) {
-                        AutoUpdateChecker.start()
-                    }
+                    AutoUpdateChecker.configureAutomaticUpdates(
+                        StreamingPreferences.autoUpdateCheck,
+                        StreamingPreferences.autoInstallUpdates)
                 }
 
                 Keys.onDownPressed: {
@@ -880,6 +885,50 @@ ApplicationWindow {
 
     UpdateConfirmationDialog {
         id: updateConfirmationDialog
+    }
+
+    Connections {
+        target: StreamingPreferences
+        function onAutoUpdateCheckChanged() {
+            AutoUpdateChecker.configureAutomaticUpdates(
+                StreamingPreferences.autoUpdateCheck, StreamingPreferences.autoInstallUpdates)
+        }
+        function onAutoInstallUpdatesChanged() {
+            AutoUpdateChecker.configureAutomaticUpdates(
+                StreamingPreferences.autoUpdateCheck, StreamingPreferences.autoInstallUpdates)
+        }
+    }
+
+    Rectangle {
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: Theme.spaceMd
+        width: Math.min(420, parent.width - Theme.spaceMd * 2)
+        height: automaticUpdateContent.implicitHeight + Theme.spaceMd * 2
+        color: Theme.surface
+        border.color: Theme.lineStrong
+        z: 10
+        visible: AutoUpdateChecker.automaticUpdateStatus !== ""
+        Column {
+            id: automaticUpdateContent
+            anchors.fill: parent
+            anchors.margins: Theme.spaceMd
+            spacing: Theme.spaceSm
+            Text {
+                width: parent.width
+                text: AutoUpdateChecker.automaticUpdateStatus
+                wrapMode: Text.Wrap
+                color: Theme.text
+                font.family: Theme.fontSans
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
+            }
+            HardButton {
+                text: qsTr("Cancel automatic update")
+                visible: AutoUpdateChecker.automaticUpdateInProgress
+                onClicked: AutoUpdateChecker.cancelUpdate()
+            }
+        }
     }
 
     BackgroundSourceDialog {

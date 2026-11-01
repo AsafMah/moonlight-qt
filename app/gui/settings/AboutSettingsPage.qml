@@ -175,6 +175,22 @@ Column {
                     onClicked: aboutPage.requestUpdateCheck()
                 }
 
+                ToggleRow {
+                    width: parent.width
+                    title: qsTr("Automatically check for updates")
+                    description: qsTr("Check at startup and every six hours while not streaming.")
+                    checked: StreamingPreferences.autoUpdateCheck
+                    onToggled: function(value) { StreamingPreferences.autoUpdateCheck = value }
+                }
+
+                ToggleRow {
+                    width: parent.width
+                    title: qsTr("Install updates automatically")
+                    description: qsTr("Install verified updates when streaming has ended. A 15-second restart countdown can be cancelled. Setup installations still require Windows administrator approval.")
+                    checked: StreamingPreferences.autoInstallUpdates
+                    onToggled: function(value) { StreamingPreferences.autoInstallUpdates = value }
+                }
+
                 Text {
                     width: parent.width
                     text: aboutPage.updateStatus

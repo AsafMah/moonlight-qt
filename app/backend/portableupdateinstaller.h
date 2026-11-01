@@ -19,8 +19,11 @@ public:
     explicit PortableUpdateInstaller(QObject *parent = nullptr);
 
     bool supportsInAppUpdate() const;
+    bool isBusy() const { return m_UpdateReply || m_PreparedUpdate || m_InstallStarting; }
     void installUpdate(const QString& url, const QString& expectedDigest = QString());
     Q_INVOKABLE void cancelUpdate();
+    void setDeferInstall(bool deferred) { m_DeferInstall = deferred; }
+    void beginPreparedUpdate();
     void setStreamingActiveProvider(std::function<bool()> provider)
     {
         m_StreamingActive = std::move(provider);
@@ -31,6 +34,8 @@ signals:
     void onPortableUpdateFailed(QString message);
     void onUpdateCancelled();
     void onUpdateInstallStarted();
+    void onUpdateReady();
+    void onUpdateDeferred();
 
 private slots:
     void handlePortableUpdateMetaDataChanged();
@@ -70,6 +75,8 @@ private:
     QByteArray m_ExpectedSha256;
     bool m_MetadataChecked;
     bool m_InstallStarting = false;
+    bool m_DeferInstall = false;
+    bool m_PreparedUpdate = false;
     std::function<bool()> m_StreamingActive = [] {
         return false;
     };

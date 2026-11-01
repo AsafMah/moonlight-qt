@@ -60,28 +60,149 @@ AutoUpdateChecker::AutoUpdateChecker(QObject *parent) :
     Q_ASSERT(m_CurrentVersion.segmentCount() > 1);
 
     connect(m_PortableUpdateInstaller, &PortableUpdateInstaller::onPortableUpdateStatusChanged,
-            this, &AutoUpdateChecker::onPortableUpdateStatusChanged);
-    connect(m_PortableUpdateInstaller, &PortableUpdateInstaller::onPortableUpdateFailed,
-            this, &AutoUpdateChecker::onPortableUpdateFailed);
+            this, [this](const QString& message) {
+                if (m_AutomaticInProgress)
+                    setAutomaticStatus(message);
+                emit onPortableUpdateStatusChanged(message);
+            });
+    connect(m_PortableUpdateInstaller, &PortableUpdateInstaller::onPortableUpdateFailed, this,
+            [this](const QString& message) {
+                if (m_AutomaticInProgress)
+                    setAutomaticStatus(
+                        tr("Automatic update failed: %1. Use the update button to retry.")
+                            .arg(message));
+                emit onPortableUpdateFailed(message);
+                m_AutomaticInProgress = false;
+                m_UpdateReady = false;
+                m_RestartCountdown = 0;
+                emit automaticUpdateChanged();
+            });
     connect(m_PortableUpdateInstaller, &PortableUpdateInstaller::onUpdateCancelled, this,
             &AutoUpdateChecker::onUpdateCancelled);
     connect(m_PortableUpdateInstaller, &PortableUpdateInstaller::onUpdateInstallStarted, this,
             &AutoUpdateChecker::onUpdateInstallStarted);
+    connect(m_PortableUpdateInstaller, &PortableUpdateInstaller::onUpdateReady, this, [this]() {
+        m_UpdateReady = true;
+        m_RestartCountdown = 15;
+        setAutomaticStatus(tr("Update verified. Moonlight will restart shortly."));
+    });
+    connect(m_PortableUpdateInstaller, &PortableUpdateInstaller::onUpdateDeferred, this, [this]() {
+        m_AutomaticInProgress = false;
+        m_UpdateReady = false;
+        m_AttemptedUpdateUrl.clear();
+        setAutomaticStatus(tr("Update deferred until streaming ends."));
+    });
+    connect(this, &AutoUpdateChecker::onUpdateCheckFinished, this, [this]() {
+        m_CheckDue = false;
+        tryAutomaticInstall();
+    });
+    m_PeriodicCheck.setInterval(6 * 60 * 60 * 1000);
+    connect(&m_PeriodicCheck, &QTimer::timeout, this, [this]() {
+        m_CheckDue = true;
+        m_AttemptedUpdateUrl.clear();
+        automaticTick();
+    });
+    m_IdleTimer.setInterval(1000);
+    connect(&m_IdleTimer, &QTimer::timeout, this, &AutoUpdateChecker::automaticTick);
 }
 
 void AutoUpdateChecker::cancelUpdate()
 {
+    if (m_AutomaticInProgress) {
+        m_CancelledUpdateUrl = m_UpdateDownloadUrl;
+        m_AutomaticInProgress = false;
+        m_UpdateReady = false;
+        m_RestartCountdown = 0;
+        setAutomaticStatus(
+            tr("Automatic update cancelled. Use the update button to install later."));
+    }
     m_PortableUpdateInstaller->cancelUpdate();
+}
+
+void AutoUpdateChecker::configureAutomaticUpdates(bool checkEnabled, bool installEnabled)
+{
+    const bool startCheck = checkEnabled && !m_AutomaticCheckEnabled;
+    m_AutomaticCheckEnabled = checkEnabled;
+    m_AutomaticInstallEnabled = installEnabled;
+    if ((!checkEnabled || !installEnabled) && m_AutomaticInProgress)
+        cancelUpdate();
+#if UPDATE_BUILD_IS_RELEASE
+    if (!QStringLiteral(VERSION_STR).contains(QStringLiteral("dirty"))) {
+        if (checkEnabled) {
+            if (!m_PeriodicCheck.isActive())
+                m_PeriodicCheck.start();
+            m_IdleTimer.start();
+            m_CheckDue = m_CheckDue || startCheck;
+            automaticTick();
+        } else {
+            m_PeriodicCheck.stop();
+            m_IdleTimer.stop();
+            m_CheckDue = false;
+        }
+    }
+#else
+    Q_UNUSED(startCheck);
+#endif
+}
+
+void AutoUpdateChecker::setAutomaticStatus(const QString& status)
+{
+    m_AutomaticStatus = status;
+    emit automaticUpdateChanged();
+}
+
+void AutoUpdateChecker::tryAutomaticInstall()
+{
+    if (!m_AutomaticCheckEnabled || !m_AutomaticInstallEnabled || m_AutomaticInProgress ||
+        m_PortableUpdateInstaller->isBusy() || !supportsInAppUpdate() ||
+        m_UpdateDownloadUrl == m_AttemptedUpdateUrl || m_UpdateDownloadUrl == m_CancelledUpdateUrl)
+        return;
+    if (m_StreamingActive()) {
+        setAutomaticStatus(tr("Update available; installation deferred until streaming ends."));
+        return;
+    }
+    m_AttemptedUpdateUrl = m_UpdateDownloadUrl;
+    m_AutomaticInProgress = true;
+    m_PortableUpdateInstaller->setDeferInstall(true);
+    setAutomaticStatus(tr("Downloading automatic update..."));
+    m_PortableUpdateInstaller->installUpdate(m_UpdateDownloadUrl, m_UpdateAssetDigest);
+}
+
+void AutoUpdateChecker::automaticTick()
+{
+    if (m_StreamingActive()) {
+        if (m_UpdateReady) {
+            m_RestartCountdown = 15;
+            setAutomaticStatus(tr("Verified update deferred until streaming ends."));
+        }
+        return;
+    }
+    if (m_UpdateReady && m_AutomaticInProgress) {
+        if (--m_RestartCountdown <= 0) {
+            m_UpdateReady = false;
+            m_RestartCountdown = 0;
+            m_PortableUpdateInstaller->beginPreparedUpdate();
+        } else {
+            setAutomaticStatus(
+                tr("Restarting to install the update in %1 seconds.").arg(m_RestartCountdown));
+        }
+        return;
+    }
+    if (m_CheckDue && !m_AutomaticInProgress && checkForUpdates())
+        m_CheckDue = false;
+    tryAutomaticInstall();
 }
 
 void AutoUpdateChecker::setStreamingActiveProvider(std::function<bool()> provider)
 {
-    m_PortableUpdateInstaller->setStreamingActiveProvider(std::move(provider));
+    m_StreamingActive = std::move(provider);
+    m_PortableUpdateInstaller->setStreamingActiveProvider(m_StreamingActive);
 }
 
 bool AutoUpdateChecker::supportsInAppUpdate() const
 {
     return !m_UpdateDownloadUrl.isEmpty() && hasUpdateDigest(m_UpdateAssetDigest) &&
+           isUpdateRepositoryUrl(m_UpdateDownloadUrl, QStringLiteral("/releases/download/")) &&
            m_PortableUpdateInstaller->supportsInAppUpdate();
 }
 
@@ -101,6 +222,11 @@ void AutoUpdateChecker::installUpdate(QString url)
             tr("No verified update package is available for this installation."));
         return;
     }
+    if (m_AutomaticInProgress || m_PortableUpdateInstaller->isBusy()) {
+        emit onPortableUpdateStatusChanged(tr("An update is already in progress."));
+        return;
+    }
+    m_PortableUpdateInstaller->setDeferInstall(false);
     m_PortableUpdateInstaller->installUpdate(url, m_UpdateAssetDigest);
 }
 
@@ -119,7 +245,7 @@ bool AutoUpdateChecker::checkForUpdates()
         return false;
     }
 
-    if (m_UpdateCheckInProgress) {
+    if (m_UpdateCheckInProgress || m_AutomaticInProgress || m_PortableUpdateInstaller->isBusy()) {
         // The automatic startup check may still be running. Do not let a
         // newly opened settings page wait for a signal it cannot observe.
         return false;

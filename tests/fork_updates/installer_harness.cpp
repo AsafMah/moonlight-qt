@@ -72,8 +72,28 @@ int main(int argc, char** argv)
     }
     {
         PortableUpdateInstaller installer;
+        installer.setDeferInstall(true);
+        const QByteArray archiveBytes = "verified fake archive; never executed";
+        const QString expected = QString::fromLatin1(
+            QCryptographicHash::hash(archiveBytes, QCryptographicHash::Sha256).toHex());
+        int ready = 0;
+        QObject::connect(&installer, &PortableUpdateInstaller::onUpdateReady, [&] { ++ready; });
+        installer.installUpdate(url, "sha256:" + expected);
+        installer.m_MetadataChecked = true;
+        installer.m_UpdateFile->write(archiveBytes);
+        installer.handlePortableUpdateDownloadFinished();
+        check(ready == 1 && installer.m_PreparedUpdate && !installer.m_InstallStarting,
+              "Verified automatic download must wait before launching an installer");
+        const QString workspace = installer.m_PortableUpdateWorkspace;
+        installer.cancelUpdate();
+        check(!installer.m_PreparedUpdate && !QDir(workspace).exists(),
+              "Cancel must discard a verified prepared archive without running it");
+    }
+    {
+        PortableUpdateInstaller installer;
+        const int previousRequests = requests;
         installer.installUpdate(url, "sha256:" + QString(64, 'a'));
-        check(requests == 1, "verified package must start exactly one download");
+        check(requests == previousRequests + 1, "verified package must start exactly one download");
         check(QMetaObject::invokeMethod(&installer, "cancelUpdate"),
               "download cancellation must have a real invokable path");
         check(installer.m_UpdateReply == nullptr, "cancel must discard pending download");

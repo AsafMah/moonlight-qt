@@ -391,7 +391,7 @@ Column {
         ToggleRow {
             settingsSearchKeywords: "update version upgrade"
             title: qsTr("Automatically check for updates")
-            description: Brand.text(qsTr("Check for new versions of Moonlight when the app starts."))
+            description: Brand.text(qsTr("Check for new versions of Moonlight at startup and every six hours while not streaming."))
             checked: StreamingPreferences.autoUpdateCheck
             onToggled: function(value) { StreamingPreferences.autoUpdateCheck = value }
         }

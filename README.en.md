@@ -15,6 +15,8 @@ Download Windows, macOS, Linux AppImage, and Steam Link builds from [GitHub Rele
 
 For Windows portable upgrades, extract into a new folder and copy the old `Moonlight Game Streaming Project` settings folder. If you overwrite an older installation, remove the old `tls/qopensslbackend.dll`: it can be incompatible with the newer Qt runtime and cause a startup crash.
 
+Fork release builds check for updates at startup and every six hours while idle. **Install updates automatically** is on by default in About settings: verified packages install only after streaming ends, with a cancellable 15-second restart countdown. Windows Setup installations still require administrator approval; no UAC bypass is used. Turning automatic installation off retains the manual update button. Upgrading from v6.5.3.204 to the first automatic-install release still requires one click.
+
 > **macOS currently ships Apple Silicon (arm64) builds only**, named like `Moonlight-VPlus-<version>-arm64.dmg`.
 >
 > **Linux AppImages are available for x86_64 and aarch64**, named like `Moonlight-VPlus-<version>-x86_64.AppImage` and `Moonlight-VPlus-<version>-aarch64.AppImage`.

@@ -176,8 +176,11 @@ def main():
     release = find_draft(repo, tag, head)
     if release is None:
         notes = ("Old r43 builds check upstream: manually upgrade once to this fork-aware build. "
-                 "Future releases are checked automatically; download and installation require confirmation. "
-                 "Finish streaming before installing or restarting.\n\n"
+                 "Clients without automatic installation, including v6.5.3.204, need one click to upgrade. "
+                 "This version checks at startup and every six hours while idle, and installs verified updates "
+                 "automatically by default after streaming ends, with a cancellable 15-second restart countdown. "
+                 "Automatic installation can be disabled in About settings. Windows Setup upgrades still require "
+                 "administrator approval.\n\n"
                  f"Verified integration build {head}.\n\nCI: {os.environ['GITHUB_SERVER_URL']}/{repo}/actions/runs/{os.environ['GITHUB_RUN_ID']}\n\n")
         notes += "\n".join(f"- `{path.name}` SHA256 `{sha256(path)}`" for path in assets)
         release = json.loads(gh("api", f"repos/{repo}/releases", "--method", "POST",

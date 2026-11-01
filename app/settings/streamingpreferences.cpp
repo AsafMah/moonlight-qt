@@ -85,6 +85,7 @@
 #define SER_HDRMINBRIGHTNESS "hdrminbrightness"
 #define SER_HDRMAXAVERAGEBRIGHTNESS "hdrmaxaveragebrightness"
 #define SER_AUTOUPDATECHECK "autoupdatecheck"
+#define SER_AUTOINSTALLUPDATES "autoinstallupdates"
 #define SER_USBFORWARDING "usbforwarding"
 #define SER_USBFORWARDINGBOUND "usbforwardingbound"
 #define SER_CLIPBOARDSYNC "clipboardsync"
@@ -302,6 +303,7 @@ void StreamingPreferences::reload()
     enableMicrophone = settings.value(SER_MICROPHONE, false).toBool();
     overlayMenuPosition = loadOverlayMenuPlacement(settings);
     autoUpdateCheck = settings.value(SER_AUTOUPDATECHECK, true).toBool();
+    autoInstallUpdates = settings.value(SER_AUTOINSTALLUPDATES, true).toBool();
     usbForwardingEnabled = settings.value(SER_USBFORWARDING, false).toBool();
     m_UsbForwardingBoundDevices = settings.value(SER_USBFORWARDINGBOUND, QStringList()).toStringList();
     clipboardSyncEnabled = settings.value(SER_CLIPBOARDSYNC, true).toBool();
@@ -793,6 +795,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_MICROPHONE, enableMicrophone);
     settings.setValue(SER_OVERLAYMENUPLACEMENT, static_cast<int>(overlayMenuPosition));
     settings.setValue(SER_AUTOUPDATECHECK, autoUpdateCheck);
+    settings.setValue(SER_AUTOINSTALLUPDATES, autoInstallUpdates);
     settings.setValue(SER_USBFORWARDING, usbForwardingEnabled);
     settings.setValue(SER_USBFORWARDINGBOUND, m_UsbForwardingBoundDevices);
     settings.setValue(SER_CLIPBOARDSYNC, clipboardSyncEnabled);

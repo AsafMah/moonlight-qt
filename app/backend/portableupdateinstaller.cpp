@@ -56,7 +56,7 @@ void PortableUpdateInstaller::installUpdate(const QString& url, const QString& e
         return;
     }
 
-    if (m_UpdateReply != nullptr || m_InstallStarting) {
+    if (m_UpdateReply != nullptr || m_InstallStarting || m_PreparedUpdate) {
         emit onPortableUpdateStatusChanged(tr("An update is already in progress."));
         return;
     }
@@ -144,9 +144,17 @@ void PortableUpdateInstaller::installUpdate(const QString& url, const QString& e
     connect(m_UpdateReply, &QNetworkReply::finished, streamGuard, &QTimer::stop);
     connect(streamGuard, &QTimer::timeout, this, [this]() {
         if (m_StreamingActive()) {
-            cancelUpdate();
-            emit onPortableUpdateFailed(
-                tr("Update deferred because streaming started. Try again after the stream ends."));
+            if (m_DeferInstall) {
+                auto reply = m_UpdateReply;
+                disconnect(reply, nullptr, this, nullptr);
+                reply->abort();
+                resetPortableUpdateState(true);
+                emit onUpdateDeferred();
+            } else {
+                cancelUpdate();
+                emit onPortableUpdateFailed(tr(
+                    "Update deferred because streaming started. Try again after the stream ends."));
+            }
         }
     });
     streamGuard->start();
@@ -156,11 +164,14 @@ void PortableUpdateInstaller::installUpdate(const QString& url, const QString& e
 
 void PortableUpdateInstaller::cancelUpdate()
 {
-    if (m_UpdateReply == nullptr)
+    if (m_UpdateReply == nullptr && !m_PreparedUpdate)
         return;
     auto reply = m_UpdateReply;
-    disconnect(reply, nullptr, this, nullptr);
-    reply->abort();
+    if (reply) {
+        disconnect(reply, nullptr, this, nullptr);
+        reply->abort();
+    }
+    m_PreparedUpdate = false;
     resetPortableUpdateState(true);
     emit onUpdateCancelled();
 }
@@ -542,6 +553,7 @@ bool PortableUpdateInstaller::stageMacUpdateBundle(const QString& archivePath,
 
 void PortableUpdateInstaller::resetPortableUpdateState(bool removeWorkspace)
 {
+    m_PreparedUpdate = false;
     if (m_UpdateReply != nullptr) {
         m_UpdateReply->deleteLater();
         m_UpdateReply = nullptr;
@@ -650,11 +662,41 @@ void PortableUpdateInstaller::handlePortableUpdateDownloadFinished()
         emit onPortableUpdateFailed(verificationError);
         return;
     }
-    if (m_StreamingActive()) {
-        resetPortableUpdateState(true);
-        emit onPortableUpdateFailed(tr("Finish streaming before installing an update."));
+    m_PreparedUpdate = true;
+    if (m_UpdateReply) {
+        m_UpdateReply->deleteLater();
+        m_UpdateReply = nullptr;
+    }
+    if (m_DeferInstall) {
+        emit onUpdateReady();
         return;
     }
+    beginPreparedUpdate();
+}
+
+void PortableUpdateInstaller::beginPreparedUpdate()
+{
+    if (!m_PreparedUpdate || m_InstallStarting)
+        return;
+    if (m_StreamingActive()) {
+        if (m_DeferInstall) {
+            emit onUpdateReady();
+        } else {
+            m_PreparedUpdate = false;
+            resetPortableUpdateState(true);
+            emit onPortableUpdateFailed(tr("Finish streaming before installing an update."));
+        }
+        return;
+    }
+    const QString archivePath = QDir(m_PortableUpdateWorkspace).filePath(getUpdateArchiveName());
+    QString verificationError;
+    if (!verifyUpdateArchive(archivePath, verificationError)) {
+        m_PreparedUpdate = false;
+        resetPortableUpdateState(true);
+        emit onPortableUpdateFailed(verificationError);
+        return;
+    }
+    m_PreparedUpdate = false;
 
 #if defined(Q_OS_DARWIN)
     // 先把 DMG 里的 bundle 挂载、拷出来、清掉隔离属性，失败还来得及弹对话框

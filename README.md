@@ -15,6 +15,8 @@ Moonlight V+ for PC 是基于 [moonlight-stream/moonlight-qt](https://github.com
 
 Windows 便携版升级时，建议解压到新文件夹，再复制旧目录中的 `Moonlight Game Streaming Project` 设置文件夹。若覆盖旧目录，旧版 `tls/qopensslbackend.dll` 可能与新版 Qt 不兼容并导致启动崩溃，应移除该旧文件。
 
+分支发布版本会在启动时及空闲期间每六小时检查更新。「关于」中的「自动安装更新」默认开启：仅在串流结束后安装通过校验的更新，并提供可取消的 15 秒重启倒计时。Windows 安装版仍需管理员批准，不会绕过 UAC。关闭自动安装后仍可使用手动更新按钮。从 v6.5.3.204 升级到首个自动安装版本仍需点击一次。
+
 > **macOS 目前只提供 Apple Silicon（arm64）构建**，资产名形如 `Moonlight-VPlus-<版本>-arm64.dmg`。Intel Mac 需要自行按下面「从源码构建」的步骤编译。
 >
 > **Linux AppImage 提供 x86_64 和 aarch64 两份**，资产名形如 `Moonlight-VPlus-<版本>-x86_64.AppImage` / `Moonlight-VPlus-<版本>-aarch64.AppImage`。x86_64 在 Ubuntu 22.04 上构建（glibc >= 2.35），aarch64 在 Ubuntu 24.04 上构建（glibc >= 2.39，因此 Debian 12 / Raspberry Pi OS bookworm 用不了，需要 trixie 或更新）。

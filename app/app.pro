@@ -26,9 +26,9 @@ isEmpty(MOONLIGHT_VERSION): MOONLIGHT_VERSION = $$cat(version.txt)
 isEmpty(MOONLIGHT_NUMERIC_VERSION): MOONLIGHT_NUMERIC_VERSION = $$cat(version.txt)
 
 CI_UPDATE_BUILD = $$(GITHUB_ACTIONS)
+UPDATE_REPOSITORY_SCRIPT = $$shell_quote($$PWD/../scripts/resolve-update-repository.py)
 isEmpty(UPDATE_REPOSITORY) {
-    equals(CI_UPDATE_BUILD, true): UPDATE_REPOSITORY = $$(GITHUB_REPOSITORY)
-    isEmpty(UPDATE_REPOSITORY): UPDATE_REPOSITORY = qiin2333/moonlight-qt
+    UPDATE_REPOSITORY = $$system($$VERSION_PYTHON $$UPDATE_REPOSITORY_SCRIPT)
 }
 !contains(UPDATE_REPOSITORY, "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$") {
     error("UPDATE_REPOSITORY must be a GitHub owner/repository")

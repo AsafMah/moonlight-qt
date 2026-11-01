@@ -61,6 +61,9 @@ jobs:
     - name: Test version derivation
       run: python3 -m unittest discover -s tests/derive_version -p 'test_*.py'
 
+    - name: Test AppImage update channel metadata
+      run: python3 -m unittest discover -s tests/appimage_update -p 'test_*.py'
+
     - name: Install Qt for deterministic client replay
       run: sudo apt-get update -qq && sudo apt-get install -y -qq qt6-base-dev qt6-l10n-tools
 
@@ -139,13 +142,24 @@ jobs:
         echo "格式检查基线: $BASE (event=$EVENT_NAME)"
         # git clang-format --diff 只对 diff 触及的行重排并报告结果,不改工作区。
         # 无需格式化时输出 "none" / "no modified files to format" 等固定文案。
-        OUTPUT=$(git clang-format --diff --style file --extensions c,cpp,h,mm "$BASE" 2>&1)
+        FORMAT_STATUS=0
+        OUTPUT=$(git clang-format --diff --style file --extensions c,cpp,h,mm "$BASE" 2>&1) || FORMAT_STATUS=$?
+        if [ "$FORMAT_STATUS" -gt 1 ]; then
+          printf '%s\n' "$OUTPUT"
+          echo "::error::git clang-format failed with exit code $FORMAT_STATUS"
+          exit "$FORMAT_STATUS"
+        fi
         case "$OUTPUT" in
           none|*"no modified files to format"|*"clang-format did not modify any files")
+            if [ "$FORMAT_STATUS" -ne 0 ]; then
+              printf '%s\n' "$OUTPUT"
+              echo "::error::git clang-format failed with exit code $FORMAT_STATUS"
+              exit "$FORMAT_STATUS"
+            fi
             echo "格式检查通过"
             ;;
           *)
-            echo "$OUTPUT"
+            printf '%s\n' "$OUTPUT"
             echo "::error::C++ 改动行未通过 clang-format。本地执行 pip install clang-format==21.1.8 后跑 git clang-format 即可自动修复"
             exit 1
             ;;

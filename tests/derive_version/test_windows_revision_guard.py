@@ -11,6 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 class WindowsRevisionGuardTests(unittest.TestCase):
     def test_concrete_four_component_ci_artifact(self):
         script = (ROOT / "scripts/verify-windows-package.ps1").read_text(encoding="utf-8")
+        self.assertRegex(
+            script,
+            r"\$deriveVersionScript\s*=\s*Join-Path\s+\$PSScriptRoot\s+'derive-version\.py'",
+        )
         boundary = "$exe = (Get-Item -LiteralPath $ExePath).VersionInfo"
         self.assertEqual(script.count(boundary), 1)
         guard = script.split(boundary)[0] + "\n'Independent revision guard passed'\n"

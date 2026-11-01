@@ -4903,8 +4903,7 @@ void Session::notifyMouseEmulationMode(bool enabled)
                 .toUtf8()
                 .constData());
         m_OverlayManager.setOverlayState(Overlay::OverlayStatusUpdate, true);
-    }
-    else {
+    } else {
         m_OverlayManager.setOverlayState(Overlay::OverlayStatusUpdate, false);
     }
 }
@@ -4980,10 +4979,9 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
             m_DualSenseHapticsRenderer->submitEffect((uint16_t)(uintptr_t)event.data1, &report,
                                                      sizeof(report)))
             break;
-        m_InputHandler->setControllerLED((uint16_t)(uintptr_t)event.data1,
-                                         (uint8_t)((uintptr_t)event.data2 >> 16),
-                                         (uint8_t)((uintptr_t)event.data2 >> 8),
-                                         (uint8_t)((uintptr_t)event.data2));
+        m_InputHandler->setControllerLED(
+            (uint16_t)(uintptr_t)event.data1, (uint8_t)((uintptr_t)event.data2 >> 16),
+            (uint8_t)((uintptr_t)event.data2 >> 8), (uint8_t)((uintptr_t)event.data2));
         break;
     }
     case SDL_CODE_GAMECONTROLLER_SET_ADAPTIVE_TRIGGERS:
@@ -4994,7 +4992,7 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
             break;
         }
         m_InputHandler->setAdaptiveTriggers((uint16_t)(uintptr_t)event.data1,
-                                            (DualSenseOutputReport *)event.data2);
+                                            (DualSenseOutputReport*)event.data2);
         break;
     case SDL_CODE_FLUSH_TOUCHPAD_FRAME:
         m_InputHandler->flushPendingTouchpadFrameEvent();
@@ -5011,8 +5009,7 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
             m_InputHandler->flushPendingRemoteCursorHide();
         }
         break;
-    case SDL_CODE_CURSOR_UPDATE:
-    {
+    case SDL_CODE_CURSOR_UPDATE: {
         std::shared_ptr<RemoteCursorUpdate> cursorUpdate;
         {
             std::lock_guard<std::mutex> lock(m_CursorUpdateMutex);
@@ -5024,8 +5021,7 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
         }
         break;
     }
-#if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN) || \
-        defined(HAVE_LINUX_DISPLAY_EVENT_MONITOR)
+#if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN) || defined(HAVE_LINUX_DISPLAY_EVENT_MONITOR)
     case SDL_CODE_PROCESS_QT_OVERLAY_EVENTS:
         // The actual Qt processing happens after SDL dispatch below.
         // Keeping this event side-effect free also coalesces bursts of
@@ -5053,17 +5049,12 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
 class AsyncConnectionStartThread : public QThread
 {
 public:
-    AsyncConnectionStartThread(Session* session) :
-        QThread(nullptr),
-        m_Session(session)
+    AsyncConnectionStartThread(Session* session) : QThread(nullptr), m_Session(session)
     {
         setObjectName("Async Conn Start");
     }
 
-    void run() override
-    {
-        m_Session->m_AsyncConnectionSuccess = m_Session->startConnectionAsync();
-    }
+    void run() override { m_Session->m_AsyncConnectionSuccess = m_Session->startConnectionAsync(); }
 
     Session* m_Session;
 };

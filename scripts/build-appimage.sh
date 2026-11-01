@@ -208,8 +208,16 @@ if [ -n "$QT_PLUGIN_PATH" ] && [ -d "$QT_PLUGIN_PATH/multimedia" ]; then
   rm -f "$QT_PLUGIN_PATH/multimedia/libgstreamermediaplugin.so"
 fi
 
+echo Staging AppImage icon
+APP_ICON_SOURCE="$SOURCE_ROOT/app/deploy/steamlink/moonlight.png"
+[ -s "$APP_ICON_SOURCE" ] || fail "AppImage icon source is missing: $APP_ICON_SOURCE"
+cp "$APP_ICON_SOURCE" "$DEPLOY_FOLDER/moonlight.png" || fail "Unable to stage AppImage icon!"
+[ -s "$DEPLOY_FOLDER/moonlight.png" ] || fail "AppImage icon was not staged!"
+
 APPIMAGE_PATH="$INSTALLER_FOLDER/Moonlight-VPlus-$VERSION-$APPIMAGE_ARCH.AppImage"
-APPIMAGE_UPDATE_INFORMATION="gh-releases-zsync|qiin2333|moonlight-qt|$APPIMAGE_UPDATE_TAG|Moonlight-VPlus-*-${APPIMAGE_ARCH}.AppImage.zsync"
+APPIMAGE_UPDATE_INFORMATION=$(python3 "$SOURCE_ROOT/scripts/resolve-update-repository.py" \
+  --appimage-arch "$APPIMAGE_ARCH" --appimage-tag "$APPIMAGE_UPDATE_TAG") || \
+  fail "Unable to resolve AppImage update information!"
 
 pushd "$INSTALLER_FOLDER" || fail "Unable to enter install folder: $INSTALLER_FOLDER"
 # Don't bundle libva (upstream 2026-09): the bundled build-environment libva cannot
@@ -230,6 +238,7 @@ VERSION="$VERSION" \
   --custom-apprun "$APP_RUN" \
   --plugin qt --output appimage || fail "linuxdeploy failed!"
 popd || fail "Unable to leave install folder"
+[ -s "$DEPLOY_FOLDER/.DirIcon" ] || fail "AppImage tool did not create a valid AppDir .DirIcon!"
 
 echo Verifying AppImage update metadata
 [ -s "$APPIMAGE_PATH" ] || fail "AppImage is missing or empty: $APPIMAGE_PATH"
@@ -257,6 +266,8 @@ VERIFY_ROOT=$(mktemp -d "$BUILD_ROOT/appimage-verify.XXXXXX") || fail "Unable to
 ) || fail "Unable to extract AppImage for verification!"
 EXTRACTED_APPDIR=$VERIFY_ROOT/squashfs-root
 
+[ -s "$EXTRACTED_APPDIR/.DirIcon" ] || fail "AppImage is missing its AppDir icon!"
+[ -s "$EXTRACTED_APPDIR/moonlight.png" ] || fail "AppImage is missing its top-level desktop icon!"
 [ -e "$EXTRACTED_APPDIR/usr/plugins/platformthemes/libqxdgdesktopportal.so" ] || \
   fail "AppImage is missing the Qt desktop portal platform theme!"
 [ -e "$EXTRACTED_APPDIR/usr/plugins/platforms/libqxcb.so" ] || \

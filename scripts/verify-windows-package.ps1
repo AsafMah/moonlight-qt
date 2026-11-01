@@ -11,9 +11,10 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$expected = & python "$PSScriptRoot\derive-version.py" --field numeric
+$deriveVersionScript = Join-Path $PSScriptRoot 'derive-version.py'
+$expected = & python $deriveVersionScript --field numeric
 if ($LASTEXITCODE -ne 0) { throw 'Failed to derive numeric version' }
-$artifact = & python "$PSScriptRoot\derive-version.py" --field artifact
+$artifact = & python $deriveVersionScript --field artifact
 if ($LASTEXITCODE -ne 0) { throw 'Failed to derive artifact version' }
 
 # Check independently of derive-version's numeric path, which once dropped CI's count.

@@ -16,9 +16,15 @@ constexpr int SDL_CODE_RESOLUTION_CHANGED = 10;
 constexpr int SDL_CODE_CONNECTION_INTERRUPTED = 112;
 constexpr int SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME = 114;
 constexpr int ML_ERROR_GRACEFUL_TERMINATION = 0, ML_ERROR_HOST_RESTART = -5502;
+constexpr int ML_ERROR_PROTECTED_CONTENT = -5503, ML_ERROR_FRAME_CONVERSION = -5504;
+constexpr int CONN_TEST_SERVER = 1;
 struct SDL_Event
 {
     int type = 0;
+    struct
+    {
+        Uint32 timestamp = 0;
+    } quit;
     struct
     {
         int event = 0;
@@ -61,6 +67,7 @@ std::vector<int64_t> attempts;
 std::vector<int64_t> stops;
 std::vector<bool> restartOptIns;
 std::vector<uint32_t> attemptBudgets;
+std::vector<SDL_Event> pushedEvents;
 void LiPrepareConnectionAttempt(uint32_t remainingTimeoutMs)
 {
     interrupted = false;
@@ -110,7 +117,10 @@ void LiInterruptConnection()
     if (firstInterrupt < 0)
         firstInterrupt = clockMs;
 }
-void pushEventOrWarn(SDL_Event) {}
+void pushEventOrWarn(SDL_Event event)
+{
+    pushedEvents.push_back(event);
+}
 void SDL_LogWarn(int, const char*, ...) {}
 int eligibilityLogs = 0;
 void SDL_LogInfo(int, const char*, ...)
@@ -118,6 +128,14 @@ void SDL_LogInfo(int, const char*, ...)
     ++eligibilityLogs;
 }
 void SDL_LogError(int, const char*, ...) {}
+unsigned int LiGetPortFlagsFromTerminationErrorCode(int)
+{
+    return 0;
+}
+int LiTestClientConnectivity(int, int, unsigned int)
+{
+    return 17;
+}
 struct StreamQuality
 {
     struct Settings
@@ -161,10 +179,33 @@ struct Toast
     void beginEventProcessing() {}
 };
 
+class QCoreApplication
+{
+public:
+    static QCoreApplication* instance()
+    {
+        static QCoreApplication application;
+        return &application;
+    }
+    static void reset()
+    {
+        instance()->quitCount = 0;
+    }
+    void quit()
+    {
+        ++quitCount;
+    }
+    int quitCount = 0;
+};
+
 class Session
 {
 public:
     static Session* s_ActiveSession;
+    struct Preferences
+    {
+        bool quitAppAfter = false;
+    };
     enum class ReconnectReason
     {
         ConnectionLost,
@@ -185,6 +226,8 @@ public:
     std::atomic<bool> m_RestartRecoveryEligible{ false };
     std::atomic<bool> m_RecoveryFrameReceived{ false };
     bool m_RecoveryShowToast = false;
+    Preferences m_PreferencesStorage;
+    Preferences* m_Preferences = &m_PreferencesStorage;
     bool m_RestartEligibilityLogged = false;
     bool m_AsyncConnectionSuccess = false;
     bool m_SuppressConnectionErrorDialog = false;
@@ -207,6 +250,7 @@ public:
     std::atomic<int> m_LastTerminationErrorCode{ ML_ERROR_HOST_RESTART };
     int displayedError = 999;
     int outcomeCount = 0;
+    int m_PortTestResults = 0;
     struct
     {
         int width = 1920, height = 1080, fps = 60;
@@ -219,7 +263,10 @@ public:
     bool prepareConnectionAttemptControl();
     bool interruptConnectionAttemptIfStopped();
     void logRestartRecoveryIneligibility();
+    void setShouldExit(bool quitHostApp = false);
+    static void clConnectionTerminated(int errorCode);
     void exec();
+    void classifyExecEvent(SDL_Event& event);
     void displayTerminationError(int code)
     {
         displayedError = code;
@@ -275,6 +322,10 @@ private:
 // ATTEMPT_INTERRUPT
 // ELIGIBILITY_LOG
 // INITIAL_RECOVERY
+// EXEC_QUIT_CLASSIFICATION
+// SET_SHOULD_EXIT
+// CONNECTION_TERMINATED
+// DEFERRED_APP_QUIT
 
 int main()
 {
@@ -310,6 +361,8 @@ int main()
         restartOptIns.clear();
         attemptBudgets.clear();
         eligibilityLogs = 0;
+        pushedEvents.clear();
+        QCoreApplication::reset();
     };
     {
         reset();
@@ -522,9 +575,16 @@ int main()
         Session::markVideoReceived();
         check(session.m_RecoveryBudget.active(), "a frame after expiry must not renew the budget");
         session.processRecoveryStatus();
-        check(session.m_ShouldExit && interrupted, "stream loop must interrupt at frame deadline");
+        check(!session.m_ShouldExit && session.m_ConnectionCancel && interrupted,
+              "frame-budget expiry must interrupt without requesting application exit");
         check(session.displayedError == ML_ERROR_HOST_RESTART,
               "no-frame outage expiry must report restart-recovery failure");
+        if (!pushedEvents.empty()) {
+            session.classifyExecEvent(pushedEvents.back());
+            runDeferredAppQuit(&session);
+        }
+        check(!session.m_ShouldExit && QCoreApplication::instance()->quitCount == 0,
+              "frame-budget expiry must return to the app grid");
     }
     {
         reset();
@@ -553,6 +613,70 @@ int main()
         check(session.m_RecoveryBudget.active(), "cancel wins recovered-frame race");
         session.processRecoveryStatus();
         check(session.toasts.empty(), "cancelled recovery must not claim success");
+    }
+    for (const char* source : { "plain keyboard quit combo", "gamepad quit combo",
+                                "Wayland stream-window close" }) {
+        reset();
+        Session session;
+        SDL_Event event = {};
+        event.type = SDL_QUIT;
+        session.classifyExecEvent(event);
+        check(!session.m_ShouldExit, source);
+        runDeferredAppQuit(&session);
+        check(QCoreApplication::instance()->quitCount == 0,
+              "ordinary SDL_QUIT must finish the stream without quitting Moonlight");
+    }
+    {
+        reset();
+        Session session;
+        Session::s_ActiveSession = &session;
+        Session::clConnectionTerminated(ML_ERROR_GRACEFUL_TERMINATION);
+        check(session.displayedError == ML_ERROR_GRACEFUL_TERMINATION,
+              "non-recoverable host termination must display its error");
+        check(session.m_ConnectionCancel && !pushedEvents.empty() &&
+                  pushedEvents.back().type == SDL_QUIT,
+              "non-recoverable termination must stop the connection and queue stream cleanup");
+        if (!pushedEvents.empty()) {
+            session.classifyExecEvent(pushedEvents.back());
+        }
+        runDeferredAppQuit(&session);
+        check(!session.m_ShouldExit && QCoreApplication::instance()->quitCount == 0,
+              "non-recoverable termination must keep Moonlight open after showing its error");
+    }
+    for (int cancelType : { SDL_QUIT, SDL_KEYDOWN, SDL_WINDOWEVENT }) {
+        reset();
+        Session session;
+        session.m_RecoveryBudget.begin(clockMs);
+        SDL_Event event = {};
+        event.type = cancelType;
+        event.key.keysym.sym = SDLK_ESCAPE;
+        event.window.event = SDL_WINDOWEVENT_CLOSE;
+        session.classifyExecEvent(event);
+        check(session.m_ShouldExit && session.m_ConnectionCancel,
+              "user quit, Esc and window close must cancel active recovery");
+        runDeferredAppQuit(&session);
+        check(QCoreApplication::instance()->quitCount == 1,
+              "user cancellation during recovery must quit the application");
+    }
+    for (bool quitHostApp : { false, true }) {
+        reset();
+        Session session;
+        session.setShouldExit(quitHostApp);
+        runDeferredAppQuit(&session);
+        check(session.m_ShouldExit && QCoreApplication::instance()->quitCount == 1,
+              "quit-and-exit and SIGTERM must retain their application-exit behavior");
+    }
+    {
+        reset();
+        Session session;
+        session.m_RecoveryBudget.begin(clockMs);
+        SDL_Event internalQuit = {};
+        internalQuit.type = SDL_QUIT;
+        session.m_ConnectionCancel = true;
+        session.classifyExecEvent(internalQuit);
+        runDeferredAppQuit(&session);
+        check(!session.m_ShouldExit && QCoreApplication::instance()->quitCount == 0,
+              "internally queued SDL_QUIT must not be reclassified as user cancellation");
     }
     check(restartRecoveryAppEligible("Desktop", false, 7, true), "Desktop must qualify");
     for (const char* name :

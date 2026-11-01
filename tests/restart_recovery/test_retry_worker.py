@@ -11,6 +11,15 @@ from test_http_deadline import ROOT, function
 
 
 class RetryWorkerTests(unittest.TestCase):
+    def test_pyrowave_fatal_marks_its_quit_event_as_internal(self):
+        source = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
+        fatal_start = source.index("case SDL_CODE_PYROWAVE_FATAL:")
+        fatal_end = source.index("case SDL_CODE_PYROWAVE_FALLBACK_NOTICE:", fatal_start)
+        fatal = source[fatal_start:fatal_end]
+        self.assertIn("m_ConnectionCancel = true;", fatal)
+        self.assertLess(fatal.index("m_ConnectionCancel = true;"),
+                        fatal.index("quitEvent.type = SDL_QUIT;"))
+
     def test_production_retry_pump(self):
         source = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
         body = function(source, "bool Session::tryReconnect(")
@@ -37,6 +46,27 @@ class RetryWorkerTests(unittest.TestCase):
         harness = harness.replace(
             "Session* Session::s_ActiveSession = nullptr;",
             "Session* Session::s_ActiveSession = nullptr;\n" + marker)
+        exec_start = source.index("void Session::exec(")
+        event_start = source.index("        const bool recoveryNotification =", exec_start)
+        event_end = source.index("        switch (event.type) {", event_start)
+        event_classification = source[event_start:event_end]
+        harness = harness.replace(
+            "// EXEC_QUIT_CLASSIFICATION",
+            "void Session::classifyExecEvent(SDL_Event& event)\n{\n" +
+            event_classification + "}\n")
+        harness = harness.replace(
+            "// SET_SHOULD_EXIT", function(source, "void Session::setShouldExit("))
+        harness = harness.replace(
+            "// CONNECTION_TERMINATED",
+            function(source, "void Session::clConnectionTerminated("))
+        task_start = source.index("class DeferredSessionCleanupTask")
+        decision_start = source.index(
+            "        if (m_Session->m_ShouldExit) {", task_start)
+        decision_end = source.index("\n        }", decision_start) + len("\n        }")
+        deferred_quit = source[decision_start:decision_end]
+        harness = harness.replace(
+            "// DEFERRED_APP_QUIT",
+            "void runDeferredAppQuit(Session* m_Session)\n{\n" + deferred_quit + "\n}\n")
         qmake = ((shutil.which("qmake6") or shutil.which("qmake"))
                  if os.name != "nt" else shutil.which("qmake"))
         self.assertIsNotNone(qmake, "Run with Qt qmake and a C++ compiler on PATH")

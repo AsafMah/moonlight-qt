@@ -26,6 +26,11 @@ public:
     static
     int getDisplayRefreshRate(SDL_Window* window);
 
+    // The exact refresh rate (numerator / denominator Hz) of the display
+    // showing the window, where the OS reports it (Windows). False if unknown.
+    static bool getExactDisplayRefreshRate(SDL_Window* window, uint32_t* numerator,
+                                           uint32_t* denominator);
+
     static
     bool hasFastAes();
 

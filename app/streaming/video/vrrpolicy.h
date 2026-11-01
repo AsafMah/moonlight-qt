@@ -40,6 +40,27 @@ constexpr uint64_t refreshIntervalUs(int displayHz)
                          : 0;
 }
 
+// The shortest time between two presents, in nanoseconds, for a display whose
+// exact refresh rate is numerator / denominator Hz (as the OS reports the
+// signal timing, e.g. 120000/1000 or 120000/1001). The exact rate needs no
+// margin, but a whole microsecond would be too coarse: 8334 us at 120 Hz is
+// still slower than a 120 FPS stream. 0 when the rate is unknown or doesn't
+// belong to a displayHz display (the window may have moved).
+constexpr uint64_t exactRefreshIntervalNs(int displayHz, uint32_t numerator, uint32_t denominator)
+{
+    if (displayHz <= 0 || numerator == 0 || denominator == 0) {
+        return 0;
+    }
+    const uint64_t hz = static_cast<uint64_t>(displayHz);
+    const uint64_t num = numerator;
+    const uint64_t den = denominator;
+    // Within 1 Hz of the reported rate, which may be rounded or truncated
+    if (num + den <= hz * den || num >= (hz + 1) * den) {
+        return 0;
+    }
+    return (1000000000u * den + num - 1) / num;
+}
+
 // Whether a full-screen display mode suits the stream. Without VRR the stream
 // FPS must evenly divide the refresh rate; with VRR the display follows the
 // stream, so any refresh rate works and the highest one gives the widest range.
@@ -249,35 +270,59 @@ public:
         : m_MinIntervalUs(minPresentIntervalUs(capFps)),
           m_MinGapUs(minPresentIntervalUs(displayHz) < m_MinIntervalUs
                          ? minPresentIntervalUs(displayHz)
-                         : m_MinIntervalUs)
+                         : m_MinIntervalUs),
+          m_IntervalNs(m_MinIntervalUs * 1000), m_GapNs(m_MinGapUs * 1000)
     {
     }
 
     // The VRR pacer's limiter: presents at the display's full rate, never
-    // closer together than one refresh
-    static FrameLimiter forDisplay(int displayHz)
+    // closer together than one refresh. With the display's exact refresh rate
+    // (numerator / denominator Hz) the schedule follows it to the nanosecond;
+    // without it, the whole-number rate gets refreshIntervalUs()'s margin.
+    static FrameLimiter forDisplay(int displayHz, uint32_t exactNumerator = 0,
+                                   uint32_t exactDenominator = 0)
     {
         FrameLimiter limiter;
-        limiter.m_MinIntervalUs = refreshIntervalUs(displayHz);
-        limiter.m_MinGapUs = limiter.m_MinIntervalUs;
+        const uint64_t exactNs =
+            exactRefreshIntervalNs(displayHz, exactNumerator, exactDenominator);
+        if (exactNs != 0) {
+            limiter.m_IntervalNs = exactNs;
+            limiter.m_MinIntervalUs = (exactNs + 999) / 1000;
+            // The schedule keeps exactly one refresh per present. Only the gap
+            // after an actual present tolerates the render thread waking a
+            // little late (spin sleeper: p99 12 us, max 50 us), or that
+            // lateness would add up every frame of a stream at this rate.
+            limiter.m_GapNs = exactNs - ExactRateWakeToleranceNs;
+        } else {
+            limiter.m_MinIntervalUs = refreshIntervalUs(displayHz);
+            limiter.m_IntervalNs = limiter.m_MinIntervalUs * 1000;
+            limiter.m_GapNs = limiter.m_IntervalNs;
+        }
+        limiter.m_MinGapUs = limiter.m_GapNs / 1000;
         return limiter;
     }
 
+    static constexpr uint64_t ExactRateWakeToleranceNs = 50000;
+
+    uint64_t intervalNs() const { return m_IntervalNs; }
+
     bool isEnabled() const { return m_MinIntervalUs != 0; }
 
+    // Rounded up to whole microseconds
     uint64_t minIntervalUs() const { return m_MinIntervalUs; }
 
     // The earliest time a frame that is ready at nowUs may be presented
     uint64_t presentSlotUs(uint64_t nowUs) const
     {
-        if (m_MinIntervalUs == 0 || !m_HasNextSlot || nowUs >= m_NextSlotUs) {
+        const uint64_t nextSlotUs = (m_NextSlotNs + 999) / 1000;
+        if (m_MinIntervalUs == 0 || !m_HasNextSlot || nowUs >= nextSlotUs) {
             return nowUs;
         }
-        if (m_NextSlotUs - nowUs > m_MinIntervalUs) {
+        if (nextSlotUs - nowUs > m_MinIntervalUs) {
             // Clock went backwards; never block on it
             return nowUs;
         }
-        return m_NextSlotUs;
+        return nextSlotUs;
     }
 
     // How long to wait before presenting at nowUs (0 = present now)
@@ -289,9 +334,17 @@ public:
     // nowUs. Either way it is at least one display refresh after nowUs.
     void onPresented(uint64_t slotUs, uint64_t nowUs)
     {
-        const uint64_t base = nowUs > slotUs && nowUs - slotUs >= m_MinIntervalUs ? nowUs : slotUs;
-        const uint64_t earliest = nowUs + m_MinGapUs;
-        m_NextSlotUs = base + m_MinIntervalUs > earliest ? base + m_MinIntervalUs : earliest;
+        uint64_t baseNs;
+        if (nowUs > slotUs && nowUs - slotUs >= m_MinIntervalUs) {
+            baseNs = nowUs * 1000;
+        } else if (m_HasNextSlot && slotUs == (m_NextSlotNs + 999) / 1000) {
+            // Presented in the slot this limiter set: keep its exact time
+            baseNs = m_NextSlotNs;
+        } else {
+            baseNs = slotUs * 1000;
+        }
+        const uint64_t earliestNs = nowUs * 1000 + m_GapNs;
+        m_NextSlotNs = baseNs + m_IntervalNs > earliestNs ? baseNs + m_IntervalNs : earliestNs;
         m_HasNextSlot = true;
     }
 
@@ -302,7 +355,9 @@ public:
 private:
     uint64_t m_MinIntervalUs;
     uint64_t m_MinGapUs;
-    uint64_t m_NextSlotUs = 0;
+    uint64_t m_IntervalNs;
+    uint64_t m_GapNs;
+    uint64_t m_NextSlotNs = 0;
     bool m_HasNextSlot = false;
 };
 

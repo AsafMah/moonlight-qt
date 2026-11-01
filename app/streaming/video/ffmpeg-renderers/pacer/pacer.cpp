@@ -491,7 +491,11 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, b
         // least one refresh apart so they stay inside the display's VRR range.
         // (A Nonary VRR fallback on a force-pacing renderer keeps its V-sync source.)
         if (m_VsyncSource == nullptr && m_VsyncRenderer->isRenderThreadSupported()) {
-            m_VrrLimiter = VrrPolicy::FrameLimiter::forDisplay(m_DisplayFps);
+            uint32_t refreshNumerator = 0;
+            uint32_t refreshDenominator = 0;
+            StreamUtils::getExactDisplayRefreshRate(window, &refreshNumerator, &refreshDenominator);
+            m_VrrLimiter = VrrPolicy::FrameLimiter::forDisplay(m_DisplayFps, refreshNumerator,
+                                                               refreshDenominator);
             m_SmoothVrr = VrrPolicy::smoothEnabled(
                 enableVrr, smoothVrr, vrrImplementation == StreamingPreferences::VRR_IMPL_NONARY);
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -499,6 +503,14 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, b
                         "frames are dropped only when a newer one is ready",
                         m_SmoothVrr ? "on the sender's schedule (Smooth)" : "on arrival",
                         m_DisplayFps);
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR present interval: %llu ns (%s refresh rate %u/%u)",
+                        static_cast<unsigned long long>(m_VrrLimiter.intervalNs()),
+                        VrrPolicy::exactRefreshIntervalNs(m_DisplayFps, refreshNumerator,
+                                                          refreshDenominator) != 0
+                            ? "exact"
+                            : "unavailable or mismatched; whole-number",
+                        refreshNumerator, refreshDenominator);
         } else {
             // Never block the main thread to space out presents
             SDL_LogInfo(

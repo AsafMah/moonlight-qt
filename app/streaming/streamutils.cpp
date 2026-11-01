@@ -13,6 +13,9 @@
 
 #ifdef Q_OS_WINDOWS
 #include <Windows.h>
+#include <SDL_syswm.h>
+
+#include <vector>
 #endif
 
 #ifdef Q_OS_UNIX
@@ -211,6 +214,85 @@ int StreamUtils::getDisplayRefreshRate(SDL_Window* window)
     }
 
     return mode.refresh_rate;
+}
+
+bool StreamUtils::getExactDisplayRefreshRate(SDL_Window* window, uint32_t* numerator,
+                                             uint32_t* denominator)
+{
+    *numerator = 0;
+    *denominator = 0;
+
+#ifdef Q_OS_WINDOWS
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(window, &info) || info.subsystem != SDL_SYSWM_WINDOWS) {
+        return false;
+    }
+
+    MONITORINFOEXW monitorInfo = {};
+    monitorInfo.cbSize = sizeof(monitorInfo);
+    const HMONITOR monitor = MonitorFromWindow(info.info.win.window, MONITOR_DEFAULTTONEAREST);
+    if (monitor == nullptr || !GetMonitorInfoW(monitor, &monitorInfo)) {
+        return false;
+    }
+
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths;
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes;
+    LONG result = ERROR_INSUFFICIENT_BUFFER;
+    for (int attempt = 0; attempt < 3 && result == ERROR_INSUFFICIENT_BUFFER; attempt++) {
+        UINT32 pathCount = 0;
+        UINT32 modeCount = 0;
+        result = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount);
+        if (result != ERROR_SUCCESS) {
+            return false;
+        }
+        paths.assign(pathCount, DISPLAYCONFIG_PATH_INFO{});
+        modes.assign(modeCount, DISPLAYCONFIG_MODE_INFO{});
+        result = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount,
+                                    modes.data(), nullptr);
+        if (result == ERROR_SUCCESS) {
+            paths.resize(pathCount);
+            modes.resize(modeCount);
+        }
+    }
+    if (result != ERROR_SUCCESS) {
+        return false;
+    }
+
+    // The signal timing of the one target showing this window's monitor. A
+    // cloned output has several, and they may differ: don't guess.
+    int matches = 0;
+    for (const DISPLAYCONFIG_PATH_INFO& path : paths) {
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {};
+        sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+        sourceName.header.size = sizeof(sourceName);
+        sourceName.header.adapterId = path.sourceInfo.adapterId;
+        sourceName.header.id = path.sourceInfo.id;
+        if (DisplayConfigGetDeviceInfo(&sourceName.header) != ERROR_SUCCESS ||
+            _wcsicmp(sourceName.viewGdiDeviceName, monitorInfo.szDevice) != 0) {
+            continue;
+        }
+        if (++matches > 1) {
+            *numerator = 0;
+            *denominator = 0;
+            return false;
+        }
+
+        const UINT32 modeIndex = path.targetInfo.modeInfoIdx;
+        if (modeIndex == DISPLAYCONFIG_PATH_MODE_IDX_INVALID || modeIndex >= modes.size() ||
+            modes[modeIndex].infoType != DISPLAYCONFIG_MODE_INFO_TYPE_TARGET) {
+            continue;
+        }
+        const DISPLAYCONFIG_RATIONAL& vsync =
+            modes[modeIndex].targetMode.targetVideoSignalInfo.vSyncFreq;
+        *numerator = vsync.Numerator;
+        *denominator = vsync.Denominator;
+    }
+    return *numerator != 0 && *denominator != 0;
+#else
+    Q_UNUSED(window);
+    return false;
+#endif
 }
 
 bool StreamUtils::hasFastAes()

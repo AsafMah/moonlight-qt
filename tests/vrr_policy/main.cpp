@@ -375,13 +375,15 @@ struct VrrLoopResult
 using WakeModel = uint64_t (*)(uint64_t nowUs, uint64_t deadlineUs, int n);
 
 static VrrLoopResult simulateVrrLoop(const std::vector<Arrival>& arrivals, WakeModel wakeUs,
-                                     bool smooth = false)
+                                     bool smooth = false, int displayHz = 180,
+                                     uint32_t exactNumerator = 0, uint32_t exactDenominator = 0)
 {
-    const int displayHz = 180;
     const uint64_t renderUs = 250;
-    // The Pacer's limiter for a 180 FPS stream on this display
-    const VrrPolicy::SyncDecision sync = VrrPolicy::decide({ false, false, true, 180, displayHz });
-    VrrPolicy::FrameLimiter limiter = VrrPolicy::FrameLimiter::forDisplay(sync.presentCapFps);
+    // The Pacer's limiter for a stream at this display's refresh rate
+    const VrrPolicy::SyncDecision sync =
+        VrrPolicy::decide({ false, false, true, displayHz, displayHz });
+    VrrPolicy::FrameLimiter limiter =
+        VrrPolicy::FrameLimiter::forDisplay(sync.presentCapFps, exactNumerator, exactDenominator);
     VrrPolicy::SourceCadence cadence;
     VrrPolicy::PlayoutClock playout;
     std::deque<size_t> queue;
@@ -620,6 +622,90 @@ static void testLimiterLoop()
     CHECK(gridNearCapResult.minGapUs >= displayRefreshUs);
 }
 
+// A host capturing at exactly 120 FPS: RTP timestamps 750 ticks (90 kHz)
+// apart, converted to microseconds the way Pacer does (pts * 100 / 9). Frames
+// arrive 1.5 ms after capture, and every 8th (large) frame lateUs later.
+static std::vector<Arrival> exact120Arrivals(uint64_t lateUs)
+{
+    std::vector<Arrival> out;
+    for (uint64_t i = 1; i <= 3600; i++) {
+        const uint64_t sourceUs = (90000 + i * 750) * 100 / 9;
+        out.push_back({ sourceUs, sourceUs + 1500 + (i % 8 == 0 ? lateUs : 0) });
+    }
+    return out;
+}
+
+// Same drops, and frame age (avg and p99) within 1 us
+static bool sameLoopResult(const VrrLoopResult& a, const VrrLoopResult& b)
+{
+    auto near = [](uint64_t x, uint64_t y) {
+        return (x > y ? x - y : y - x) <= 1;
+    };
+    return a.dropPercent == b.dropPercent && near(a.averageAgeUs, b.averageAgeUs) &&
+           near(a.p99AgeUs, b.p99AgeUs);
+}
+
+// The limiter keeps presents one refresh apart. With only the whole-number
+// refresh rate it allows for a refresh up to 0.1% slower (119.88 Hz shows as
+// 120), so a stream at exactly 120.000 FPS outran it by ~9 us per frame, and
+// each late wake-up pushed the next present back too: Smooth fell a whole
+// frame behind every few seconds, then dropped one (queue sawing 0.5 -> 8.7
+// ms; 3 -> 12 ms in a field report). The exact refresh rate leaves no margin
+// to outrun, and the gap after a present tolerates 50 us of wake-up lateness.
+static void testSmoothExactRefresh()
+{
+    const uint64_t toleranceUs = VrrPolicy::FrameLimiter::ExactRateWakeToleranceNs / 1000;
+
+    // Exact rates are used only within 1 Hz of the reported refresh rate
+    CHECK(VrrPolicy::exactRefreshIntervalNs(120, 120000, 1000) == 8333334);
+    CHECK(VrrPolicy::exactRefreshIntervalNs(120, 120000, 1001) == 8341667);
+    CHECK(VrrPolicy::exactRefreshIntervalNs(119, 120000, 1001) != 0);
+    CHECK(VrrPolicy::exactRefreshIntervalNs(120, 121001, 1000) == 0);
+    CHECK(VrrPolicy::exactRefreshIntervalNs(120, 118999, 1000) == 0);
+    CHECK(VrrPolicy::exactRefreshIntervalNs(120, 0, 0) == 0);
+
+    for (uint64_t late : { 0ull, 3000ull }) {
+        const auto arrivals = exact120Arrivals(late);
+
+        const VrrLoopResult exact = simulateVrrLoop(arrivals, spinSleep, true, 120, 120000, 1000);
+        printLoop(late ? "120 FPS on 120.000 Hz, late frames, Smooth"
+                       : "120 FPS on 120.000 Hz, Smooth",
+                  exact);
+        CHECK(exact.dropPercent == 0);
+        // Queue stays at the playout delay (late + 0.5 ms margin), no sawtooth
+        CHECK(exact.p99AgeUs < late + 1000);
+        CHECK(exact.minGapUs >= 8333 - toleranceUs);
+
+        // A 119.88 Hz panel really is slower than the stream, so it still
+        // drops frames like the whole-number fallback (no more often);
+        // only wake-up lateness no longer adds to the lag (avg 93 us lower)
+        const VrrLoopResult ntsc = simulateVrrLoop(arrivals, spinSleep, true, 120, 120000, 1001);
+        const VrrLoopResult rounded = simulateVrrLoop(arrivals, spinSleep, true, 120);
+        printLoop("120 FPS on 119.88 Hz, Smooth", ntsc);
+        printLoop("120 FPS on \"120\" Hz (no exact rate), Smooth", rounded);
+        CHECK(ntsc.dropPercent <= rounded.dropPercent && ntsc.dropPercent > 0);
+        CHECK(ntsc.averageAgeUs <= rounded.averageAgeUs);
+        CHECK(ntsc.p99AgeUs + 10 >= rounded.p99AgeUs && ntsc.p99AgeUs <= rounded.p99AgeUs + 10);
+        CHECK(ntsc.minGapUs >= 8342 - toleranceUs);
+        CHECK(rounded.minGapUs >= 8342);
+
+        // With headroom (144 Hz) the exact rate changes nothing
+        const VrrLoopResult fast = simulateVrrLoop(arrivals, spinSleep, true, 144, 144000, 1000);
+        const VrrLoopResult fastRounded = simulateVrrLoop(arrivals, spinSleep, true, 144);
+        printLoop("120 FPS on 144.000 Hz, Smooth", fast);
+        CHECK(sameLoopResult(fast, fastRounded));
+        CHECK(fast.dropPercent == 0);
+        CHECK(fast.minGapUs >= 6945 - toleranceUs);
+    }
+
+    // An exact rate more than 1 Hz from the reported refresh (the window moved
+    // to another display) is ignored: exactly the whole-number behaviour
+    const auto arrivals = exact120Arrivals(0);
+    const VrrLoopResult mismatched = simulateVrrLoop(arrivals, spinSleep, true, 120, 121001, 1000);
+    const VrrLoopResult rounded = simulateVrrLoop(arrivals, spinSleep, true, 120);
+    CHECK(sameLoopResult(mismatched, rounded) && mismatched.minGapUs == rounded.minGapUs);
+}
+
 static void testPlayoutClock()
 {
     VrrPolicy::PlayoutClock clock;
@@ -697,6 +783,7 @@ int main()
     testLimiterLoop();
     testPlayoutClock();
     testSmoothLoop();
+    testSmoothExactRefresh();
 
     if (s_Failures != 0) {
         std::fprintf(stderr, "%d VRR policy check(s) failed\n", s_Failures);

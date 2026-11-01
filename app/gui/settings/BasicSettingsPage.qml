@@ -652,7 +652,7 @@ Column {
         ToggleRow {
             settingsSearchKeywords: "abr adaptive bitrate auto bandwidth network"
             title: qsTr("Automatically adjust bitrate (ABR)")
-            description: qsTr("Allows a compatible Sunshine host to lower the video bitrate when the network is congested, up to the limit below.")
+            description: qsTr("Requests adaptive bitrate for the next stream, up to the limit below. A compatible Sunshine host must accept it. Check ABR in the performance overlay for its status.")
             checked: StreamingPreferences.enableSunshineAbr
             onToggled: function(value) { StreamingPreferences.enableSunshineAbr = value }
         }
@@ -660,9 +660,9 @@ Column {
         SettingsRow {
             id: bitrateRow
             settingsSearchKeywords: "bitrate mbps kbps bandwidth quality"
-            title: StreamingPreferences.enableSunshineAbr ? qsTr("Video bitrate limit") : qsTr("Video bitrate")
+            title: StreamingPreferences.enableSunshineAbr ? qsTr("Stream bitrate limit") : qsTr("Video bitrate")
             description: (StreamingPreferences.enableSunshineAbr
-                          ? qsTr("The highest video bitrate ABR may select. FEC adds extra bandwidth.")
+                          ? qsTr("The highest stream bitrate ABR may request. The host divides this budget between video and packet loss protection.")
                           : qsTr("Lower the bitrate on slower connections. Raise the bitrate to increase image quality.")) + "\n" +
                          (StreamingPreferences.autoAdjustBitrate
                           ? qsTr("Recommended bitrate follows resolution and frame rate. Entering a value keeps it fixed.")

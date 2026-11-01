@@ -17,6 +17,7 @@
 #include <optional>
 #include <atomic>
 #include <functional>
+#include <memory>
 
 class NvComputer;
 
@@ -39,9 +40,10 @@ Q_DECLARE_TYPEINFO(NvDisplayMode, Q_PRIMITIVE_TYPE);
 class GfeHttpResponseException : public std::exception
 {
 public:
-    GfeHttpResponseException(int statusCode, QString message) :
-        m_StatusCode(statusCode),
-        m_StatusMessage(message.toUtf8())
+    GfeHttpResponseException(int statusCode, QString message, QByteArray responseBody = {},
+                             QJsonObject errorObject = {})
+        : m_StatusCode(statusCode), m_StatusMessage(message.toUtf8()), m_ResponseBody(responseBody),
+          m_ErrorObject(errorObject)
     {
 
     }
@@ -61,6 +63,9 @@ public:
         return m_StatusCode;
     }
 
+    const QByteArray& getResponseBody() const { return m_ResponseBody; }
+    const QJsonObject& getErrorObject() const { return m_ErrorObject; }
+
     QString toQString() const
     {
         return QString::fromUtf8(m_StatusMessage) + " (Error " + QString::number(m_StatusCode) + ")";
@@ -69,6 +74,8 @@ public:
 private:
     int m_StatusCode;
     QByteArray m_StatusMessage;
+    QByteArray m_ResponseBody;
+    QJsonObject m_ErrorObject;
 };
 
 class QtNetworkReplyException : public std::exception
@@ -155,29 +162,25 @@ public:
 
     UsbForwarding::Capability getUsbForwardingCapability();
 
-    bool
-    getAbrCapabilities(int* hostMaxBitrateKbps = nullptr);
+    bool getAbrCapabilities(int* hostMaxBitrateKbps = nullptr, QJsonObject* capabilities = nullptr,
+                            int timeoutMs = 2000);
 
-    QJsonObject
-    configureAbr(bool enabled,
-                 int minBitrateKbps,
-                 int maxBitrateKbps,
-                 QString mode,
-                 int timeoutMs = 2000);
+    QJsonObject configureAbr(bool enabled, int minBitrateKbps, int maxBitrateKbps, QString mode,
+                             int timeoutMs = 2000, QString sessionToken = {});
 
-    QJsonObject
-    sendAbrFeedback(double packetLoss,
-                    double rttMs,
-                    double decodeFps,
-                    int droppedFrames,
-                    int currentBitrateKbps,
-                    int timeoutMs = 2000);
+    QJsonObject sendAbrFeedback(double packetLoss, double rttMs, double decodeFps,
+                                int droppedFrames, int currentBitrateKbps, int timeoutMs = 2000,
+                                QString sessionToken = {});
 
     void setServerCert(QSslCertificate serverCert);
     void setAddress(NvAddress address);
     void setHttpsPort(uint16_t port);
     void setTrueUid(bool useTrueUid);
     void setHostUuid(QString uuid);
+    void setRequestCancellation(std::shared_ptr<std::atomic_bool> cancellation)
+    {
+        m_RequestCancellation = std::move(cancellation);
+    }
 
     NvAddress address();
 
@@ -272,4 +275,5 @@ private:
     QString m_Uuid;
     std::function<int()> m_RequestRemainingMs;
     const std::atomic<bool>* m_RequestCancelled = nullptr;
+    std::shared_ptr<std::atomic_bool> m_RequestCancellation;
 };

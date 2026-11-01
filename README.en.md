@@ -39,7 +39,7 @@ You can use it like a regular Moonlight client, or pair it with a Foundation Sun
 
 ### Quality And Performance
 
-- **Sunshine ABR**: when supported by the host, Foundation Sunshine can adjust session bitrate dynamically from client feedback, balancing clarity and stability more effectively.
+- **Sunshine ABR**: when supported by the host, Foundation Sunshine can adjust session bitrate dynamically from client feedback. The setting requests ABR for the next stream; the performance overlay shows host acceptance and runtime failures separately. Hover over ABR for the host's rejection reason. Version-2 hosts bind feedback and cleanup to the current stream; only typed transient initial configure errors retry (at most five attempts within six seconds). ABR's limit is the total stream budget including FEC, and Active does not confirm an encoder-applied bitrate change. Update Moonlight before upgrading to a version-2 host: legacy tokenless feedback is not compatible. This client still supports older hosts without session binding or automatic retries.
 - **High-bitrate LAN streaming**: keeps Sunshine-oriented high-bitrate controls for wired LAN, desktop streaming, and high-resolution sessions.
 - **Hardware decoding and modern video formats**: inherits upstream Moonlight hardware decoding support, including H.264, HEVC, AV1, HDR, and YUV 4:4:4 combinations depending on the client GPU and host encoder.
 - **Frame pacing and latency controls**: keeps V-Sync, frame pacing, fullscreen, and borderless-window choices for tuning latency, smoothness, and desktop workflows.

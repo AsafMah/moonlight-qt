@@ -398,6 +398,7 @@ HEADERS += \
     streaming/input/hostkeys.h \
     gui/appmodel.h \
     streaming/video/decoder.h \
+    streaming/video/framegapclassifier.h \
     streaming/bandwidth.h \
     streaming/stats/sessionstatsrecorder.h \
     streaming/stats/sessionsummary.h \

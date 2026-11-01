@@ -5,6 +5,7 @@
 #include "streaming/video/vrrpolicy.h"
 #include "streaming/bandwidth.h"
 #include "streaming/video/decoder.h"
+#include "streaming/video/framegapclassifier.h"
 #include "streaming/video/overlaymanager.h"
 
 #include <QCoreApplication>
@@ -211,6 +212,7 @@ private:
     VIDEO_STATS m_LastWndVideoStats = {};
     VIDEO_STATS m_GlobalVideoStats = {};
     int m_LastFrameNumber = 0;
+    FrameGapClassifier m_FrameGaps;
 
     std::vector<uint8_t> m_FrameBuffer;
 

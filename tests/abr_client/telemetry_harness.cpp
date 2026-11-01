@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include "streaming/sunshineabrruntime.h"
 #include "streaming/stats/streamstatsmodel.h"
+#include "streaming/video/framegapclassifier.h"
 
 struct RTP_VIDEO_STATS
 {
@@ -33,6 +34,24 @@ void LiGetEstimatedRttInfo(uint32_t* rtt, uint32_t* variance)
     *variance = 1;
 }
 
+// LiGetVideoLocalDiscardStats() layout, with a small ring
+struct FakeRange
+{
+    uint32_t firstFrameNumber = 0;
+    uint32_t lastFrameNumber = 0;
+    uint32_t frames = 0;
+};
+struct FakeDiscards
+{
+    uint64_t framesDiscarded = 0;
+    uint64_t rangesRecorded = 0;
+    FakeRange ranges[4];
+    void add(uint32_t first, uint32_t last, uint32_t frames)
+    {
+        ranges[rangesRecorded++ % 4] = { first, last, frames };
+        framesDiscarded += frames;
+    }
+};
 struct Computer
 {
     int activeAddress = 0;
@@ -137,6 +156,69 @@ int main(int argc, char** argv)
         require(AbrFeedbackTask::calls == 3 && AbrFeedbackTask::loss == 10 &&
                     AbrFeedbackTask::dropped == 3,
                 "Counter reset produced a wrapped or stale delta");
+
+        // Decode unit queue overflow: moonlight-common-c discards the complete
+        // frames 1..16, then the decoder dequeues frame 17 after frame 0.
+        FakeDiscards discards;
+        FrameGapClassifier gaps;
+        gaps.start(discards);
+        discards.add(1, 16, 16);
+        StatsWindow flushed;
+        addFrameGap(flushed, gaps.classify(17, 16, discards));
+        flushed.receivedFrames = flushed.decodedFrames = 1;
+        flushed.totalFrames += 1;
+        flushed.decodedFps = 60;
+        session.m_StatsModel.publishWindow(flushed, flushed, 5000000);
+        const auto local = session.m_StatsModel.snapshot(5000000);
+        session.sendSunshineAbrFeedback();
+        require(AbrFeedbackTask::calls == 4 && AbrFeedbackTask::loss == 0 &&
+                    AbrFeedbackTask::dropped == 0,
+                "Locally discarded frames were sent to ABR as network loss");
+        require(local.networkLossPercent == 0 && local.sessionFramesLocalDropped == 16 &&
+                    local.localDropPercent > 94 && local.sessionFramesTotal == 47,
+                "Locally discarded frames were not shown as local drops");
+
+        // Straddling race: after frame 2, a flush discards 3..6 and the
+        // network loses 7 and 8. The decoder dequeues 9, and before it reads
+        // the stats an overflow discards 10..12. The earlier batch is local
+        // now; the later one belongs to the next gap.
+        FakeDiscards straddle;
+        FrameGapClassifier race;
+        race.start(straddle);
+        straddle.add(3, 6, 4);
+        straddle.add(10, 12, 3);
+        FrameGapSplit split = race.classify(9, 6, straddle);
+        require(split.networkDropped == 2 && split.localDropped == 4,
+                "A straddling gap was not split into its earlier local batch and network loss");
+        split = race.classify(13, 3, straddle);
+        require(split.networkDropped == 0 && split.localDropped == 3,
+                "A batch discarded after the dequeue was lost before its gap");
+        // A flushed queue already missing frame 17 to the network.
+        straddle.add(14, 20, 6);
+        split = race.classify(21, 7, straddle);
+        require(split.networkDropped == 1 && split.localDropped == 6,
+                "A gap with network and local drops was not split");
+        // More batches than the ring holds: the uncertain gap is local.
+        for (uint32_t frame = 22; frame < 32; frame += 2) {
+            straddle.add(frame, frame, 1);
+        }
+        split = race.classify(32, 10, straddle);
+        require(split.networkDropped == 0 && split.localDropped == 10,
+                "Discards lost from the ring were charged to the network");
+        // Discards from before the first frame never reach a gap.
+        FakeDiscards early;
+        early.add(1, 3, 3);
+        FrameGapClassifier late;
+        late.start(early);
+        split = late.classify(10, 2, early);
+        require(split.networkDropped == 2 && split.localDropped == 0,
+                "Discards before the first frame were charged to a later gap");
+        // Counters that restarted with a new connection are read from zero.
+        FakeDiscards restarted;
+        restarted.add(40, 40, 1);
+        split = race.classify(41, 1, restarted);
+        require(split.networkDropped == 0 && split.localDropped == 1,
+                "Restarted discard counters were misread");
     } catch (const std::exception& error) {
         qCritical("FAIL: %s", error.what());
         return 1;

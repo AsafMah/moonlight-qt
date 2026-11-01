@@ -82,6 +82,11 @@ private slots:
         QVERIFY(pyro >= 0);
         QVERIFY(p.rowEnabled(pyro));
         QVERIFY(p.rowDetail(pyro).contains("current stream stays unchanged"));
+        const QString artifacts = qEnvironmentVariable("MENU_PHASE1_ARTIFACTS");
+        if (!artifacts.isEmpty()) {
+            p.ensureRowVisible(pyro);
+            p.renderImage().save(artifacts + "/pyrowave-next-stream-dpr2.png");
+        }
     }
     void mouseChoices()
     {

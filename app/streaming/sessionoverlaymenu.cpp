@@ -164,8 +164,11 @@ bool Session::handleOverlayMenuOptionPayload(OverlayMenuPanel::MenuAction action
             showStreamingToast(tr("PyroWave runtime is unavailable"));
             return true;
         }
-        m_Preferences->videoCodecConfig =
-            static_cast<StreamingPreferences::VideoCodecConfig>(codec);
+        if (m_Preferences->videoCodecConfig != codec) {
+            m_Preferences->videoCodecConfig =
+                static_cast<StreamingPreferences::VideoCodecConfig>(codec);
+            emit m_Preferences->videoCodecConfigChanged();
+        }
         m_Preferences->save();
         updateStreamConfigurationMenuState();
         showStreamingToast(tr("Codec saved for next stream; current stream unchanged"));

@@ -10,6 +10,8 @@ struct Preferences
 {
     StreamingPreferences::VideoCodecConfig videoCodecConfig = StreamingPreferences::VCC_FORCE_AV1;
     int saves = 0;
+    int changes = 0;
+    void videoCodecConfigChanged() { ++changes; }
     void save()
     {
         ++saves;
@@ -90,7 +92,8 @@ int main(int argc, char** argv)
         panel.ensureRowVisible(row);
         QTest::mouseClick(&panel, Qt::LeftButton, Qt::NoModifier, panel.rowGeometry(row).center());
         require(session.preferences.videoCodecConfig == StreamingPreferences::VCC_FORCE_PYROWAVE &&
-                    session.preferences.saves == 1 && QSettings().value("codec").toInt() == 5,
+                    session.preferences.saves == 1 && session.preferences.changes == 1 &&
+                    QSettings().value("codec").toInt() == 5,
                 "Click must save the PyroWave preference");
         require(session.state.requestedCodec == StreamingPreferences::VCC_FORCE_AV1 &&
                     session.state.currentCodec == "AV1" && session.liveCalls == 0,

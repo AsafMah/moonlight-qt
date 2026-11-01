@@ -14,7 +14,11 @@ Get-ChildItem -LiteralPath "$PSScriptRoot\..\..\libs\windows\lib\x64" -Filter '*
 $settingsDirectory = Join-Path $install 'Moonlight Game Streaming Project'
 New-Item -ItemType Directory -Path $settingsDirectory -Force | Out-Null
 $settingsPath = Join-Path $settingsDirectory 'Moonlight.ini'
-"`n[General]`nupdateFixtureSentinel=preserve-me" | Add-Content -LiteralPath $settingsPath
+[System.IO.File]::WriteAllText(
+    $settingsPath,
+    "[General]`nautoUpdateCheck=true`nupdateFixtureSentinel=preserve-me`n",
+    [System.Text.UTF8Encoding]::new($false)
+)
 $env:QT_QUICK_CONTROLS_STYLE = 'FluentWinUI3'
 $env:QML_XHR_ALLOW_FILE_READ = '1'
 $env:QT_QPA_PLATFORM_PLUGIN_PATH = [System.IO.Path]::GetFullPath("$QtBin\..\plugins\platforms")
@@ -24,7 +28,10 @@ if (!(Test-Path -LiteralPath "$env:QT_QPA_PLATFORM_PLUGIN_PATH\qoffscreen.dll"))
 $env:QML_DISABLE_DISK_CACHE = '1'
 $started = [DateTime]::UtcNow
 $applicationOutput = & "$PSScriptRoot\..\..\scripts\run-built-test.ps1" -Exe $exe -QtBin $QtBin -Platform offscreen
-if ($LASTEXITCODE) { throw "The older app exited with $LASTEXITCODE" }
+if ($LASTEXITCODE) {
+    $applicationOutput
+    throw "The older app exited with $LASTEXITCODE"
+}
 $deadline = [DateTime]::UtcNow.AddSeconds(90)
 $relaunchedPid = $null
 while ([DateTime]::UtcNow -lt $deadline) {

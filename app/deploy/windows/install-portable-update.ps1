@@ -20,6 +20,9 @@ if ((Split-Path -Leaf $workspaceFullPath) -notmatch '^MoonlightPortableUpdate-\d
 }
 $backupStarted = $false
 $copyStarted = $false
+$committed = $false
+$cleanupSafe = $false
+$replacementNames = @()
 
 function Get-RequiredFreeBytes {
     param([string]$ArchivePath)
@@ -80,10 +83,7 @@ function Get-ReplacedItems {
     Get-ChildItem -LiteralPath $Path -Force | Where-Object {
         $itemFullPath = [System.IO.Path]::GetFullPath($_.FullName).TrimEnd('\', '/')
 
-        $_.Name -ne 'Moonlight Game Streaming Project' -and
-        $_.Name -ne 'Moonlight.ini' -and
-        $_.Name -ne 'portable.dat' -and
-        $_.Name -notlike 'Moonlight-*.log' -and
+        $_.Name -in $replacementNames -and
         ![string]::Equals($itemFullPath, $workspaceFullPath, [System.StringComparison]::OrdinalIgnoreCase)
     }
 }
@@ -115,6 +115,14 @@ try {
 
     Expand-Archive -LiteralPath $ZipPath -DestinationPath $extractDir -Force
 
+    $packageItems = @(Get-ChildItem -LiteralPath $extractDir -Force | Where-Object {
+        $_.Name -notin @('Moonlight Game Streaming Project', 'Moonlight.ini', 'portable.dat',
+                        'logs', 'dumps', 'cache', 'qmlcache', 'boxart')
+    })
+    if (!($packageItems | Where-Object { $_.Name -eq (Split-Path -Leaf $ExePath) -and !$_.PSIsContainer })) {
+        throw 'The update package does not contain Moonlight.'
+    }
+    $replacementNames = @($packageItems | ForEach-Object { $_.Name })
     $itemsToReplace = @(Get-ReplacedItems -Path $InstallDir)
     foreach ($item in $itemsToReplace) {
         Move-Item -LiteralPath $item.FullName -Destination $backupDir -Force
@@ -122,31 +130,50 @@ try {
     }
 
     $copyStarted = $true
-    Get-ChildItem -LiteralPath $extractDir -Force | ForEach-Object {
+    $packageItems | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination $InstallDir -Recurse -Force
     }
 
-    Remove-Item -LiteralPath $backupDir -Recurse -Force
-    $backupDir = $null
+    $committed = $true
+    try {
+        Remove-Item -LiteralPath $backupDir -Recurse -Force
+        $cleanupSafe = $true
+    }
+    catch {
+        Write-Warning "Update committed; old backup is retained at $backupDir because cleanup failed: $_"
+    }
 
     $updated = Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir -PassThru
     "updated-process-pid=$($updated.Id)" | Out-File -LiteralPath (Join-Path $InstallDir 'Moonlight-update.log') -Append
 }
 catch {
-    if ($backupStarted -and $backupDir -and (Test-Path -LiteralPath $backupDir)) {
-        if ($copyStarted) {
-            Get-ReplacedItems -Path $InstallDir | ForEach-Object {
-                Remove-Item -LiteralPath $_.FullName -Recurse -Force
+    $failure = $_
+    try {
+        if (!$committed -and $backupStarted -and $backupDir -and (Test-Path -LiteralPath $backupDir)) {
+            if ($copyStarted) {
+                Get-ReplacedItems -Path $InstallDir | ForEach-Object {
+                    Remove-Item -LiteralPath $_.FullName -Recurse -Force
+                }
+            }
+
+            Get-ChildItem -LiteralPath $backupDir -Force | ForEach-Object {
+                Move-Item -LiteralPath $_.FullName -Destination $InstallDir -Force
             }
         }
-
-        Get-ChildItem -LiteralPath $backupDir -Force | ForEach-Object {
-            Move-Item -LiteralPath $_.FullName -Destination $InstallDir -Force
-        }
+        if (!$committed) { $cleanupSafe = $true }
+    }
+    catch {
+        $failure = [System.Management.Automation.ErrorRecord]::new(
+            [System.Exception]::new("$($failure.Exception.Message)`nRollback failed: $_`nBackup retained at $backupDir"),
+            'UpdateRollbackFailed', [System.Management.Automation.ErrorCategory]::WriteError, $backupDir)
     }
 
     $logPath = Join-Path $InstallDir 'Moonlight-update-error.log'
-    $_ | Out-File -LiteralPath $logPath -Append -Encoding utf8
+    $failure | Out-File -LiteralPath $logPath -Append -Encoding utf8
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.MessageBox]::Show(
+        "$($failure.Exception.Message)`nMoonlight will reopen. You can try the update again.",
+        'Moonlight update failed') | Out-Null
     if (Test-Path -LiteralPath $ExePath) {
         Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir | Out-Null
     }
@@ -156,18 +183,19 @@ finally {
         Set-Location -LiteralPath $InstallDir
     }
     catch {
+        Write-Warning "Unable to leave updater workspace before cleanup: $_"
     }
 
     if (Test-Path -LiteralPath $extractDir) {
         Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    if ($backupDir -and (Test-Path -LiteralPath $backupDir)) {
+    if ($cleanupSafe -and $backupDir -and (Test-Path -LiteralPath $backupDir)) {
         Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     $workspaceDir = [System.IO.Path]::GetDirectoryName($ZipPath)
-    if (Test-Path -LiteralPath $workspaceDir) {
+    if ($cleanupSafe -and (Test-Path -LiteralPath $workspaceDir)) {
         Remove-Item -LiteralPath $workspaceDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

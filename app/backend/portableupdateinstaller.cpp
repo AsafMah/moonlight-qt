@@ -779,14 +779,14 @@ bool PortableUpdateInstaller::startSetupUpdate(const QString& archivePath,
           QStringLiteral("-ExpectedSha256"), QString::fromLatin1(m_ExpectedSha256),
           QStringLiteral("-ExePath"), QCoreApplication::applicationFilePath(),
           QStringLiteral("-ParentPid"), QString::number(QCoreApplication::applicationPid()) });
-    process->setWorkingDirectory(workspace);
+    process->setWorkingDirectory(QDir::tempPath());
     auto handshake = new QTimer(process);
     handshake->setInterval(100);
     connect(handshake, &QTimer::timeout, this, [this, process, handshake, workspace]() {
         if (!QFile::exists(QDir(workspace).filePath(QStringLiteral("setup-ready"))))
             return;
         handshake->stop();
-        // After elevation succeeds, the helper owns the installer wait and relaunch.
+        // The helper waits for Moonlight to exit before requesting elevation.
         // It must outlive Moonlight, not be killed by QObject parent destruction.
         process->setParent(nullptr);
         connect(process, &QProcess::finished, process, &QObject::deleteLater);
@@ -817,7 +817,7 @@ bool PortableUpdateInstaller::startSetupUpdate(const QString& archivePath,
                 process->deleteLater();
             });
     emit onUpdateInstallStarted();
-    emit onPortableUpdateStatusChanged(tr("Waiting for Windows administrator confirmation..."));
+    emit onPortableUpdateStatusChanged(tr("Installing update and restarting Moonlight..."));
     resetPortableUpdateState(false);
     process->start();
     handshake->start();

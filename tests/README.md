@@ -19,7 +19,12 @@ Its real QML confirmation tests assert safe Cancel focus, no download on opening
 decline or Escape, and one exact selected URL on confirmation. Disposable Windows
 helper tests never execute an installer: UAC/process/dialog APIs are faked for
 success, user cancellation, hash rejection, installer failure and relaunch.
-The portable invalid-archive regression protects the original installation.
+The portable regressions protect the original installation on invalid archives,
+preserve unrelated files/logs/caches and keep a completed copy committed when old
+backup cleanup encounters a locked file. Failures show a dialog. Setup requests
+elevation only after Moonlight exits, holds its hashed installer read-locked until
+the installer exits, cleans failed-install workspaces and reports exit 3010 as
+restart-required without relaunching. UAC cancellation reopens Moonlight.
 
 Clean CI builds bind `UPDATE_REPOSITORY` to `GITHUB_REPOSITORY`; qmake can set it
 explicitly and otherwise defaults upstream. Local/dirty builds do not automatically
@@ -27,6 +32,10 @@ check. Four-component release tags preserve revision ordering. Only green integr
 CI publishes original packages through `publish-integration-release.py`; it rejects
 dirty/local sources and missing/duplicate assets, verifies GitHub SHA256 digests
 before publishing, and never replaces existing release assets.
+Publication creates/resumes drafts and uploads/verifies/publishes by release ID.
+The optional `GH_RELEASE_TOKEN` overrides `github.token`; without it, an API workflow
+tree comparison fails before draft creation if the release target differs from the
+current default branch. Only the release job receives Contents write permission.
 
 An explicitly invoked full-app fixture uses `prepare_portable_e2e.py` plus
 `run_portable_e2e.ps1`: older-version full Moonlight, fixture-only QML confirmation,

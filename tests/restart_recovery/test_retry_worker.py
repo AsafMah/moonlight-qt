@@ -11,6 +11,15 @@ from test_http_deadline import ROOT, function
 
 
 class RetryWorkerTests(unittest.TestCase):
+    def test_pyrowave_fatal_marks_its_quit_event_as_internal(self):
+        source = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
+        fatal_start = source.index("case SDL_CODE_PYROWAVE_FATAL:")
+        fatal_end = source.index("case SDL_CODE_PYROWAVE_FALLBACK_NOTICE:", fatal_start)
+        fatal = source[fatal_start:fatal_end]
+        self.assertIn("m_ConnectionCancel = true;", fatal)
+        self.assertLess(fatal.index("m_ConnectionCancel = true;"),
+                        fatal.index("quitEvent.type = SDL_QUIT;"))
+
     def test_production_retry_pump(self):
         source = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
         body = function(source, "bool Session::tryReconnect(")
@@ -31,6 +40,27 @@ class RetryWorkerTests(unittest.TestCase):
         setup = function(source, "void Session::exec()")
         setup = setup[:setup.index("    // If the connection failed, clean up")]
         harness = harness.replace("// INITIAL_RECOVERY", setup + "\n}\n")
+        exec_start = source.index("void Session::exec(")
+        event_start = source.index("        const bool recoveryNotification =", exec_start)
+        event_end = source.index("        switch (event.type) {", event_start)
+        event_classification = source[event_start:event_end]
+        harness = harness.replace(
+            "// EXEC_QUIT_CLASSIFICATION",
+            "void Session::classifyExecEvent(SDL_Event& event)\n{\n" +
+            event_classification + "}\n")
+        harness = harness.replace(
+            "// SET_SHOULD_EXIT", function(source, "void Session::setShouldExit("))
+        harness = harness.replace(
+            "// CONNECTION_TERMINATED",
+            function(source, "void Session::clConnectionTerminated("))
+        task_start = source.index("class DeferredSessionCleanupTask")
+        decision_start = source.index(
+            "        if (m_Session->m_ShouldExit) {", task_start)
+        decision_end = source.index("\n        }", decision_start) + len("\n        }")
+        deferred_quit = source[decision_start:decision_end]
+        harness = harness.replace(
+            "// DEFERRED_APP_QUIT",
+            "void runDeferredAppQuit(Session* m_Session)\n{\n" + deferred_quit + "\n}\n")
         header = (ROOT / "app/streaming/session.h").read_text(encoding="utf-8")
         start = header.index("    static void markVideoReceived()")
         end = header.index("\n    }\n", start) + len("\n    }\n")

@@ -4500,6 +4500,7 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
         // the failing stage; the codec is never switched mid-stream.
         QString* reason = static_cast<QString*>(event.data2);
         m_UnexpectedTermination = true;
+        m_ConnectionCancel = true;
         emit displayLaunchError(
             PyrowaveVideoDecoder::fatalErrorText((int)(intptr_t)event.data1, *reason));
         delete reason;
@@ -5483,7 +5484,6 @@ void Session::processRecoveryStatus()
     }
     if (m_RecoveryBudget.active() && m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs()) <= 0) {
         m_ConnectionCancel = true;
-        m_ShouldExit = true;
         m_ConnectionInterrupted = false;
         m_RecoveryBudget.disarmFrames();
         LiInterruptConnection();
@@ -6495,11 +6495,11 @@ void Session::exec()
             event.type == SDL_USEREVENT && event.user.code == SDL_CODE_CONNECTION_INTERRUPTED;
         if (recoveryNotification) {
             event.type = SDL_QUIT;
-        } else if (event.type == SDL_QUIT ||
-                   (m_RecoveryBudget.active() &&
-                    ((event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) ||
-                     (event.type == SDL_WINDOWEVENT &&
-                      event.window.event == SDL_WINDOWEVENT_CLOSE)))) {
+        } else if (m_RecoveryBudget.active() && !m_ConnectionCancel && !m_ShouldExit &&
+                   (event.type == SDL_QUIT ||
+                    (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) ||
+                    (event.type == SDL_WINDOWEVENT &&
+                     event.window.event == SDL_WINDOWEVENT_CLOSE))) {
             setShouldExit();
             event.type = SDL_QUIT;
         }

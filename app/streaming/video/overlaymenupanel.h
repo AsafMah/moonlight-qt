@@ -289,6 +289,7 @@ public:
         int requestedHdrMode = 0; // 0=off, 1=PQ, 2=HLG
         int requestedAudioConfig = 0;
         bool pending = false;
+        bool busy = false;
         int pendingCodec = 0;
         int pendingHdrMode = 0;
         int pendingAudioConfig = 0;
@@ -431,7 +432,7 @@ public:
                           bool regionLock, bool systemKeyCapture);
     void updateAudioState(bool manuallyMuted, bool muteOnFocusLoss);
     void updateResolutionMatchState(bool hostSupported, bool automatic, bool fullscreen,
-                                    bool canMatchNow);
+                                    bool canMatchNow, bool pausedByOverride = false);
     void setConnectionInfo(std::vector<std::pair<QString, QString>> facts);
     void updateBitrateState(int bitrateKbps);
     void updateMenuPositionState(MenuAction activePlacementAction);
@@ -710,7 +711,7 @@ private:
     bool m_ManuallyMuted = false, m_MuteOnFocusLoss = false;
     bool m_MicrophoneEnabled = false, m_GamepadMouseEnabled = false;
     bool m_MatchSupported = false, m_AutomaticMatch = false;
-    bool m_MatchFullscreen = false, m_CanMatchNow = false;
+    bool m_MatchFullscreen = false, m_CanMatchNow = false, m_MatchPausedByOverride = false;
     QTimer m_QuitConfirmTimer;
     QString m_EditingShortcut;
     int m_CaptureShortcutSlot = -1;

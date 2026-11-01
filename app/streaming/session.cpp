@@ -298,12 +298,15 @@ QRect qtOverlayGeometryForSdlWindow(SDL_Window* window)
 // SDL 事件队列默认容量不小,但满的时候 SDL_PushEvent 会静默失败。这里排队
 // 的事件丢了症状都很隐蔽(震动失灵、传感器停发、重连后画面不恢复等),
 // 所以至少把失败写进日志。
-static void pushEventOrWarn(SDL_Event& event)
+static bool pushEventOrWarn(SDL_Event& event)
 {
-    if (SDL_PushEvent(&event) < 0) {
+    const int result = SDL_PushEvent(&event);
+    if (result <= 0) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to queue SDL event (type=0x%x): %s",
-                    event.type, SDL_GetError());
+                    event.type, result < 0 ? SDL_GetError() : "event was filtered");
+        return false;
     }
+    return true;
 }
 
 // 退出组合键的 glyph 文案,按键名按手柄 UI 风格显示
@@ -2073,6 +2076,121 @@ void Session::teardownUsbTunnel()
     refreshRemoteUsbDevices();
 }
 
+void Session::prioritizeVideoFormats(SupportedVideoFormatList& formats,
+                                     StreamingPreferences::VideoCodecConfig codec,
+                                     SDL_Window* testWindow, bool enableHdr, bool enableYuv444,
+                                     int width, int height, int frameRate,
+                                     const QString& gfeVersion)
+{
+    if (codec == StreamingPreferences::VCC_FORCE_PYROWAVE) {
+        // The formats below are the automatic fallback if the host doesn't
+        // negotiate PyroWave. Keep them in the same order as Automatic.
+        codec = StreamingPreferences::VCC_AUTO;
+    }
+
+    switch (codec) {
+    case StreamingPreferences::VCC_AUTO: {
+        auto hevcAvailability = getDecoderAvailability(
+            testWindow, m_Preferences->videoDecoderSelection,
+            enableYuv444 ? (enableHdr ? VIDEO_FORMAT_H265_REXT10_444 : VIDEO_FORMAT_H265_REXT8_444)
+                         : (enableHdr ? VIDEO_FORMAT_H265_MAIN10 : VIDEO_FORMAT_H265),
+            width, height, frameRate);
+        if (hevcAvailability == DecoderAvailability::None && enableHdr) {
+            formats.removeByMask(VIDEO_FORMAT_MASK_H265 & VIDEO_FORMAT_MASK_10BIT);
+            const auto av1Availability = getDecoderAvailability(
+                testWindow, m_Preferences->videoDecoderSelection,
+                enableYuv444 ? VIDEO_FORMAT_AV1_HIGH10_444 : VIDEO_FORMAT_AV1_MAIN10, width, height,
+                frameRate);
+            if (av1Availability == DecoderAvailability::None) {
+                formats.removeByMask(VIDEO_FORMAT_MASK_AV1 & VIDEO_FORMAT_MASK_10BIT);
+                SDL_assert(!(static_cast<int>(formats) & VIDEO_FORMAT_MASK_10BIT));
+                hevcAvailability = getDecoderAvailability(
+                    testWindow, m_Preferences->videoDecoderSelection,
+                    enableYuv444 ? VIDEO_FORMAT_H265_REXT8_444 : VIDEO_FORMAT_H265, width, height,
+                    frameRate);
+            }
+        }
+
+        if (hevcAvailability != DecoderAvailability::Hardware &&
+            !(m_Preferences->videoDecoderSelection == StreamingPreferences::VDS_FORCE_SOFTWARE &&
+              enableHdr)) {
+            formats.deprioritizeByMask(VIDEO_FORMAT_MASK_H265);
+        }
+
+        if (hevcAvailability == DecoderAvailability::Hardware
+#if !defined(Q_OS_WIN32) &&                                                                        \
+    (!(defined(Q_OS_UNIX) && !defined(Q_OS_DARWIN)) || defined(Q_PROCESSOR_X86))
+            || !enableHdr
+#endif
+        ) {
+            formats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
+        } else if (!enableHdr &&
+                   getDecoderAvailability(
+                       testWindow, m_Preferences->videoDecoderSelection,
+                       enableYuv444 ? VIDEO_FORMAT_AV1_HIGH8_444 : VIDEO_FORMAT_AV1_MAIN8, width,
+                       height, frameRate) != DecoderAvailability::Hardware) {
+            formats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
+        }
+
+#ifdef Q_OS_DARWIN
+        {
+            const QVector<int> version = NvHTTP::parseQuad(gfeVersion);
+            if (version.isEmpty() || version[0] < 3 || (version[0] == 3 && version[1] < 11)) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "Disabling HEVC on macOS due to old GFE version");
+                formats.removeByMask(VIDEO_FORMAT_MASK_H265);
+            }
+        }
+#else
+        Q_UNUSED(gfeVersion);
+#endif
+        break;
+    }
+    case StreamingPreferences::VCC_FORCE_H264:
+        formats.removeByMask(~VIDEO_FORMAT_MASK_H264);
+        break;
+    case StreamingPreferences::VCC_FORCE_HEVC:
+    case StreamingPreferences::VCC_FORCE_HEVC_HDR_DEPRECATED:
+        formats.removeByMask(~VIDEO_FORMAT_MASK_H265);
+        break;
+    case StreamingPreferences::VCC_FORCE_AV1:
+        formats.removeByMask(~(VIDEO_FORMAT_MASK_AV1 | VIDEO_FORMAT_MASK_H265));
+        break;
+    case StreamingPreferences::VCC_FORCE_PYROWAVE:
+        SDL_assert(false);
+        break;
+    }
+
+    if (!enableYuv444) {
+        formats.removeByMask(VIDEO_FORMAT_MASK_YUV444);
+    } else {
+        formats.deprioritizeByMask(~VIDEO_FORMAT_MASK_YUV444);
+    }
+
+    if (!enableHdr) {
+        formats.removeByMask(VIDEO_FORMAT_MASK_10BIT);
+    } else {
+        formats.deprioritizeByMask(~VIDEO_FORMAT_MASK_10BIT);
+    }
+}
+
+void Session::applyVideoFormatServerRestrictions(SupportedVideoFormatList& formats,
+                                                 int serverCodecModeSupport, int maxLumaPixelsHEVC,
+                                                 StreamingPreferences::VideoCodecConfig codec)
+{
+    if (formats & VIDEO_FORMAT_MASK_AV1) {
+        if (formats.maskByServerCodecModes(serverCodecModeSupport & SCM_MASK_AV1) == 0) {
+            formats.removeByMask(VIDEO_FORMAT_MASK_AV1);
+        } else if (codec == StreamingPreferences::VCC_FORCE_AV1) {
+            formats.removeByMask(~VIDEO_FORMAT_MASK_AV1);
+        }
+    }
+
+    if (maxLumaPixelsHEVC == 0) {
+        formats.removeByMask(VIDEO_FORMAT_MASK_H265);
+    }
+}
+
 bool Session::initialize(QQuickWindow* qtWindow)
 {
     m_QtWindow = qtWindow;
@@ -2286,155 +2404,10 @@ bool Session::initialize(QQuickWindow* qtWindow)
 
     // YUV 4:4:4 is locked off while PyroWave is selected, for its fallback too.
     const bool enableYUV444 = m_Preferences->enableYUV444 && !m_PyrowaveRequested;
-
-    switch (m_Preferences->videoCodecConfig)
-    {
-    case StreamingPreferences::VCC_FORCE_PYROWAVE:
-        // moonlight-common-c falls back to the formats chosen here if the host
-        // doesn't negotiate PyroWave (client contract, section 1), so they are
-        // what Automatic would pick, in 4:2:0.
-        [[fallthrough]];
-    case StreamingPreferences::VCC_AUTO:
-    {
-        // Codecs are checked in order of ascending decode complexity to ensure
-        // the the deprioritized list prefers lighter codecs for software decoding
-
-        // H.264 is already the lowest priority codec, so we don't need to do
-        // any probing for deprioritization for it here.
-
-        auto hevcDA = getDecoderAvailability(
-            testWindow, m_Preferences->videoDecoderSelection,
-            enableYUV444
-                ? (m_Preferences->enableHdr ? VIDEO_FORMAT_H265_REXT10_444
-                                            : VIDEO_FORMAT_H265_REXT8_444)
-                : (m_Preferences->enableHdr ? VIDEO_FORMAT_H265_MAIN10 : VIDEO_FORMAT_H265),
-            m_StreamConfig.width, m_StreamConfig.height, m_StreamConfig.fps);
-        if (hevcDA == DecoderAvailability::None && m_Preferences->enableHdr) {
-            // Remove all 10-bit HEVC profiles
-            m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_H265 & VIDEO_FORMAT_MASK_10BIT);
-
-            // Check if we have 10-bit AV1 support
-            auto av1DA = getDecoderAvailability(
-                testWindow, m_Preferences->videoDecoderSelection,
-                enableYUV444 ? VIDEO_FORMAT_AV1_HIGH10_444 : VIDEO_FORMAT_AV1_MAIN10,
-                m_StreamConfig.width, m_StreamConfig.height, m_StreamConfig.fps);
-            if (av1DA == DecoderAvailability::None) {
-                // Remove all 10-bit AV1 profiles
-                m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_AV1 & VIDEO_FORMAT_MASK_10BIT);
-
-                // There are no available 10-bit profiles, so reprobe for 8-bit HEVC
-                // and we'll proceed as normal for an SDR streaming scenario.
-                SDL_assert(!(m_SupportedVideoFormats & VIDEO_FORMAT_MASK_10BIT));
-                hevcDA = getDecoderAvailability(
-                    testWindow, m_Preferences->videoDecoderSelection,
-                    enableYUV444 ? VIDEO_FORMAT_H265_REXT8_444 : VIDEO_FORMAT_H265,
-                    m_StreamConfig.width, m_StreamConfig.height, m_StreamConfig.fps);
-            }
-        }
-
-        if (hevcDA != DecoderAvailability::Hardware) {
-            // Deprioritize HEVC unless the user forced software decoding and enabled HDR.
-            // We need HEVC in that case because we cannot support 10-bit content with H.264,
-            // which would ordinarily be prioritized for software decoding performance.
-            if (m_Preferences->videoDecoderSelection != StreamingPreferences::VDS_FORCE_SOFTWARE || !m_Preferences->enableHdr) {
-                m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_H265);
-            }
-        }
-
-        // Deprioritize AV1 unless we can't hardware decode HEVC, and have HDR enabled
-        // or we're on Windows or a non-x86 Linux/BSD.
-        //
-        // Normally, we'd assume hardware that can't decode HEVC definitely can't decode
-        // AV1 either, and we wouldn't even bother probing for AV1 support. However, some
-        // Windows business systems have HEVC support disabled in firmware from the factory,
-        // yet they can still decode AV1 in hardware. To avoid falling back to H.264 on
-        // these systems, we don't deprioritize AV1. This firmware-based HEVC licensing
-        // behavior seems to be unique to Windows, and Linux on the same system is able
-        // to decode HEVC in hardware normally using VAAPI.
-        // https://www.reddit.com/r/GeForceNOW/comments/1omsckt/psa_be_wary_of_purchasing_dell_computers_with/
-        //
-        // Some embedded Linux platforms have incomplete V4L2 decoding support which can
-        // lead to unusual cases where a system might support H.264 and AV1 but not HEVC,
-        // even if the underlying hardware supports all three. RK3588 is an example of
-        // such a SoC. To handle this situation, we will also probe for AV1 if we're on
-        // a non-x86 non-macOS UNIX system.
-        //
-        // We want to keep AV1 at the top of the list for HDR with software decoding
-        // because dav1d is higher performance than FFmpeg's HEVC software decoder.
-        if (hevcDA == DecoderAvailability::Hardware
-#if !defined(Q_OS_WIN32) && (!(defined(Q_OS_UNIX) && !defined(Q_OS_DARWIN)) || defined(Q_PROCESSOR_X86))
-            || !m_Preferences->enableHdr
-#endif
-            ) {
-            m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
-        } else if (!m_Preferences->enableHdr &&
-                   getDecoderAvailability(testWindow, m_Preferences->videoDecoderSelection,
-                                          enableYUV444 ? VIDEO_FORMAT_AV1_HIGH8_444
-                                                       : VIDEO_FORMAT_AV1_MAIN8,
-                                          m_StreamConfig.width, m_StreamConfig.height,
-                                          m_StreamConfig.fps) != DecoderAvailability::Hardware) {
-            m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
-        }
-
-#ifdef Q_OS_DARWIN
-        {
-            // Prior to GFE 3.11, GFE did not allow us to constrain
-            // the number of reference frames, so we have to fixup the SPS
-            // to allow decoding via VideoToolbox on macOS. Since we don't
-            // have fixup code for HEVC, just avoid it if GFE is too old.
-            QVector<int> gfeVersion = NvHTTP::parseQuad(m_Computer->gfeVersion);
-            if (gfeVersion.isEmpty() || // Very old versions don't have GfeVersion at all
-                    gfeVersion[0] < 3 ||
-                    (gfeVersion[0] == 3 && gfeVersion[1] < 11)) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                            "Disabling HEVC on macOS due to old GFE version");
-                m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_H265);
-            }
-        }
-#endif
-        break;
-    }
-    case StreamingPreferences::VCC_FORCE_H264:
-        m_SupportedVideoFormats.removeByMask(~VIDEO_FORMAT_MASK_H264);
-        break;
-    case StreamingPreferences::VCC_FORCE_HEVC:
-    case StreamingPreferences::VCC_FORCE_HEVC_HDR_DEPRECATED:
-        m_SupportedVideoFormats.removeByMask(~VIDEO_FORMAT_MASK_H265);
-        break;
-    case StreamingPreferences::VCC_FORCE_AV1:
-        // We'll try to fall back to HEVC first if AV1 fails. We'd rather not fall back
-        // straight to H.264 if the user asked for AV1 and the host doesn't support it.
-        m_SupportedVideoFormats.removeByMask(~(VIDEO_FORMAT_MASK_AV1 | VIDEO_FORMAT_MASK_H265));
-        break;
-    }
-
-    // NB: Since deprioritization puts codecs in reverse order (at the bottom of the list),
-    // we want to deprioritize for the most critical attributes last to ensure they are the
-    // lowest priority codecs during server negotiation. Here we do that with YUV 4:4:4 and
-    // HDR to ensure we never pick a codec profile that doesn't meet the user's requirement
-    // if we can avoid it.
-
-    // Mask off YUV 4:4:4 codecs if the option is not enabled
-    if (!enableYUV444) {
-        m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_YUV444);
-    } else {
-        // Deprioritize YUV 4:2:0 codecs if the user wants YUV 4:4:4
-        //
-        // NB: Since this happens first before deprioritizing HDR, we will
-        // pick a YUV 4:4:4 profile instead of a 10-bit profile if they
-        // aren't both available together for any codec.
-        m_SupportedVideoFormats.deprioritizeByMask(~VIDEO_FORMAT_MASK_YUV444);
-    }
-
-    // Mask off 10-bit codecs if HDR is not enabled
-    if (!m_Preferences->enableHdr) {
-        m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_10BIT);
-    }
-    else {
-        // Deprioritize 8-bit codecs if HDR is enabled
-        m_SupportedVideoFormats.deprioritizeByMask(~VIDEO_FORMAT_MASK_10BIT);
-
-        // Set the HDR mode (PQ or HLG) based on user preference
+    prioritizeVideoFormats(m_SupportedVideoFormats, m_Preferences->videoCodecConfig, testWindow,
+                           m_Preferences->enableHdr, enableYUV444, m_StreamConfig.width,
+                           m_StreamConfig.height, m_StreamConfig.fps, m_Computer->gfeVersion);
+    if (m_Preferences->enableHdr) {
         m_StreamConfig.hdrMode = static_cast<int>(m_Preferences->hdrMode);
     }
 
@@ -2542,7 +2515,6 @@ bool Session::validateLaunch(SDL_Window* testWindow)
             // Moonlight-common-c will handle this case already, but we want
             // to set this explicitly here so we can do our hardware acceleration
             // check below.
-            m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_AV1);
         }
         else {
             if (!m_Preferences->enableHdr && // HDR is checked below
@@ -2556,10 +2528,6 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                                         m_StreamConfig.fps) != DecoderAvailability::Hardware) {
                 emitLaunchWarning(tr("Using software decoding due to your selection to force AV1 without GPU support. This may cause poor streaming performance."));
             }
-
-            if (m_Preferences->videoCodecConfig == StreamingPreferences::VCC_FORCE_AV1) {
-                m_SupportedVideoFormats.removeByMask(~VIDEO_FORMAT_MASK_AV1);
-            }
         }
     }
 
@@ -2572,7 +2540,6 @@ bool Session::validateLaunch(SDL_Window* testWindow)
             // Moonlight-common-c will handle this case already, but we want
             // to set this explicitly here so we can do our hardware acceleration
             // check below.
-            m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_H265);
         }
         else {
             if (!m_Preferences->enableHdr && // HDR is checked below
@@ -2592,6 +2559,10 @@ bool Session::validateLaunch(SDL_Window* testWindow)
             }
         }
     }
+
+    applyVideoFormatServerRestrictions(m_SupportedVideoFormats, m_Computer->serverCodecModeSupport,
+                                       m_Computer->maxLumaPixelsHEVC,
+                                       m_Preferences->videoCodecConfig);
 
     if (!(m_SupportedVideoFormats & ~VIDEO_FORMAT_MASK_H264) &&
             m_Preferences->videoDecoderSelection == StreamingPreferences::VDS_AUTO &&
@@ -3119,8 +3090,12 @@ void Session::scheduleWindowResolutionMatch()
 
     // Restarted by every resize event, so only the settled size is requested
     if ((m_Preferences->resolutionMatchWindow || m_ResolutionMatch.oneShot) &&
-        m_ResolutionMatch.hostSupported && !m_ResolutionMatch.explicitOverride &&
-        !m_LiveResolutionTransaction.isActive()) {
+        m_ResolutionMatch.hostSupported && !m_ResolutionMatch.explicitOverride) {
+        if (m_LiveResolutionTransaction.isActive()) {
+            m_ResolutionMatch.deferred = true;
+            return;
+        }
+        m_ResolutionMatch.deferred = false;
         m_ResolutionMatch.deadline = SDL_GetTicks() + RESOLUTION_MATCH_DEBOUNCE_MS;
     }
 }
@@ -3163,6 +3138,12 @@ void Session::processWindowResolutionMatch()
     if (m_ResolutionMatch.explicitOverride && !m_ResolutionMatch.oneShot) {
         m_ResolutionMatch.deadline = 0;
         return;
+    }
+    if (m_ResolutionMatch.deferred && !m_LiveResolutionTransaction.isActive() &&
+        !m_PendingStreamQuality && !m_PendingStreamConfiguration &&
+        !m_SuppressConnectionErrorDialog) {
+        m_ResolutionMatch.deferred = false;
+        scheduleWindowResolutionMatch();
     }
     if (m_PendingStreamQuality || m_PendingStreamConfiguration ||
         m_LiveResolutionTransaction.isActive() || m_SuppressConnectionErrorDialog) {
@@ -3284,7 +3265,8 @@ void Session::handleHostResolutionReport(int width, int height, Uint32 generatio
     const bool streamFollowsDisplay =
         StreamQuality::hostStreamingDisplayIsOneToOne(previousDisplay, stream);
     if (transactionForConnection) {
-        m_LiveResolutionTransaction.observeHostReport(generation, previousDisplay, reported);
+        m_LiveResolutionTransaction.observeHostReport(generation, previousDisplay, reported,
+                                                      SDL_GetTicks());
     }
     m_ResolutionMatch.hostDisplaySize = reported;
     m_ResolutionMatch.requestTicks = 0;
@@ -4046,15 +4028,15 @@ void Session::updateLiveMenuState()
     const Uint32 now = SDL_GetTicks();
     const bool canMatch = !m_SuppressConnectionErrorDialog && !m_PendingStreamQuality &&
                           !m_PendingStreamConfiguration &&
-                          !m_LiveResolutionTransaction.isActive() &&
-                          !m_ResolutionMatch.explicitOverride && !m_ResolutionMatch.oneShot &&
+                          !m_LiveResolutionTransaction.isActive() && !m_ResolutionMatch.oneShot &&
                           (m_ResolutionMatch.requestTicks == 0 ||
                            SDL_TICKS_PASSED(now, m_ResolutionMatch.requestTicks + 5000)) &&
                           (m_ResolutionMatch.lastAttemptTicks == 0 ||
                            SDL_TICKS_PASSED(now, m_ResolutionMatch.lastAttemptTicks + 400));
-    m_MenuPanel->updateResolutionMatchState(m_ResolutionMatch.hostSupported,
-                                            m_Preferences->resolutionMatchWindow,
-                                            isStreamingWindowFullscreen(), canMatch);
+    m_MenuPanel->updateResolutionMatchState(
+        m_ResolutionMatch.hostSupported, m_Preferences->resolutionMatchWindow,
+        isStreamingWindowFullscreen(), canMatch,
+        m_Preferences->resolutionMatchWindow && m_ResolutionMatch.explicitOverride);
 }
 
 bool Session::handleLiveMenuAction(OverlayMenuPanel::MenuAction action)
@@ -4419,6 +4401,12 @@ void Session::requestRuntimeBitrateChange(int bitrateKbps)
                     "Cannot change runtime bitrate: no m_Computer");
         return;
     }
+    if (m_ShouldExit || m_ConnectionCancel || m_ConnectionInterrupted || m_ReconnectInProgress ||
+        m_SuppressConnectionErrorDialog || m_PendingStreamQuality || m_PendingStreamConfiguration ||
+        m_LiveResolutionTransaction.isActive()) {
+        showStreamingToast(tr("Another stream change is already in progress"));
+        return;
+    }
 
     // Coalesce rapid slider commits. A worker applying earlier values picks
     // up the newest pending one via startRuntimeBitrateWorker() on finish,
@@ -4459,6 +4447,8 @@ void Session::startRuntimeBitrateWorker()
     auto bitrateToApply = std::make_shared<int>(
         m_PendingRuntimeBitrateKbps.exchange(0, std::memory_order_acq_rel));
     auto appliedBitrate = std::make_shared<std::atomic_int>(-1);
+    const Uint32 connectionGeneration = m_ConnectionGeneration.load(std::memory_order_acquire);
+    const uint64_t abrGeneration = m_AbrRuntime->generation();
 
     auto worker = QThread::create([bitrateToApply, appliedBitrate, address, httpsPort,
                                    uuid, certificate, clientname] {
@@ -4495,40 +4485,61 @@ void Session::startRuntimeBitrateWorker()
         }
     });
     connect(worker, &QThread::finished, this,
-            [this, appliedBitrate, abrGeneration = m_AbrRuntime->generation()]() {
-                const int applied = appliedBitrate->load();
-                if (applied > 0) {
-                    if (m_AbrRuntime->setBitrate(abrGeneration, applied)) {
-                        m_LastRuntimeBitrateApplied.store(applied, std::memory_order_release);
-                        showStreamingToast(tr("Bitrate: %1").arg(
-                                OverlayMenuPanel::formatBitrateKbps(applied)));
-                    }
-                }
-                // Commits that landed mid-flight are still pending; apply the
-                // newest one before going idle.
-                if (m_PendingRuntimeBitrateKbps.load(std::memory_order_acquire) != 0) {
-                    startRuntimeBitrateWorker();
-                } else {
-                    const int lastApplied =
-                        m_LastRuntimeBitrateApplied.exchange(-1, std::memory_order_acq_rel);
-                    if (lastApplied > 0) {
-                        m_StreamConfig.bitrate = lastApplied;
-                        if (m_StreamQualityOverride) {
-                            m_StreamQualityOverride->bitrateKbps = lastApplied;
-                        }
-                    }
-                    if (applied <= 0) {
-                        showStreamingToast(tr("The requested bitrate change failed"), 5000);
-                    }
-                    m_RuntimeBitrateInFlight.store(false, std::memory_order_release);
-                    if (m_PendingRuntimeBitrateKbps.load(std::memory_order_acquire) != 0 &&
-                        !m_RuntimeBitrateInFlight.exchange(true, std::memory_order_acq_rel)) {
-                        startRuntimeBitrateWorker();
-                    }
-                }
+            [this, appliedBitrate, connectionGeneration, abrGeneration]() {
+                finishRuntimeBitrateChange(appliedBitrate->load(), connectionGeneration,
+                                           abrGeneration);
             });
     connect(worker, &QThread::finished, worker, &QObject::deleteLater);
     worker->start();
+}
+
+void Session::finishRuntimeBitrateChange(int applied, Uint32 connectionGeneration,
+                                         uint64_t abrGeneration)
+{
+    const auto connectionIsCurrent = [this, connectionGeneration] {
+        return m_ConnectionGeneration.load(std::memory_order_acquire) == connectionGeneration &&
+               !m_ConnectionCancel.load(std::memory_order_acquire) && !m_ShouldExit &&
+               !m_ConnectionInterrupted.load(std::memory_order_acquire) &&
+               !m_ReconnectInProgress.load(std::memory_order_acquire) &&
+               !m_SuppressConnectionErrorDialog;
+    };
+    if (!connectionIsCurrent()) {
+        m_PendingRuntimeBitrateKbps.store(0, std::memory_order_release);
+        m_LastRuntimeBitrateApplied.store(-1, std::memory_order_release);
+        m_RuntimeBitrateInFlight.store(false, std::memory_order_release);
+        return;
+    }
+
+    const bool abrGenerationCurrent = m_AbrRuntime->generation() == abrGeneration;
+    const bool accepted =
+        applied > 0 && abrGenerationCurrent && m_AbrRuntime->setBitrate(abrGeneration, applied);
+    if (applied > 0 && !accepted) {
+        m_LastRuntimeBitrateApplied.store(-1, std::memory_order_release);
+    } else if (accepted) {
+        m_LastRuntimeBitrateApplied.store(applied, std::memory_order_release);
+        showStreamingToast(tr("Bitrate: %1").arg(OverlayMenuPanel::formatBitrateKbps(applied)));
+    }
+
+    if (m_PendingRuntimeBitrateKbps.load(std::memory_order_acquire) != 0) {
+        startRuntimeBitrateWorker();
+        return;
+    }
+
+    const int lastApplied = m_LastRuntimeBitrateApplied.exchange(-1, std::memory_order_acq_rel);
+    if (lastApplied > 0 && connectionIsCurrent() && m_AbrRuntime->generation() == abrGeneration) {
+        m_StreamConfig.bitrate = lastApplied;
+        if (m_StreamQualityOverride) {
+            m_StreamQualityOverride->bitrateKbps = lastApplied;
+        }
+    }
+    if (applied <= 0 && connectionIsCurrent()) {
+        showStreamingToast(tr("The requested bitrate change failed"), 5000);
+    }
+    m_RuntimeBitrateInFlight.store(false, std::memory_order_release);
+    if (m_PendingRuntimeBitrateKbps.load(std::memory_order_acquire) != 0 &&
+        !m_RuntimeBitrateInFlight.exchange(true, std::memory_order_acq_rel)) {
+        startRuntimeBitrateWorker();
+    }
 }
 
 void Session::startSunshineAbr()
@@ -5031,6 +5042,7 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Ignoring stream configuration change requested during a reconnect");
         m_PendingStreamConfiguration.reset();
+        reportStreamConfigurationNotApplied(tr("a stream reconnect is already in progress"));
         break;
     default:
         SDL_assert(false);
@@ -5059,8 +5071,8 @@ void Session::requestStreamQualityChange(const OverlayMenuPanel::StreamQualityRe
 {
     // This runs inside the stream loop's Qt overlay event processing.
     // Restart the connection from the loop itself, not from the callback.
-    if (m_PendingStreamConfiguration || m_LiveResolutionTransaction.isActive() ||
-        m_SuppressConnectionErrorDialog) {
+    if (m_PendingStreamConfiguration || m_RuntimeBitrateInFlight ||
+        m_LiveResolutionTransaction.isActive() || m_SuppressConnectionErrorDialog) {
         showStreamingToast(tr("Another stream change is already in progress"));
         return;
     }
@@ -5092,7 +5104,7 @@ void Session::updateStreamQualityMenuState()
     state.hostDisplaySize = m_ResolutionMatch.hostDisplaySize;
     state.resolutionOperationBusy = m_PendingStreamQuality || m_PendingStreamConfiguration ||
                                     m_LiveResolutionTransaction.isActive() ||
-                                    m_SuppressConnectionErrorDialog;
+                                    m_RuntimeBitrateInFlight || m_SuppressConnectionErrorDialog;
     state.liveRequestPending =
         m_LiveResolutionTransaction.isActive() && m_LiveResolutionTransaction.isExplicit();
     state.pendingResolution =
@@ -5147,6 +5159,8 @@ void Session::updateStreamConfigurationMenuState()
     state.requestedHdrMode = m_RequestedStreamConfiguration.hdrMode;
     state.requestedAudioConfig = m_RequestedStreamConfiguration.audioConfig;
     state.pyrowaveSelected = state.requestedCodec == StreamingPreferences::VCC_FORCE_PYROWAVE;
+    state.busy = m_RuntimeBitrateInFlight || m_PendingStreamQuality ||
+                 m_LiveResolutionTransaction.isActive() || m_SuppressConnectionErrorDialog;
     if (m_PendingStreamConfiguration) {
         state.pending = true;
         state.pendingCodec = m_PendingStreamConfiguration->codec;
@@ -5245,46 +5259,27 @@ bool Session::prepareStreamConfiguration(
     formats.append(VIDEO_FORMAT_H264);
 
     const bool enableYuv444 = m_Preferences->enableYUV444 && !prepared.pyrowaveRequested;
-    if (!enableYuv444 || !(m_Computer->serverCodecModeSupport & SCM_MASK_YUV444)) {
-        formats.removeByMask(VIDEO_FORMAT_MASK_YUV444);
-    } else {
-        formats.deprioritizeByMask(~VIDEO_FORMAT_MASK_YUV444);
-    }
-
     StreamingPreferences::VideoCodecConfig effectiveCodec =
         static_cast<StreamingPreferences::VideoCodecConfig>(request.codec);
-    if (effectiveCodec == StreamingPreferences::VCC_FORCE_PYROWAVE) {
-        effectiveCodec = StreamingPreferences::VCC_AUTO;
-    }
-    switch (effectiveCodec) {
-    case StreamingPreferences::VCC_FORCE_H264:
-        formats.removeByMask(~VIDEO_FORMAT_MASK_H264);
-        break;
-    case StreamingPreferences::VCC_FORCE_HEVC:
-    case StreamingPreferences::VCC_FORCE_HEVC_HDR_DEPRECATED:
-        formats.removeByMask(~VIDEO_FORMAT_MASK_H265);
-        break;
-    case StreamingPreferences::VCC_FORCE_AV1:
-        formats.removeByMask(~(VIDEO_FORMAT_MASK_AV1 | VIDEO_FORMAT_MASK_H265));
-        break;
-    case StreamingPreferences::VCC_AUTO:
-        break;
-    case StreamingPreferences::VCC_FORCE_PYROWAVE:
-        SDL_assert(false);
-        break;
-    }
-
-    if (request.hdrMode == 0) {
-        formats.removeByMask(VIDEO_FORMAT_MASK_10BIT);
-    } else {
-        formats.removeByMask(~VIDEO_FORMAT_MASK_10BIT);
-    }
+    prioritizeVideoFormats(formats, effectiveCodec, testWindow, request.hdrMode != 0, enableYuv444,
+                           prepared.streamConfig.width, prepared.streamConfig.height,
+                           prepared.streamConfig.fps, m_Computer->gfeVersion);
 
     formats.removeByMask(~formats.maskByServerCodecModes(m_Computer->serverCodecModeSupport));
-    if (m_Computer->maxLumaPixelsHEVC == 0) {
-        formats.removeByMask(VIDEO_FORMAT_MASK_H265);
+    applyVideoFormatServerRestrictions(formats, m_Computer->serverCodecModeSupport,
+                                       m_Computer->maxLumaPixelsHEVC, effectiveCodec);
+    if (request.hdrMode != 0) {
+        // Unlike launch, this operation must either negotiate HDR or report an
+        // explicit SDR fallback; do not silently keep 8-bit candidates here.
+        formats.removeByMask(~VIDEO_FORMAT_MASK_10BIT);
     }
-
+    if (enableYuv444 && !(m_Computer->serverCodecModeSupport & SCM_MASK_YUV444)) {
+        prepared.resultMessage = tr("Your host PC doesn't support YUV 4:4:4 streaming");
+    } else if (enableYuv444 && !formats.isEmpty() &&
+               !(formats.front() & VIDEO_FORMAT_MASK_YUV444)) {
+        prepared.resultMessage =
+            tr("Your host PC doesn't support YUV 4:4:4 streaming for the selected codec");
+    }
     for (int i = 0; i < formats.size();) {
         const DecoderAvailability availability = getDecoderAvailability(
             testWindow, m_Preferences->videoDecoderSelection, formats[i],
@@ -5296,6 +5291,10 @@ bool Session::prepareStreamConfiguration(
         } else {
             ++i;
         }
+    }
+
+    if (formats.isEmpty() && request.hdrMode == 0) {
+        formats.append(VIDEO_FORMAT_H264);
     }
 
     if (formats.isEmpty()) {
@@ -5312,42 +5311,6 @@ bool Session::prepareStreamConfiguration(
         }
         destroyTestWindow();
         return fail(tr("No compatible video format and decoder are available"));
-    }
-
-    if (effectiveCodec == StreamingPreferences::VCC_AUTO) {
-        const int hevcProbe =
-            enableYuv444
-                ? (request.hdrMode ? VIDEO_FORMAT_H265_REXT10_444 : VIDEO_FORMAT_H265_REXT8_444)
-                : (request.hdrMode ? VIDEO_FORMAT_H265_MAIN10 : VIDEO_FORMAT_H265);
-        const DecoderAvailability hevcAvailability = getDecoderAvailability(
-            testWindow, m_Preferences->videoDecoderSelection, hevcProbe,
-            prepared.streamConfig.width, prepared.streamConfig.height, prepared.streamConfig.fps);
-        if (hevcAvailability != DecoderAvailability::Hardware &&
-            !(m_Preferences->videoDecoderSelection == StreamingPreferences::VDS_FORCE_SOFTWARE &&
-              request.hdrMode != 0)) {
-            formats.deprioritizeByMask(VIDEO_FORMAT_MASK_H265);
-        } else {
-            bool deprioritizeAv1 = hevcAvailability == DecoderAvailability::Hardware;
-#if !defined(Q_OS_WIN32) &&                                                                        \
-    (!(defined(Q_OS_UNIX) && !defined(Q_OS_DARWIN)) || defined(Q_PROCESSOR_X86))
-            deprioritizeAv1 = deprioritizeAv1 || request.hdrMode == 0;
-#endif
-            if (deprioritizeAv1) {
-                formats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
-            } else if (request.hdrMode == 0 &&
-                       getDecoderAvailability(
-                           testWindow, m_Preferences->videoDecoderSelection,
-                           enableYuv444 ? VIDEO_FORMAT_AV1_HIGH8_444 : VIDEO_FORMAT_AV1_MAIN8,
-                           prepared.streamConfig.width, prepared.streamConfig.height,
-                           prepared.streamConfig.fps) != DecoderAvailability::Hardware) {
-                formats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
-            }
-        }
-    }
-
-    if (formats.isEmpty()) {
-        destroyTestWindow();
-        return fail(tr("The host and this device have no compatible video format"));
     }
 
     IVideoDecoder* decoder = nullptr;
@@ -5420,7 +5383,11 @@ void Session::applyPreparedStreamConfiguration()
 void Session::requestStreamConfigurationChange(
     const OverlayMenuPanel::StreamConfigurationRequest& request)
 {
-    if (m_PendingStreamConfiguration || m_PendingStreamQuality ||
+    if (m_ConnectionInterrupted || m_ConnectionCancel || m_ShouldExit) {
+        reportStreamConfigurationNotApplied(tr("the connection is no longer available"));
+        return;
+    }
+    if (m_PendingStreamConfiguration || m_PendingStreamQuality || m_RuntimeBitrateInFlight ||
         m_LiveResolutionTransaction.isActive() || m_SuppressConnectionErrorDialog) {
         showStreamingToast(tr("Another stream change is already in progress"));
         return;
@@ -5429,7 +5396,17 @@ void Session::requestStreamConfigurationChange(
     SDL_Event event = {};
     event.type = SDL_USEREVENT;
     event.user.code = SDL_CODE_APPLY_STREAM_CONFIGURATION;
-    pushEventOrWarn(event);
+    if (!pushEventOrWarn(event)) {
+        m_PendingStreamConfiguration.reset();
+        reportStreamConfigurationNotApplied(tr("could not queue the apply request"));
+    }
+}
+
+void Session::reportStreamConfigurationNotApplied(const QString& reason)
+{
+    m_StreamConfigurationResultMessage = tr("Not applied: %1").arg(reason);
+    showStreamingToast(m_StreamConfigurationResultMessage, 5000);
+    updateStreamConfigurationMenuState();
 }
 
 bool Session::applyPendingStreamConfigurationChange()
@@ -5438,10 +5415,15 @@ bool Session::applyPendingStreamConfigurationChange()
         return true;
     }
     const OverlayMenuPanel::StreamConfigurationRequest request = *m_PendingStreamConfiguration;
-    if (m_LiveResolutionTransaction.isActive() || m_SuppressConnectionErrorDialog) {
+    if (m_ShouldExit || m_ConnectionCancel || m_ConnectionInterrupted) {
         m_PendingStreamConfiguration.reset();
-        showStreamingToast(tr("Another stream change is already in progress"));
-        updateStreamConfigurationMenuState();
+        reportStreamConfigurationNotApplied(tr("the connection is no longer available"));
+        return !m_ShouldExit && !m_ConnectionCancel;
+    }
+    if (m_LiveResolutionTransaction.isActive() || m_RuntimeBitrateInFlight ||
+        m_SuppressConnectionErrorDialog) {
+        m_PendingStreamConfiguration.reset();
+        reportStreamConfigurationNotApplied(tr("another stream change is already in progress"));
         return true;
     }
 
@@ -5449,9 +5431,7 @@ bool Session::applyPendingStreamConfigurationChange()
     QString failureReason;
     if (!prepareStreamConfiguration(request, prepared, failureReason)) {
         m_PendingStreamConfiguration.reset();
-        m_StreamConfigurationResultMessage = tr("Not applied: %1").arg(failureReason);
-        showStreamingToast(m_StreamConfigurationResultMessage, 5000);
-        updateStreamConfigurationMenuState();
+        reportStreamConfigurationNotApplied(failureReason);
         return true;
     }
 
@@ -5459,7 +5439,8 @@ bool Session::applyPendingStreamConfigurationChange()
     m_StreamConfigurationResultMessage.clear();
     showStreamingToast(tr("Reconnecting with requested codec, HDR and audio settings"), 2500);
     const QString preparationResult = m_PreparedStreamConfiguration->resultMessage;
-    if (tryReconnect(ReconnectReason::StreamQualityChange)) {
+    bool teardownStarted = false;
+    if (tryReconnect(ReconnectReason::StreamQualityChange, &teardownStarted)) {
         m_PreparedStreamConfiguration.reset();
         m_PendingStreamConfiguration.reset();
         m_RequestedStreamConfiguration = request;
@@ -5477,6 +5458,10 @@ bool Session::applyPendingStreamConfigurationChange()
     m_PendingStreamConfiguration.reset();
     if (m_ShouldExit) {
         return false;
+    }
+    if (!teardownStarted) {
+        reportStreamConfigurationNotApplied(tr("the connection stopped before the request began"));
+        return !m_ConnectionCancel;
     }
     m_StreamConfigurationResultMessage = tr("Reconnect failed; the session ended");
     emit displayLaunchError(
@@ -5583,17 +5568,10 @@ bool Session::applyPendingStreamQualityChange()
     const QString summary =
         tr("%1 at %2 FPS").arg(StreamQuality::resolutionName(target.resolution())).arg(target.fps);
 
-    if (request.saveAsDefault) {
-        // The saved value is the exact stream size, so don't scale it again.
-        m_Preferences->width = target.width;
-        m_Preferences->height = target.height;
-        m_Preferences->fps = target.fps;
-        m_Preferences->streamResolutionScale = false;
-        m_Preferences->save();
-    }
     if (m_LiveResolutionTransaction.isActive() || m_PendingStreamConfiguration ||
-        m_SuppressConnectionErrorDialog) {
+        m_RuntimeBitrateInFlight || m_SuppressConnectionErrorDialog) {
         showStreamingToast(tr("Another stream change is already in progress"));
+        updateStreamQualityMenuState();
         return true;
     }
 
@@ -5602,7 +5580,7 @@ bool Session::applyPendingStreamQualityChange()
         m_ResolutionMatch.hostDisplaySize,
         QSize(m_ActiveVideoWidth, m_ActiveVideoHeight),
         m_LiveResolutionTransaction.isActive() || m_PendingStreamConfiguration ||
-            m_SuppressConnectionErrorDialog,
+            m_RuntimeBitrateInFlight || m_SuppressConnectionErrorDialog,
     };
     if (request.forceLive &&
         (!liveFpsKnown || target.fps != currentFps ||
@@ -5623,6 +5601,20 @@ bool Session::applyPendingStreamQualityChange()
             ? StreamQuality::Path::Reconnect
         : request.forceLive ? StreamQuality::Path::LiveResolution
                             : StreamQuality::choosePath(change, liveState, target.resolution());
+    if (path == StreamQuality::Path::Busy) {
+        showStreamingToast(tr("Another resolution or stream change is in progress"), 3500);
+        return true;
+    }
+
+    if (request.saveAsDefault) {
+        // The saved value is the exact stream size, so don't scale it again.
+        m_Preferences->width = target.width;
+        m_Preferences->height = target.height;
+        m_Preferences->fps = target.fps;
+        m_Preferences->streamResolutionScale = false;
+        m_Preferences->save();
+    }
+
     switch (path) {
     case StreamQuality::Path::None:
         if (request.saveAsDefault) {
@@ -5685,15 +5677,26 @@ bool Session::applyPendingStreamQualityChange()
     return false;
 }
 
-bool Session::tryReconnect(ReconnectReason reason)
+bool Session::tryReconnect(ReconnectReason reason, bool* teardownStarted)
 {
-    if (m_ShouldExit || m_ConnectionCancel) {
+    if (teardownStarted != nullptr) {
+        *teardownStarted = false;
+    }
+    if (m_ShouldExit || m_ConnectionCancel ||
+        (reason != ReconnectReason::ConnectionLost && m_ConnectionInterrupted)) {
         return false;
     }
     const bool qualityChange = reason == ReconnectReason::StreamQualityChange;
     m_RecoveryShowToast = !qualityChange;
-    if (!m_RecoveryBudget.begin(RecoveryBudget::nowMs(), qualityChange ? 30000 : 60000)) {
+    const int64_t now = RecoveryBudget::nowMs();
+    const bool budgetStarted = qualityChange ? m_RecoveryBudget.beginFresh(now, 30000)
+                                             : m_RecoveryBudget.begin(now, 60000);
+    if (!budgetStarted) {
         return false;
+    }
+    if (qualityChange) {
+        m_ExplicitRestartRecovery = false;
+        m_RecoveryFrameReceived = false;
     }
     m_ReconnectInProgress = true;
     struct ReconnectGuard
@@ -5726,6 +5729,9 @@ bool Session::tryReconnect(ReconnectReason reason)
         m_DualSenseHapticsRenderer->setControllerTarget(-1);
     }
     LiStopConnection();
+    if (teardownStarted != nullptr) {
+        *teardownStarted = true;
+    }
     stopControllerRumbleAtConnectionBoundary(m_InputHandler);
     if (m_DualSenseHapticsRenderer != nullptr) {
         m_DualSenseHapticsRenderer->reset();
@@ -5865,15 +5871,50 @@ bool Session::tryReconnect(ReconnectReason reason)
         }
 
         if (m_AsyncConnectionSuccess && !m_ConnectionInterrupted) {
-            reconnected = true;
-            if (m_ClipboardHelper != nullptr) {
-                m_ClipboardHelper->updateHostContext();
+            bool settingsFrameReceived = !qualityChange;
+            if (qualityChange) {
+                while (!m_RecoveryFrameReceived && !m_ConnectionInterrupted && !cancelled &&
+                       !m_ShouldExit && !m_ConnectionCancel &&
+                       m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs()) > 0) {
+                    SDL_Event ev;
+                    while (SDL_PollEvent(&ev)) {
+                        if (handleReconnectEvent(ev)) {
+                            cancelled = true;
+                            m_ConnectionCancel = true;
+                            break;
+                        }
+                    }
+                    if (cancelled || m_ShouldExit || m_ConnectionCancel) {
+                        break;
+                    }
+                    processReconnectQtEvents();
+                    SDL_Delay(10);
+                }
+                settingsFrameReceived = m_RecoveryFrameReceived && !m_ConnectionInterrupted;
+                if (!settingsFrameReceived &&
+                    (!m_ConnectionInterrupted || cancelled || m_ShouldExit || m_ConnectionCancel ||
+                     m_RecoveryBudget.remainingMs(RecoveryBudget::nowMs()) <= 0)) {
+                    stopControllerRumbleAtConnectionBoundary(m_InputHandler);
+                    LiStopConnection();
+                    m_RecoveryBudget.reset();
+                    if (!cancelled && !m_ShouldExit && !m_ConnectionCancel) {
+                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                                     "Settings reconnect received no video frame before timeout");
+                    }
+                    break;
+                }
             }
-            if (m_InputHandler != nullptr) {
-                m_InputHandler->notifyHostOfConnectedGamepads();
-                m_InputHandler->raiseAllKeys();
+            if (settingsFrameReceived) {
+                reconnected = true;
+                if (m_ClipboardHelper != nullptr) {
+                    m_ClipboardHelper->updateHostContext();
+                }
+                if (m_InputHandler != nullptr) {
+                    m_InputHandler->notifyHostOfConnectedGamepads();
+                    m_InputHandler->raiseAllKeys();
+                }
+                break;
             }
-            break;
         }
 
         // Failed: clean up the partial attempt and back off before retrying

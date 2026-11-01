@@ -125,7 +125,8 @@ public:
     std::uint32_t deadline() const { return m_Deadline; }
     bool awaitingDecoderReset() const { return m_AwaitingDecoderReset; }
 
-    bool observeHostReport(std::uint32_t generation, QSize previousDisplay, QSize reported);
+    bool observeHostReport(std::uint32_t generation, QSize previousDisplay, QSize reported,
+                           std::uint32_t now);
     bool decoderResetCompleted(std::uint32_t generation);
     LiveResolutionResult firstFrame(std::uint32_t generation);
     bool expire(std::uint32_t now);
@@ -138,6 +139,7 @@ private:
     bool m_DecoderResetCompleted = false;
     std::uint32_t m_Generation = 0;
     std::uint32_t m_Deadline = 0;
+    std::uint32_t m_TimeoutMs = 0;
     QSize m_Current;
     QSize m_Target;
     QSize m_ObservedSize;

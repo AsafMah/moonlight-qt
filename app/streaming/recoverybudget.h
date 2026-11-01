@@ -36,6 +36,21 @@ public:
         return now < m_Deadline;
     }
 
+    bool beginFresh(int64_t now, int durationMs)
+    {
+        std::lock_guard<std::mutex> lock(m_Mutex);
+        m_Deadline = now + durationMs;
+        m_AcceptRecoveredFrames = false;
+        return now < m_Deadline;
+    }
+
+    void reset()
+    {
+        std::lock_guard<std::mutex> lock(m_Mutex);
+        m_Deadline = 0;
+        m_AcceptRecoveredFrames = false;
+    }
+
     int remainingMs(int64_t now) const
     {
         std::lock_guard<std::mutex> lock(m_Mutex);

@@ -31,11 +31,12 @@ class RetryWorkerTests(unittest.TestCase):
         setup = function(source, "void Session::exec()")
         setup = setup[:setup.index("    // If the connection failed, clean up")]
         harness = harness.replace("// INITIAL_RECOVERY", setup + "\n}\n")
-        header = (ROOT / "app/streaming/session.h").read_text(encoding="utf-8")
-        start = header.index("    static void markVideoReceived()")
-        end = header.index("\n    }\n", start) + len("\n    }\n")
-        harness = harness.replace("// HOST_FRAME_MARKER", header[start:end].replace(
-            "RecoveryBudget::nowMs()", "fakeNow()"))
+        marker = function(source, "void Session::markVideoReceived(").replace(
+            "RecoveryBudget::nowMs()", "fakeNow()")
+        harness = harness.replace("// HOST_FRAME_MARKER", "static void markVideoReceived();")
+        harness = harness.replace(
+            "Session* Session::s_ActiveSession = nullptr;",
+            "Session* Session::s_ActiveSession = nullptr;\n" + marker)
         qmake = ((shutil.which("qmake6") or shutil.which("qmake"))
                  if os.name != "nt" else shutil.which("qmake"))
         self.assertIsNotNone(qmake, "Run with Qt qmake and a C++ compiler on PATH")

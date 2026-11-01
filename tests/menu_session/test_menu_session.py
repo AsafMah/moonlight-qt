@@ -15,6 +15,51 @@ def function(source, signature):
 
 
 class MenuSessionTests(unittest.TestCase):
+    def test_launch_and_reconnect_share_video_format_priorities(self):
+        source = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
+        for signature in ("bool Session::initialize(", "bool Session::prepareStreamConfiguration("):
+            self.assertIn("prioritizeVideoFormats(", function(source, signature))
+        prepare = function(source, "bool Session::prepareStreamConfiguration(")
+        launch_validation = function(source, "bool Session::validateLaunch(")
+        self.assertIn("applyVideoFormatServerRestrictions(", prepare)
+        self.assertIn("applyVideoFormatServerRestrictions(", launch_validation)
+        method = function(source, "void Session::prioritizeVideoFormats(")
+        server_filter = function(source, "void Session::applyVideoFormatServerRestrictions(")
+        harness = Path(__file__).with_name("video_format_priority_harness.cpp").read_text()
+        harness = harness.replace("// PRIORITIZATION_METHOD", method)
+        harness = harness.replace("// SERVER_FILTER_METHOD", server_filter)
+        self.compile_run(harness,
+                         definitions=["Q_OS_DARWIN"])
+        harness = Path(__file__).with_name("video_format_priority_harness.cpp").read_text()
+        harness = harness.replace("// PRIORITIZATION_METHOD", method)
+        harness = harness.replace("// SERVER_FILTER_METHOD", server_filter)
+        self.compile_run(harness)
+        priority_call = prepare.index("prioritizeVideoFormats(")
+        self.assertEqual(prepare.count("prioritizeVideoFormats("), 1)
+        self.assertNotIn("formats.deprioritizeByMask", prepare[priority_call:])
+        hdr_fallback = prepare.index("formats.removeByMask(~VIDEO_FORMAT_MASK_10BIT)")
+        empty_fallback = prepare.index("if (formats.isEmpty())", hdr_fallback)
+        self.assertLess(hdr_fallback, empty_fallback)
+        self.assertIn("AC_714_SURROUND", prepare)
+        self.assertIn("AUDIO_CONFIGURATION_714_SURROUND", prepare)
+        self.assertIn("m_PyrowaveRequested", prepare)
+
+    def test_runtime_bitrate_completion_generations(self):
+        session = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
+        method = function(session, "void Session::finishRuntimeBitrateChange(")
+        harness = Path(__file__).with_name("runtime_bitrate_harness.cpp").read_text()
+        self.compile_run(harness.replace("// METHOD", method))
+
+    def test_dropped_reconnect_apply_reports_rejection(self):
+        session = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
+        event_handler = function(session, "void Session::handleSdlUserEvent(")
+        config_case = event_handler.split(
+            "case SDL_CODE_APPLY_STREAM_CONFIGURATION:", 1)[1].split("default:", 1)[0]
+        self.assertIn("reportStreamConfigurationNotApplied", config_case)
+        report = function(session, "void Session::reportStreamConfigurationNotApplied(")
+        self.assertIn("Not applied", report)
+        self.assertIn("updateStreamConfigurationMenuState();", report)
+
     def test_live_menu_ownership(self):
         session = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
         input_source = (ROOT / "app/streaming/input/input.cpp").read_text(encoding="utf-8")
@@ -50,6 +95,9 @@ int main() {
             "void Session::updateAudioMuteState(",
             "bool Session::handleOverlayMenuShortcutEvent(",
         ))
+        match_state = function(session, "void Session::updateLiveMenuState(")
+        self.assertNotIn("!m_ResolutionMatch.explicitOverride", match_state)
+        self.assertIn("m_ResolutionMatch.explicitOverride", match_state)
         methods += function(input_source, "void SdlInputHandler::setAbsoluteMouseMode(")
         dispatch = function(session, "void Session::dispatchQtMenuAction(")
         self.assertIn("handleLiveMenuAction(action)", dispatch)
@@ -68,6 +116,7 @@ int main() {
         harness = Path(__file__).with_name("configuration_harness.cpp").read_text()
         methods = "\n".join(function(session, signature) for signature in (
             "void Session::requestStreamConfigurationChange(",
+            "void Session::reportStreamConfigurationNotApplied(",
             "bool Session::applyPendingStreamConfigurationChange(",
             "void Session::applyPreparedStreamConfiguration(",
         ))
@@ -79,16 +128,25 @@ int main() {
         callback = session[session.index("m_MenuPanel->setStreamConfigurationCallback("):]
         self.assertIn("requestStreamConfigurationChange(request)", callback[:300])
         apply_body = function(session, "bool Session::applyPendingStreamConfigurationChange(")
-        self.assertIn("tryReconnect(ReconnectReason::StreamQualityChange)", apply_body)
+        self.assertIn(
+            "tryReconnect(ReconnectReason::StreamQualityChange, &teardownStarted)", apply_body)
+        self.assertIn("if (!teardownStarted)", apply_body)
         reconnect_body = function(session, "bool Session::tryReconnect(")
         stop = reconnect_body.index("LiStopConnection();")
         prepare = reconnect_body.index("applyPreparedStreamConfiguration();", stop)
         retry = reconnect_body.index("AsyncConnectionStartThread thread(this);", prepare)
         self.assertLess(stop, prepare)
         self.assertLess(prepare, retry)
+        prepared = function(session, "void Session::applyPreparedStreamConfiguration(")
+        self.assertIn("m_StreamConfig = prepared.streamConfig", prepared)
+        abr_start = function(session, "void Session::startSunshineAbr(")
+        self.assertIn("m_StreamConfig.bitrate", abr_start)
+        connection_start = function(session, "bool Session::startConnectionAsync(")
+        self.assertLess(connection_start.index("LiStartConnection("),
+                        connection_start.index("startSunshineAbr();"))
         self.compile_run(harness.replace("// METHODS", methods))
 
-    def compile_run(self, harness):
+    def compile_run(self, harness, definitions=()):
         compiler = shutil.which("cl")
         if compiler:
             msvc = True
@@ -103,6 +161,10 @@ int main() {
             exe = path / ("main.exe" if os.name == "nt" else "main")
             command = ([compiler, "/nologo", "/std:c++17", "/EHsc", str(source), f"/Fe:{exe}"]
                        if msvc else [compiler, "-std=c++17", str(source), "-o", str(exe)])
+            if msvc:
+                command[4:4] = [f"/D{definition}" for definition in definitions]
+            else:
+                command[1:1] = [f"-D{definition}" for definition in definitions]
             build = subprocess.run(command, cwd=path, capture_output=True, text=True, timeout=60)
             self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
             local_runner = Path(r"E:\Code\moonlight-tools\run-test-exe.ps1")

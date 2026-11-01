@@ -14,6 +14,7 @@ constexpr int SDL_CONTROLLERDEVICEADDED = 5, SDL_CONTROLLERDEVICEREMOVED = 6;
 constexpr int SDL_RENDER_DEVICE_RESET = 7, SDL_WINDOWEVENT_CLOSE = 8, SDLK_ESCAPE = 9;
 constexpr int SDL_CODE_RESOLUTION_CHANGED = 10;
 constexpr int SDL_CODE_CONNECTION_INTERRUPTED = 112;
+constexpr int SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME = 114;
 constexpr int ML_ERROR_GRACEFUL_TERMINATION = 0, ML_ERROR_HOST_RESTART = -5502;
 struct SDL_Event
 {
@@ -32,6 +33,7 @@ struct SDL_Event
     struct
     {
         int code = 0;
+        uint32_t windowID = 0;
         void* data1 = nullptr;
         void* data2 = nullptr;
     } user;
@@ -44,6 +46,11 @@ int64_t fakeNow()
 }
 int64_t cancelAt = -1;
 int cancelEventType = SDL_KEYDOWN;
+int64_t firstFrameAt = -1;
+bool firstFrameSent = false;
+void (*firstFrameCallback)() = nullptr;
+int64_t interruptAt = -1;
+void (*connectionInterruptedCallback)() = nullptr;
 bool interrupted = false;
 bool workerIgnoresInterrupt = false;
 int64_t firstInterrupt = -1;
@@ -70,6 +77,15 @@ Uint32 SDL_GetTicks()
 void SDL_Delay(int ms)
 {
     clockMs += ms;
+    if (!firstFrameSent && firstFrameAt >= 0 && clockMs >= firstFrameAt &&
+        firstFrameCallback != nullptr) {
+        firstFrameSent = true;
+        firstFrameCallback();
+    }
+    if (interruptAt >= 0 && clockMs >= interruptAt && connectionInterruptedCallback != nullptr) {
+        interruptAt = -1;
+        connectionInterruptedCallback();
+    }
 }
 bool SDL_PollEvent(SDL_Event* event)
 {
@@ -104,6 +120,24 @@ void SDL_LogInfo(int, const char*, ...)
 void SDL_LogError(int, const char*, ...) {}
 struct StreamQuality
 {
+    struct Settings
+    {
+        int width = 0;
+        int height = 0;
+        int fps = 0;
+    };
+    struct LiveResolutionTransaction
+    {
+        bool active = false;
+        bool explicitRequest = false;
+        QSize currentSize;
+        QSize targetSize;
+        bool isActive() const { return active; }
+        bool isExplicit() const { return explicitRequest; }
+        QSize current() const { return currentSize; }
+        QSize target() const { return targetSize; }
+        void cancel() { active = false; }
+    };
     static QString resolutionName(QSize) { return "1920x1080"; }
 };
 struct Input
@@ -157,6 +191,19 @@ public:
     bool m_HasReceivedVideo = false;
     bool m_UnexpectedTermination = true;
     bool m_PendingMicToggle = false;
+    std::atomic<uint32_t> m_ConnectionGeneration{ 0 };
+    std::atomic<bool> m_LiveResolutionAwaitingFirstFrame{ false };
+    StreamQuality::LiveResolutionTransaction m_LiveResolutionTransaction;
+    bool m_HasFailedLiveResolution = false;
+    StreamQuality::Settings m_FailedLiveResolution;
+    QSize m_FailedLiveResolutionCurrent;
+    StreamQuality::Settings m_LiveResolutionTargetSettings;
+    QString m_StreamQualityResultMessage;
+    struct
+    {
+        uint32_t requestTicks = 0;
+        QSize requestedSize;
+    } m_ResolutionMatch;
     std::atomic<int> m_LastTerminationErrorCode{ ML_ERROR_HOST_RESTART };
     int displayedError = 999;
     int outcomeCount = 0;
@@ -166,7 +213,8 @@ public:
     } m_StreamConfig;
     RecoveryBudget m_RecoveryBudget;
     std::vector<QString> toasts;
-    bool tryReconnect(ReconnectReason reason = ReconnectReason::ConnectionLost);
+    bool tryReconnect(ReconnectReason reason = ReconnectReason::ConnectionLost,
+                      bool* teardownStarted = nullptr);
     void processRecoveryStatus();
     bool prepareConnectionAttemptControl();
     bool interruptConnectionAttemptIfStopped();
@@ -183,7 +231,10 @@ public:
     void updateDualSenseHapticsControllerTarget() {}
     void processQtOverlayEvents() {}
     void handleSdlUserEvent(decltype(SDL_Event::user)) {}
-    void handleHostResolutionReport(int, int) {}
+    void handleHostResolutionReport(int, int, Uint32) {}
+    void applyPreparedStreamConfiguration() {}
+    void restoreResolutionMatchOverride() {}
+    void updateStreamQualityMenuState() {}
     void scheduleWindowResolutionMatch() {}
     QString tr(const char* text) { return QString::fromUtf8(text); }
     void showStreamingToast(const QString& text, int) { toasts.push_back(text); }
@@ -227,6 +278,14 @@ private:
 
 int main()
 {
+    firstFrameCallback = [] {
+        Session::markVideoReceived();
+    };
+    connectionInterruptedCallback = [] {
+        if (Session::s_ActiveSession != nullptr) {
+            Session::s_ActiveSession->m_ConnectionInterrupted = true;
+        }
+    };
     int failures = 0;
     auto check = [&](bool condition, const char* message) {
         if (!condition) {
@@ -238,6 +297,9 @@ int main()
         clockMs = 100;
         cancelAt = -1;
         cancelEventType = SDL_KEYDOWN;
+        firstFrameAt = -1;
+        firstFrameSent = false;
+        interruptAt = -1;
         workerSuccess = false;
         terminalDuringWorker = false;
         workerDuration = 10;
@@ -272,6 +334,52 @@ int main()
         workerSuccess = false;
         session.tryReconnect();
         check(clockMs <= 60110, "repeated restart must retain original deadline");
+    }
+    {
+        reset();
+        Session session;
+        Session::s_ActiveSession = &session;
+        session.m_RecoveryBudget.begin(clockMs, 10);
+        clockMs += 20;
+        session.m_ExplicitRestartRecovery = true;
+        workerSuccess = true;
+        firstFrameAt = clockMs + 50;
+        check(session.tryReconnect(Session::ReconnectReason::StreamQualityChange),
+              "settings reconnect must replace an expired host-recovery budget");
+        check(firstFrameSent && clockMs >= firstFrameAt,
+              "settings reconnect cannot report success before its first host frame");
+        check(!session.m_RecoveryBudget.active() && !session.m_ExplicitRestartRecovery,
+              "settings reconnect completes the fresh budget without host-restart intent");
+        check(std::find(session.toasts.begin(), session.toasts.end(), "Reconnected") ==
+                  session.toasts.end(),
+              "settings reconnect must not show the host-recovery success toast");
+    }
+    {
+        reset();
+        Session session;
+        Session::s_ActiveSession = &session;
+        workerSuccess = true;
+        interruptAt = 130;
+        firstFrameAt = 1140;
+        check(session.tryReconnect(Session::ReconnectReason::StreamQualityChange),
+              "settings reconnect retries when the replacement drops before its first frame");
+        check(attempts.size() == 2 && firstFrameSent && !session.m_RecoveryBudget.active(),
+              "settings retry receives its own attempt and completes on its first frame");
+    }
+    {
+        reset();
+        Session session;
+        Session::s_ActiveSession = &session;
+        workerSuccess = true;
+        check(!session.tryReconnect(Session::ReconnectReason::StreamQualityChange),
+              "settings reconnect without a first frame must fail within its bounded budget");
+        check(clockMs >= 30100 && clockMs <= 30200 && !session.m_ShouldExit,
+              "missing settings frame expires its own bounded reconnect budget");
+        check(!session.m_RecoveryBudget.active() ||
+                  session.m_RecoveryBudget.remainingMs(clockMs) == 0,
+              "settings timeout must not remain an active recovery wait");
+        check(stops.size() >= 2,
+              "settings reconnect must stop the replacement connection with no first frame");
     }
     {
         reset();
@@ -332,6 +440,17 @@ int main()
         session.m_ConnectionCancel = true;
         check(!session.tryReconnect(), "pre-cancelled worker must fail without a launch");
         check(attempts.empty(), "pre-cancel must prevent the first automatic launch");
+    }
+    {
+        reset();
+        Session session;
+        session.m_ConnectionInterrupted = true;
+        bool teardownStarted = true;
+        check(
+            !session.tryReconnect(Session::ReconnectReason::StreamQualityChange, &teardownStarted),
+            "settings reconnect must refuse an already-interrupted connection");
+        check(!teardownStarted && stops.empty(),
+              "settings reconnect refusal must happen before tearing down the stream");
     }
     {
         reset();

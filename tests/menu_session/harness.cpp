@@ -19,7 +19,7 @@ using KeyboardModifiers = int;
 static constexpr int KMOD_CTRL = 1, KMOD_ALT = 2, KMOD_SHIFT = 4, KMOD_GUI = 8;
 static constexpr int SDL_KEYDOWN = 1, SDL_KEYUP = 2;
 static constexpr int SDL_USEREVENT = 24;
-static constexpr int SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME = 113;
+static constexpr int SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME = 114;
 struct SDL_UserEvent
 {
     int code = 0;
@@ -89,6 +89,21 @@ struct ResolutionMatchState
 {
     bool explicitOverride = false;
 };
+struct RecoveryBudget
+{
+    bool armed = true;
+    int calls = 0;
+    static int64_t nowMs() { return 1; }
+    bool receivedHostFrame(int64_t)
+    {
+        ++calls;
+        if (!armed) {
+            return false;
+        }
+        armed = false;
+        return true;
+    }
+};
 struct SdlInputHandler
 {
     bool m_AbsoluteMouseMode = false;
@@ -113,6 +128,9 @@ struct Session
     ResolutionMatchState m_ResolutionMatch;
     bool m_HasExplicitStreamQualityOverride = false;
     std::atomic<bool> m_HasReceivedVideo{ false };
+    std::atomic<bool> m_ConnectionCancel{ false };
+    RecoveryBudget m_RecoveryBudget;
+    std::atomic<bool> m_RecoveryFrameReceived{ false };
     std::atomic<bool> m_LiveResolutionAwaitingFirstFrame{ false };
     std::atomic<std::uint32_t> m_ConnectionGeneration{ 0 };
     std::vector<SDL_Event> pushedEvents;
@@ -206,6 +224,16 @@ int main()
     }
     {
         Session s;
+        s.m_ResolutionMatch.explicitOverride = true;
+        s.m_HasExplicitStreamQualityOverride = true;
+        ok &= require(s.handleLiveMenuAction(Action::MatchResolutionNow),
+                      "Match now remains available after a manual quality override");
+        ok &= require(!s.m_ResolutionMatch.explicitOverride &&
+                          !s.m_HasExplicitStreamQualityOverride && s.matchRequests == 1,
+                      "Match now clears both override owners without changing the preference");
+    }
+    {
+        Session s;
         s.input.setAbsoluteMouseMode(true);
         s.input.captured = true;
         s.input.setAbsoluteMouseMode(false);
@@ -248,12 +276,12 @@ int main()
         s.m_ConnectionGeneration = 42;
         s.m_LiveResolutionAwaitingFirstFrame = true;
         Session::markVideoReceived();
-        ok &=
-            require(s.m_HasReceivedVideo && !s.m_LiveResolutionAwaitingFirstFrame &&
-                        s.pushedEvents.size() == 1 &&
-                        s.pushedEvents.front().user.code == SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME &&
-                        (uintptr_t)s.pushedEvents.front().user.data1 == 42,
-                    "first host frame must complete the live-resolution observation once");
+        ok &= require(
+            s.m_HasReceivedVideo && s.m_RecoveryFrameReceived && s.m_RecoveryBudget.calls == 1 &&
+                !s.m_LiveResolutionAwaitingFirstFrame && s.pushedEvents.size() == 1 &&
+                s.pushedEvents.front().user.code == SDL_CODE_LIVE_RESOLUTION_FIRST_FRAME &&
+                (uintptr_t)s.pushedEvents.front().user.data1 == 42,
+            "first host frame must complete the live-resolution observation once");
         Session::markVideoReceived();
         ok &= require(s.pushedEvents.size() == 1,
                       "subsequent host frames must not duplicate first-frame confirmation");

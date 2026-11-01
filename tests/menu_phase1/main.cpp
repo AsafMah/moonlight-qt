@@ -122,6 +122,22 @@ private slots:
         QVERIFY(p.rowDetail(p.rowOfAction(A::ApplyStreamConfiguration)).contains("Pending"));
         QVERIFY(!p.rowEnabled(p.rowOfAction(A::SelectStreamCodec, "0")));
     }
+    void streamConfigurationBusyDuringRuntimeBitrate()
+    {
+        OverlayMenuPanel p;
+        OverlayMenuPanel::StreamConfigurationState state;
+        state.requestedCodec = 0;
+        state.requestedHdrMode = 1;
+        state.requestedAudioConfig = 0;
+        state.busy = true;
+        p.updateStreamConfigurationState(state);
+        open(p);
+        p.showTab(T::Stream);
+        click(p, A::OpenStreamConfiguration);
+        QVERIFY(!p.rowEnabled(p.rowOfAction(A::ApplyStreamConfiguration)));
+        QVERIFY(!p.rowEnabled(p.rowOfAction(A::SelectStreamCodec, "4")));
+        QVERIFY(!p.rowDetail(p.rowOfAction(A::ApplyStreamConfiguration)).contains("Applying"));
+    }
     void streamConfigurationDraftSurvivesPeriodicRefresh()
     {
         OverlayMenuPanel p;
@@ -178,6 +194,23 @@ private slots:
         QCOMPARE(sent.codec, 4);
         QCOMPARE(sent.hdrMode, 1);
         QCOMPARE(sent.audioConfig, 3);
+    }
+    void resolutionMatchPauseIsVisibleAndMatchNowRemainsAvailable()
+    {
+        OverlayMenuPanel p;
+        std::vector<A> actions;
+        p.setActionCallback([&](A action) { actions.push_back(action); });
+        p.updateResolutionMatchState(true, true, false, true, true);
+
+        open(p);
+        p.showTab(T::Display);
+        const int toggleRow = p.rowOfAction(A::ToggleResolutionMatch);
+        QVERIFY(p.rowDetail(toggleRow).contains("Paused by manual stream quality"));
+        const int matchNowRow = p.rowOfAction(A::MatchResolutionNow);
+        QVERIFY(p.rowEnabled(matchNowRow));
+
+        click(p, A::MatchResolutionNow);
+        QCOMPARE(actions.back(), A::MatchResolutionNow);
     }
     void streamConfigurationNarrowLayoutAndFocus()
     {
@@ -313,6 +346,9 @@ private slots:
         p.updateResolutionMatchState(true, true, false, true);
         QVERIFY(p.rowEnabled(p.rowOfAction(A::MatchResolutionNow)));
         QVERIFY(p.rowToggleState(p.rowOfAction(A::ToggleResolutionMatch)));
+        p.updateResolutionMatchState(true, true, false, true, true);
+        QVERIFY(p.rowEnabled(p.rowOfAction(A::MatchResolutionNow)));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::ToggleResolutionMatch)).contains("Paused"));
         p.updateResolutionMatchState(false, true, false, true);
         QVERIFY(p.rowOfAction(A::MatchResolutionNow) < 0);
         p.showTab(T::Quick);

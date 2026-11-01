@@ -2807,6 +2807,45 @@
         <source>Scale %1%</source>
         <translation>缩放 %1%</translation>
     </message>
+    <message><source>%1 · %2 · %3</source><translation>%1 · %2 · %3</translation></message>
+    <message><source>5.1</source><translation>5.1</translation></message>
+    <message><source>7.1</source><translation>7.1</translation></message>
+    <message><source>7.1.4</source><translation>7.1.4</translation></message>
+    <message><source>AV1</source><translation>AV1</translation></message>
+    <message><source>Another stream change is in progress</source><translation>另一个串流更改正在进行中</translation></message>
+    <message><source>Apply pending stream settings</source><translation>应用待处理的串流设置</translation></message>
+    <message><source>Apply stream settings</source><translation>应用串流设置</translation></message>
+    <message><source>Applying %1</source><translation>正在应用 %1</translation></message>
+    <message><source>Applying stream settings</source><translation>正在应用串流设置</translation></message>
+    <message><source>Audio channels</source><translation>音频声道</translation></message>
+    <message><source>Automatic</source><translation>自动</translation></message>
+    <message><source>Busy</source><translation>忙碌</translation></message>
+    <message><source>Busy · another stream change is in progress</source><translation>忙碌 · 另一个串流更改正在进行中</translation></message>
+    <message><source>Codec, HDR &amp; audio</source><translation>编解码器、HDR 和音频</translation></message>
+    <message><source>Current: %1</source><translation>当前：%1</translation></message>
+    <message><source>H.264</source><translation>H.264</translation></message>
+    <message><source>HDR</source><translation>HDR</translation></message>
+    <message><source>HEVC</source><translation>HEVC</translation></message>
+    <message><source>HLG</source><translation>HLG</translation></message>
+    <message><source>Live is unavailable; choose Reconnect</source><translation>实时切换不可用；请选择重新连接</translation></message>
+    <message><source>Live resolution request</source><translation>实时分辨率请求</translation></message>
+    <message><source>Live · brief reset; host may refuse</source><translation>实时切换 · 视频将短暂重置；主机可能拒绝</translation></message>
+    <message><source>Live · brief video reset; host may refuse</source><translation>实时切换 · 视频将短暂重置；主机可能拒绝</translation></message>
+    <message><source>Negotiated</source><translation>已协商</translation></message>
+    <message><source>PQ</source><translation>PQ</translation></message>
+    <message><source>Pending: %1 · %2 · %3</source><translation>待应用：%1 · %2 · %3</translation></message>
+    <message><source>Pending: %1 · current: %2</source><translation>待应用：%1 · 当前：%2</translation></message>
+    <message><source>PyroWave</source><translation>PyroWave</translation></message>
+    <message><source>PyroWave remains selected; changing codecs requires a new stream</source><translation>仍选择 PyroWave；更改编解码器需要重新启动串流</translation></message>
+    <message><source>Reconnect</source><translation>重新连接</translation></message>
+    <message><source>Reconnect to %1</source><translation>重新连接并切换到 %1</translation></message>
+    <message><source>Reconnect · stops and resumes this stream</source><translation>重新连接 · 停止并恢复此串流</translation></message>
+    <message><source>Reconnects this stream; does not save defaults</source><translation>重新连接此串流；不会保存为默认值</translation></message>
+    <message><source>Requested</source><translation>请求值</translation></message>
+    <message><source>Retry live resolution</source><translation>重试实时分辨率切换</translation></message>
+    <message><source>Stereo</source><translation>立体声</translation></message>
+    <message><source>Unknown</source><translation>未知</translation></message>
+    <message><source>Video codec</source><translation>视频编解码器</translation></message>
 </context>
 <context>
     <name>PcView</name>
@@ -4127,6 +4166,36 @@
         <source>VRR: this %1 FPS stream is faster than the %2 Hz display can follow, so some frames are dropped. Stream at %3 FPS or lower for the smoothest VRR.</source>
         <translation>VRR：%1 FPS 的串流超出了 %2 Hz 显示器能跟随的范围，部分帧会被丢弃。将串流帧率设为 %3 FPS 或更低，VRR 效果最流畅。</translation>
     </message>
+    <message><source>%1 channels</source><translation>%1 声道</translation></message>
+    <message><source>Another resolution or stream change is in progress</source><translation>另一个分辨率或串流更改正在进行中</translation></message>
+    <message><source>Another stream change is already in progress</source><translation>另一个串流更改已在进行中</translation></message>
+    <message><source>Audio fell back to stereo; check the negotiated channel count</source><translation>音频已回退到立体声；请检查协商后的声道数</translation></message>
+    <message><source>Changing to or from PyroWave requires a new stream</source><translation>切换到或切换出 PyroWave 需要重新启动串流</translation></message>
+    <message><source>Connection changed before the live resolution result was confirmed</source><translation>实时分辨率结果确认前连接已发生变化</translation></message>
+    <message><source>Couldn&apos;t create a decoder test window</source><translation>无法创建解码器测试窗口</translation></message>
+    <message><source>HDR is unavailable and SDR fallback failed: %1</source><translation>HDR 不可用，且 SDR 回退失败：%1</translation></message>
+    <message><source>HDR was unavailable; the stream continued in SDR</source><translation>HDR 不可用；串流已改用 SDR 继续</translation></message>
+    <message><source>HLG</source><translation>HLG</translation></message>
+    <message><source>Host applied %1 instead of requested %2; retry Live or choose Reconnect</source><translation>主机应用了 %1，而非请求的 %2；请重试实时切换或选择重新连接</translation></message>
+    <message><source>Host did not apply %1; retry Live or choose Reconnect</source><translation>主机未应用 %1；请重试实时切换或选择重新连接</translation></message>
+    <message><source>Host rejected the live resolution request (%1); choose Retry or Reconnect</source><translation>主机拒绝了实时分辨率请求（%1）；请选择重试或重新连接</translation></message>
+    <message><source>Live is no longer eligible; choose Reconnect explicitly</source><translation>实时切换已不再符合条件；请明确选择重新连接</translation></message>
+    <message><source>Live resolution applied: %1</source><translation>已实时应用分辨率：%1</translation></message>
+    <message><source>Live resolution is no longer available; choose Reconnect explicitly</source><translation>实时分辨率切换已不可用；请明确选择重新连接</translation></message>
+    <message><source>No compatible video format and decoder are available</source><translation>没有可用的兼容视频格式和解码器</translation></message>
+    <message><source>Not applied: %1</source><translation>未应用：%1</translation></message>
+    <message><source>Off</source><translation>关闭</translation></message>
+    <message><source>PQ</source><translation>PQ</translation></message>
+    <message><source>Reconnect complete; negotiated values are shown above</source><translation>重新连接完成；上方显示的是已协商的值</translation></message>
+    <message><source>Reconnect failed; the session ended</source><translation>重新连接失败；会话已结束</translation></message>
+    <message><source>Reconnecting with requested codec, HDR and audio settings</source><translation>正在使用请求的编解码器、HDR 和音频设置重新连接</translation></message>
+    <message><source>Requesting %1; brief video reset, host may refuse</source><translation>正在请求 %1；视频将短暂重置，主机可能拒绝</translation></message>
+    <message><source>The host and this device have no compatible video format</source><translation>主机与此设备没有兼容的视频格式</translation></message>
+    <message><source>The requested audio channels are unavailable on this device</source><translation>此设备不支持请求的音频声道</translation></message>
+    <message><source>The requested audio configuration is invalid</source><translation>请求的音频配置无效</translation></message>
+    <message><source>The requested bitrate change failed</source><translation>请求的比特率更改失败</translation></message>
+    <message><source>The requested stream settings are invalid</source><translation>请求的串流设置无效</translation></message>
+    <message><source>The selected renderer cannot decode the requested video format</source><translation>所选渲染器无法解码请求的视频格式</translation></message>
 </context>
 <context>
     <name>SessionSummaryDialog</name>

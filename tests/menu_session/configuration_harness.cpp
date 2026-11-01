@@ -29,7 +29,10 @@ private:
     std::string m_Value;
 };
 
-static QString tr(const char* text) { return QString(text); }
+static QString tr(const char* text)
+{
+    return QString(text);
+}
 
 namespace OverlayMenuPanel {
 struct StreamConfigurationRequest
@@ -49,7 +52,8 @@ struct LiveResolutionTransaction
 }
 
 static constexpr int SDL_USEREVENT = 24;
-static constexpr int SDL_CODE_APPLY_STREAM_CONFIGURATION = 114;
+static constexpr int SDL_CODE_APPLY_STREAM_CONFIGURATION = 113;
+static bool queueFails = false;
 struct SDL_UserEvent
 {
     int code = 0;
@@ -93,7 +97,10 @@ struct Session
     StreamConfiguration m_StreamConfig;
     StreamQuality::LiveResolutionTransaction m_LiveResolutionTransaction;
     bool m_PendingStreamQuality = false;
+    bool m_RuntimeBitrateInFlight = false;
     bool m_SuppressConnectionErrorDialog = false;
+    bool m_ConnectionInterrupted = false;
+    bool m_ConnectionCancel = false;
     bool m_ShouldExit = false;
     int m_SupportedVideoFormats = 0;
     int m_VideoCallbacks = 0;
@@ -102,16 +109,21 @@ struct Session
     QString m_StreamConfigurationResultMessage;
     bool preparationSucceeds = true;
     bool reconnectSucceeds = true;
+    bool refuseBeforeTeardown = false;
     QString preparationFailure = "unsupported";
     int preparationCalls = 0;
     int reconnectCalls = 0;
+    bool connectionStopped = false;
+    bool replacementStarted = false;
+    bool preparedAppliedAfterStopBeforeReplacement = false;
     int stateUpdates = 0;
     int errorDialogs = 0;
+    QString lastToast;
     ReconnectReason reconnectReason = ReconnectReason::StreamQualityChange;
     OverlayMenuPanel::StreamConfigurationRequest preparedRequest;
     OverlayMenuPanel::StreamConfigurationRequest visiblePending;
 
-    void showStreamingToast(QString, int = 5000) {}
+    void showStreamingToast(QString message, int = 5000) { lastToast = message; }
     void updateStreamConfigurationMenuState()
     {
         ++stateUpdates;
@@ -122,9 +134,8 @@ struct Session
     void updateStreamQualityMenuState() {}
     void updateConnectionMenuInfo() {}
     void displayLaunchError(QString) { ++errorDialogs; }
-    bool prepareStreamConfiguration(
-        const OverlayMenuPanel::StreamConfigurationRequest& request,
-        PreparedStreamConfiguration& prepared, QString& failureReason)
+    bool prepareStreamConfiguration(const OverlayMenuPanel::StreamConfigurationRequest& request,
+                                    PreparedStreamConfiguration& prepared, QString& failureReason)
     {
         ++preparationCalls;
         preparedRequest = request;
@@ -139,28 +150,46 @@ struct Session
         return true;
     }
     void applyPreparedStreamConfiguration();
-    bool tryReconnect(ReconnectReason reason)
+    void LiStopConnection() { connectionStopped = true; }
+    bool tryReconnect(ReconnectReason reason, bool* teardownStarted)
     {
         ++reconnectCalls;
         reconnectReason = reason;
+        if (teardownStarted != nullptr) {
+            *teardownStarted = false;
+        }
+        if (refuseBeforeTeardown) {
+            return false;
+        }
+        LiStopConnection();
+        if (teardownStarted != nullptr) {
+            *teardownStarted = true;
+        }
+        applyPreparedStreamConfiguration();
+        preparedAppliedAfterStopBeforeReplacement = connectionStopped && !replacementStarted;
+        replacementStarted = true;
         if (!reconnectSucceeds) {
             return false;
         }
-        applyPreparedStreamConfiguration();
         return true;
     }
     bool applyPendingStreamConfigurationChange();
-    void requestStreamConfigurationChange(
-        const OverlayMenuPanel::StreamConfigurationRequest& request);
+    void
+    requestStreamConfigurationChange(const OverlayMenuPanel::StreamConfigurationRequest& request);
+    void reportStreamConfigurationNotApplied(const QString& reason);
 };
 
 Session* Session::s_ActiveSession = nullptr;
 
-static void pushEventOrWarn(SDL_Event& event)
+static bool pushEventOrWarn(SDL_Event& event)
 {
+    if (queueFails) {
+        return false;
+    }
     if (Session::s_ActiveSession != nullptr) {
         Session::s_ActiveSession->queuedEvents.push_back(event);
     }
+    return true;
 }
 
 // METHODS
@@ -180,8 +209,7 @@ static bool dispatchOne(Session& session)
     }
     const SDL_Event event = session.queuedEvents.front();
     session.queuedEvents.erase(session.queuedEvents.begin());
-    if (event.type == SDL_USEREVENT &&
-        event.user.code == SDL_CODE_APPLY_STREAM_CONFIGURATION) {
+    if (event.type == SDL_USEREVENT && event.user.code == SDL_CODE_APPLY_STREAM_CONFIGURATION) {
         return session.applyPendingStreamConfigurationChange();
     }
     return false;
@@ -230,17 +258,70 @@ int main()
                       rejected.m_StreamConfigurationResultMessage.value().find("Not applied") == 0,
                   "preflight rejection preserves active/requested values and reports failure");
 
+    Session bitrateBusy;
+    Session::s_ActiveSession = &bitrateBusy;
+    bitrateBusy.m_RuntimeBitrateInFlight = true;
+    bitrateBusy.requestStreamConfigurationChange(request);
+    ok &= require(!bitrateBusy.m_PendingStreamConfiguration && bitrateBusy.queuedEvents.empty(),
+                  "configuration apply must not overlap a runtime bitrate request");
+
     Session reconnectFailed;
     Session::s_ActiveSession = &reconnectFailed;
     reconnectFailed.reconnectSucceeds = false;
     reconnectFailed.requestStreamConfigurationChange(request);
     ok &= require(!dispatchOne(reconnectFailed), "failed reconnect ends the apply path");
-    ok &= require(reconnectFailed.m_StreamConfig.codec == 0 &&
+    ok &= require(reconnectFailed.m_StreamConfig.codec == request.codec &&
+                      reconnectFailed.m_StreamConfig.hdrMode == request.hdrMode &&
+                      reconnectFailed.m_StreamConfig.audioConfig == request.audioConfig &&
                       reconnectFailed.m_RequestedStreamConfiguration.codec == 0 &&
                       reconnectFailed.errorDialogs == 1 &&
+                      reconnectFailed.preparedAppliedAfterStopBeforeReplacement &&
                       reconnectFailed.m_StreamConfigurationResultMessage.value().find(
                           "Reconnect failed") == 0,
-                  "reconnect failure preserves accepted values and reports explicit error");
+                  "prepared configuration is consumed after teardown even if replacement fails");
+
+    Session refused;
+    Session::s_ActiveSession = &refused;
+    refused.refuseBeforeTeardown = true;
+    refused.requestStreamConfigurationChange(request);
+    ok &= require(dispatchOne(refused), "pre-teardown reconnect refusal is handled");
+    ok &=
+        require(!refused.connectionStopped && refused.errorDialogs == 0 &&
+                    !refused.m_PendingStreamConfiguration &&
+                    refused.m_StreamConfigurationResultMessage.value().find("Not applied") == 0,
+                "pre-teardown refusal clears prepared state without a replacement failure dialog");
+
+    Session dropped;
+    Session::s_ActiveSession = &dropped;
+    dropped.requestStreamConfigurationChange(request);
+    dropped.m_ConnectionInterrupted = true;
+    ok &= require(dispatchOne(dropped), "a queued apply is rejected after connection interruption");
+    ok &= require(dropped.preparationCalls == 0 && dropped.reconnectCalls == 0 &&
+                      dropped.m_StreamConfigurationResultMessage.value().find("Not applied") == 0 &&
+                      dropped.stateUpdates == 1,
+                  "dropped connection reports not-applied and refreshes without preparing");
+
+    Session alreadyDropped;
+    Session::s_ActiveSession = &alreadyDropped;
+    alreadyDropped.m_ConnectionInterrupted = true;
+    alreadyDropped.requestStreamConfigurationChange(request);
+    ok &= require(
+        alreadyDropped.queuedEvents.empty() &&
+            alreadyDropped.m_StreamConfigurationResultMessage.value().find("Not applied") == 0 &&
+            alreadyDropped.stateUpdates == 1,
+        "apply during an already-dropped connection is explicitly not applied");
+
+    Session enqueueFailed;
+    Session::s_ActiveSession = &enqueueFailed;
+    queueFails = true;
+    enqueueFailed.requestStreamConfigurationChange(request);
+    queueFails = false;
+    ok &= require(
+        !enqueueFailed.m_PendingStreamConfiguration &&
+            enqueueFailed.m_StreamConfigurationResultMessage.value().find("Not applied") == 0 &&
+            enqueueFailed.lastToast.value().find("Not applied") == 0 &&
+            enqueueFailed.stateUpdates == 1,
+        "event enqueue failure clears the gate and reports not-applied state");
     Session::s_ActiveSession = nullptr;
     return ok ? 0 : 1;
 }

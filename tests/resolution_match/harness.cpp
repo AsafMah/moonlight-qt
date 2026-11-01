@@ -1,6 +1,8 @@
 #include <cstdint>
 #include <initializer_list>
 #include <iostream>
+#include <atomic>
+#include <optional>
 
 using Uint32 = uint32_t;
 
@@ -15,7 +17,12 @@ struct QSize
     bool isValid() const { return w >= 0 && h >= 0; }
     QSize transposed() const { return QSize(h, w); }
     bool operator==(const QSize& other) const { return w == other.w && h == other.h; }
+    bool operator!=(const QSize& other) const { return !(*this == other); }
 };
+
+namespace StreamQuality {
+// LIVE_TRANSACTION_TYPES
+}
 
 struct SDL_Event
 {
@@ -83,6 +90,12 @@ struct Decoder
     ~Decoder() { destroyedUnderLock = decoderLocked; }
 };
 
+namespace OverlayMenuPanel {
+struct StreamConfigurationRequest
+{
+};
+}
+
 class Session
 {
 public:
@@ -106,6 +119,9 @@ public:
     bool minimized = false;
     bool m_SuppressConnectionErrorDialog = false;
     bool m_PendingStreamQuality = false;
+    std::optional<OverlayMenuPanel::StreamConfigurationRequest> m_PendingStreamConfiguration;
+    std::atomic<Uint32> m_ConnectionGeneration{ 1 };
+    StreamQuality::LiveResolutionTransaction m_LiveResolutionTransaction;
     // RESOLUTION_STATE
     ~Session() { delete m_VideoDecoder; }
     bool isStreamingWindowFullscreen() const { return fullscreen; }
@@ -114,7 +130,11 @@ public:
     void scheduleInitialWindowResolutionMatch(bool awaitingFullscreenEntry);
     bool requestWindowResolutionMatchNow();
     void processWindowResolutionMatch();
-    void handleHostResolutionReport(int width, int height);
+    void handleHostResolutionReport(int width, int height, Uint32 generation);
+    void handleHostResolutionReport(int width, int height)
+    {
+        handleHostResolutionReport(width, height, m_ConnectionGeneration.load());
+    }
     void updateStreamQualityMenuState() { ++menuUpdates; }
 };
 
@@ -156,7 +176,10 @@ int main()
                       "one-shot must send exact size without saving automatic matching");
         ok &= require(!session.requestWindowResolutionMatchNow(),
                       "Match now must refuse an outstanding request");
-        session.m_ResolutionMatch.requestTicks = 0;
+        const Uint32 generation = session.m_ConnectionGeneration.load();
+        session.handleHostResolutionReport(1600, 900, generation);
+        session.m_LiveResolutionTransaction.decoderResetCompleted(generation);
+        session.m_LiveResolutionTransaction.firstFrame(generation);
         ok &= require(!session.requestWindowResolutionMatchNow(),
                       "host acknowledgment must not bypass the rate limit");
         ticks += 400;
@@ -295,11 +318,18 @@ int main()
         ticks += 400;
         session.processWindowResolutionMatch();
         ok &= require(sends == 1, "an unanswered request must prevent another send");
+        ok &= require(session.m_ResolutionMatch.deferred,
+                      "a resize during a live transaction must remain deferred");
         ticks += 5000;
+        session.m_LiveResolutionTransaction.expire(ticks);
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 1, "an expired transaction must restart the resize debounce");
+        ticks += 400;
         session.processWindowResolutionMatch();
         ok &= require(sends == 2 && lastRequest == windowSize, "request timeout must unblock");
         session.scheduleWindowResolutionMatch();
         ticks += 5500;
+        session.m_LiveResolutionTransaction.expire(ticks);
         session.processWindowResolutionMatch();
         ok &= require(sends == 2, "an ignored request must not be sent repeatedly");
     }

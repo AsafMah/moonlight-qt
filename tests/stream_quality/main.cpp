@@ -176,9 +176,9 @@ bool testLiveResolutionTransaction(QTextStream& err)
                   "start live transaction", err);
     ok &= require(transaction.firstFrame(7) == LiveResolutionResult::Waiting,
                   "send success is not a result", err);
-    ok &= require(!transaction.observeHostReport(6, current, target),
+    ok &= require(!transaction.observeHostReport(6, current, target, 1000),
                   "ignore previous connection generation", err);
-    ok &= require(transaction.observeHostReport(7, current, target),
+    ok &= require(transaction.observeHostReport(7, current, target, 1001),
                   "observe matching host display report", err);
     ok &= require(transaction.firstFrame(7) == LiveResolutionResult::Waiting,
                   "report without decoder reset is not accepted", err);
@@ -194,10 +194,21 @@ bool testLiveResolutionTransaction(QTextStream& err)
     ok &= require(transaction.expire(12010), "expire at 12 seconds", err);
     ok &= require(!transaction.isActive(), "timeout releases arbiter", err);
 
+    ok &= require(transaction.begin(10, current, target, 1000,
+                                    LiveResolutionTransaction::ExplicitTimeoutMs, true),
+                  "start late acknowledgement transaction", err);
+    ok &= require(transaction.observeHostReport(10, current, target, 12990),
+                  "observe host report just before acknowledgement deadline", err);
+    ok &= require(!transaction.expire(13000),
+                  "late host acknowledgement starts a bounded frame-completion window", err);
+    ok &= require(!transaction.expire(24989), "wait through frame-completion window", err);
+    ok &= require(transaction.expire(24990),
+                  "frame-completion window still expires after its bounded deadline", err);
+
     ok &= require(transaction.begin(9, current, target, 0,
                                     LiveResolutionTransaction::ExplicitTimeoutMs, true),
                   "start mismatched result transaction", err);
-    ok &= require(transaction.observeHostReport(9, current, QSize(1600, 900)),
+    ok &= require(transaction.observeHostReport(9, current, QSize(1600, 900), 1),
                   "observe host-applied different size", err);
     ok &= require(transaction.decoderResetCompleted(9), "complete mismatched reset", err);
     ok &= require(transaction.firstFrame(9) == LiveResolutionResult::AppliedDifferentSize,

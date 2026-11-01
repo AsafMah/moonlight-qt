@@ -241,7 +241,8 @@ private:
     // Attempt to silently re-establish a streaming session after an
     // unexpected network interruption, or restart it with a new
     // m_StreamConfig. Returns true if streaming resumed.
-    bool tryReconnect(ReconnectReason reason = ReconnectReason::ConnectionLost);
+    bool tryReconnect(ReconnectReason reason = ReconnectReason::ConnectionLost,
+                      bool* teardownStarted = nullptr);
 
     // In-stream "Stream Quality" menu (resolution/FPS for this session).
     void requestStreamQualityChange(const OverlayMenuPanel::StreamQualityRequest& request);
@@ -255,10 +256,18 @@ private:
     struct PreparedStreamConfiguration;
     void
     requestStreamConfigurationChange(const OverlayMenuPanel::StreamConfigurationRequest& request);
+    void reportStreamConfigurationNotApplied(const QString& reason);
     bool applyPendingStreamConfigurationChange();
     void updateStreamConfigurationMenuState();
     bool prepareStreamConfiguration(const OverlayMenuPanel::StreamConfigurationRequest& request,
                                     PreparedStreamConfiguration& prepared, QString& failureReason);
+    void prioritizeVideoFormats(SupportedVideoFormatList& formats,
+                                StreamingPreferences::VideoCodecConfig codec,
+                                SDL_Window* testWindow, bool enableHdr, bool enableYuv444,
+                                int width, int height, int frameRate, const QString& gfeVersion);
+    void applyVideoFormatServerRestrictions(SupportedVideoFormatList& formats,
+                                            int serverCodecModeSupport, int maxLumaPixelsHEVC,
+                                            StreamingPreferences::VideoCodecConfig codec);
     void applyPreparedStreamConfiguration();
 
     struct PreparedStreamConfiguration
@@ -345,6 +354,8 @@ private:
     std::vector<std::pair<QString, QString>> sessionStatsMenuRows() const;
     void requestRuntimeBitrateChange(int bitrateKbps);
     void startRuntimeBitrateWorker();
+    void finishRuntimeBitrateChange(int applied, Uint32 connectionGeneration,
+                                    uint64_t abrGeneration);
     void showStreamingToast(const QString& message, int durationMs = 2000);
     void showFileTransferToast(const ClipboardIpc::TransferEvent& event);
     void showFileUploadToast(const ClipboardIpc::TransferEvent& event);

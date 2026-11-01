@@ -1560,8 +1560,9 @@ void OverlayMenuPanel::applyOwnedState()
                 break;
             case MenuAction::ToggleResolutionMatch:
                 item.toggleState = m_AutomaticMatch;
-                item.detail =
-                    m_MatchFullscreen ? tr("Configured stream size") : tr("Exact even window size");
+                item.detail = m_MatchPausedByOverride ? tr("Paused by manual stream quality")
+                              : m_MatchFullscreen     ? tr("Configured stream size")
+                                                      : tr("Exact even window size");
                 break;
             case MenuAction::MatchResolutionNow:
                 item.enabled = m_CanMatchNow;
@@ -1606,13 +1607,15 @@ void OverlayMenuPanel::updateAudioState(bool manuallyMuted, bool muteOnFocusLoss
 }
 
 void OverlayMenuPanel::updateResolutionMatchState(bool hostSupported, bool automatic,
-                                                  bool fullscreen, bool canMatchNow)
+                                                  bool fullscreen, bool canMatchNow,
+                                                  bool pausedByOverride)
 {
     const bool rebuild = m_MatchSupported != hostSupported;
     m_MatchSupported = hostSupported;
     m_AutomaticMatch = automatic;
     m_MatchFullscreen = fullscreen;
     m_CanMatchNow = canMatchNow;
+    m_MatchPausedByOverride = pausedByOverride;
     if (rebuild)
         buildMenuLevels();
     else
@@ -2896,6 +2899,7 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamConfigurationLevel() co
     level.title = tr("Codec, HDR & audio");
     level.openAction = MenuAction::OpenStreamConfiguration;
 
+    const bool operationBusy = m_StreamConfiguration.pending || m_StreamConfiguration.busy;
     const bool changed = !m_StreamConfiguration.pending &&
                          (m_PendingCodec != m_StreamConfiguration.requestedCodec ||
                           m_PendingHdrMode != m_StreamConfiguration.requestedHdrMode ||
@@ -2914,7 +2918,7 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamConfigurationLevel() co
                                            audioName(m_PendingAudioConfig))
                                 : tr("Reconnects this stream; does not save defaults"),
                             MenuItemType::Action, MenuAction::ApplyStreamConfiguration, 0,
-                            !m_StreamConfiguration.pending && changed, false, true });
+                            !operationBusy && changed, false, true });
 
     level.items.push_back(
         { tr("Negotiated"),
@@ -2949,11 +2953,10 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamConfigurationLevel() co
                 ? tr("PyroWave remains selected; changing codecs requires a new stream")
             : m_StreamConfiguration.requestedCodec == codec ? tr("Requested")
                                                             : QString();
-        level.items.push_back(
-            { codecName(codec), detailText(selected, note), MenuItemType::Action,
-              MenuAction::SelectStreamCodec, 0,
-              !m_StreamConfiguration.pending && !m_StreamConfiguration.pyrowaveSelected, false,
-              false, QString::number(codec) });
+        level.items.push_back({ codecName(codec), detailText(selected, note), MenuItemType::Action,
+                                MenuAction::SelectStreamCodec, 0,
+                                !operationBusy && !m_StreamConfiguration.pyrowaveSelected, false,
+                                false, QString::number(codec) });
     }
 
     level.items.push_back({ tr("HDR"), QString(), MenuItemType::Header, MenuAction::MenuActionMax,
@@ -2968,8 +2971,8 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamConfigurationLevel() co
               detailText(m_PendingHdrMode == mode, m_StreamConfiguration.requestedHdrMode == mode
                                                        ? tr("Requested")
                                                        : QString()),
-              MenuItemType::Action, MenuAction::SelectStreamHdr, 0, !m_StreamConfiguration.pending,
-              false, false, QString::number(mode) });
+              MenuItemType::Action, MenuAction::SelectStreamHdr, 0, !operationBusy, false, false,
+              QString::number(mode) });
     }
 
     level.items.push_back({ tr("Audio channels"), QString(), MenuItemType::Header,
@@ -2984,8 +2987,8 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamConfigurationLevel() co
               detailText(m_PendingAudioConfig == config,
                          m_StreamConfiguration.requestedAudioConfig == config ? tr("Requested")
                                                                               : QString()),
-              MenuItemType::Action, MenuAction::SelectStreamAudio, 0,
-              !m_StreamConfiguration.pending, false, false, QString::number(config) });
+              MenuItemType::Action, MenuAction::SelectStreamAudio, 0, !operationBusy, false, false,
+              QString::number(config) });
     }
     return level;
 }
@@ -3001,6 +3004,7 @@ void OverlayMenuPanel::updateStreamConfigurationState(const StreamConfigurationS
         m_StreamConfiguration.requestedHdrMode != state.requestedHdrMode ||
         m_StreamConfiguration.requestedAudioConfig != state.requestedAudioConfig ||
         m_StreamConfiguration.pending != state.pending ||
+        m_StreamConfiguration.busy != state.busy ||
         (state.pending && (m_StreamConfiguration.pendingCodec != state.pendingCodec ||
                            m_StreamConfiguration.pendingHdrMode != state.pendingHdrMode ||
                            m_StreamConfiguration.pendingAudioConfig != state.pendingAudioConfig)) ||

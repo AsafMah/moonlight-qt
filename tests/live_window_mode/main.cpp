@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <optional>
 
 using Uint32 = unsigned int;
 constexpr Uint32 SDL_WINDOW_FULLSCREEN = 1;
@@ -190,6 +191,16 @@ struct Input
     void setAbsoluteMouseMode(bool value) { desktop = value; }
     void raiseAllKeys() {}
 };
+class StreamStatsModel
+{
+public:
+    StatsSnapshot value;
+    StatsSnapshot snapshot(uint64_t) const { return value; }
+    static bool hasFreshReceivedVideoRate(const StatsSnapshot& snapshot, uint64_t)
+    {
+        return snapshot.valid;
+    }
+};
 class Session
 {
 public:
@@ -236,9 +247,16 @@ public:
     bool m_SuppressConnectionErrorDialog = false, m_PendingStreamQuality = false;
     struct
     {
-        bool hostSupported = true, oneShot = false;
+        bool hostSupported = true, oneShot = false, explicitOverride = false;
         Uint32 requestTicks = 0, lastAttemptTicks = 0;
     } m_ResolutionMatch;
+    bool m_HasExplicitStreamQualityOverride = false;
+    std::optional<int> m_PendingStreamConfiguration;
+    struct
+    {
+        bool isActive() const { return false; }
+    } m_LiveResolutionTransaction;
+    void retryFailedLiveResolution(bool) {}
     int matchRequests = 0;
     bool requestWindowResolutionMatchNow()
     {
@@ -246,11 +264,7 @@ public:
         return true;
     }
     void scheduleWindowResolutionMatch() {}
-    struct
-    {
-        StatsSnapshot value;
-        StatsSnapshot snapshot(uint64_t) const { return value; }
-    } m_StatsModel;
+    StreamStatsModel m_StatsModel;
     struct
     {
         QReadWriteLock lock;

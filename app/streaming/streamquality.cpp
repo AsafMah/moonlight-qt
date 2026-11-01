@@ -172,6 +172,7 @@ bool LiveResolutionTransaction::begin(std::uint32_t generation, QSize current, Q
     m_DecoderResetCompleted = false;
     m_Generation = generation;
     m_Deadline = now + timeoutMs;
+    m_TimeoutMs = timeoutMs;
     m_Current = current;
     m_Target = target;
     m_ObservedSize = QSize();
@@ -179,7 +180,7 @@ bool LiveResolutionTransaction::begin(std::uint32_t generation, QSize current, Q
 }
 
 bool LiveResolutionTransaction::observeHostReport(std::uint32_t generation, QSize previousDisplay,
-                                                  QSize reported)
+                                                  QSize reported, std::uint32_t now)
 {
     if (!m_Active || generation != m_Generation || !reported.isValid() ||
         !hostStreamingDisplayIsOneToOne(previousDisplay, m_Current) ||
@@ -189,6 +190,7 @@ bool LiveResolutionTransaction::observeHostReport(std::uint32_t generation, QSiz
 
     m_ObservedSize = reported;
     m_AwaitingDecoderReset = true;
+    m_Deadline = now + m_TimeoutMs;
     return true;
 }
 
@@ -232,6 +234,7 @@ void LiveResolutionTransaction::cancel()
     m_DecoderResetCompleted = false;
     m_Generation = 0;
     m_Deadline = 0;
+    m_TimeoutMs = 0;
     m_Current = QSize();
     m_Target = QSize();
     m_ObservedSize = QSize();

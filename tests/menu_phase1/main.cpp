@@ -122,6 +122,63 @@ private slots:
         QVERIFY(p.rowDetail(p.rowOfAction(A::ApplyStreamConfiguration)).contains("Pending"));
         QVERIFY(!p.rowEnabled(p.rowOfAction(A::SelectStreamCodec, "0")));
     }
+    void streamConfigurationDraftSurvivesPeriodicRefresh()
+    {
+        OverlayMenuPanel p;
+        OverlayMenuPanel::StreamConfigurationState state;
+        state.currentCodec = "HEVC 10-bit HDR";
+        state.currentHdr = "PQ";
+        state.currentAudio = "2 channels";
+        state.requestedCodec = 0;
+        state.requestedHdrMode = 0;
+        state.requestedAudioConfig = 0;
+        p.updateStreamConfigurationState(state);
+
+        OverlayMenuPanel::StreamConfigurationRequest sent;
+        bool applied = false;
+        p.setStreamConfigurationCallback([&](const auto& request) {
+            sent = request;
+            applied = true;
+        });
+
+        open(p);
+        p.showTab(T::Stream);
+        click(p, A::OpenStreamConfiguration);
+        click(p, A::SelectStreamCodec, "4");
+        click(p, A::SelectStreamHdr, "1");
+        click(p, A::SelectStreamAudio, "3");
+
+        const int selectedAudioRow = p.rowOfAction(A::SelectStreamAudio, "3");
+        QCOMPARE(p.focusedRow(), selectedAudioRow);
+
+        // Session's 250 ms timer refreshes quality first, then configuration.
+        OverlayMenuPanel::StreamQualityState qualityState;
+        qualityState.resolution = QSize(1920, 1080);
+        qualityState.fps = 60;
+        p.updateStreamQualityState(qualityState);
+        int refreshes = 0;
+        QTimer refreshTimer;
+        refreshTimer.setInterval(250);
+        connect(&refreshTimer, &QTimer::timeout, &p, [&] {
+            p.updateStreamQualityState(qualityState);
+            p.updateStreamConfigurationState(state);
+            ++refreshes;
+        });
+        refreshTimer.start();
+        QTRY_VERIFY_WITH_TIMEOUT(refreshes >= 3, 1000);
+        refreshTimer.stop();
+
+        QCOMPARE(p.focusedRow(), selectedAudioRow);
+        QVERIFY(p.rowEnabled(p.rowOfAction(A::ApplyStreamConfiguration)));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::SelectStreamCodec, "4")).contains(QChar(0x2713)));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::SelectStreamHdr, "1")).contains(QChar(0x2713)));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::SelectStreamAudio, "3")).contains(QChar(0x2713)));
+        click(p, A::ApplyStreamConfiguration);
+        QVERIFY(applied);
+        QCOMPARE(sent.codec, 4);
+        QCOMPARE(sent.hdrMode, 1);
+        QCOMPARE(sent.audioConfig, 3);
+    }
     void streamConfigurationNarrowLayoutAndFocus()
     {
         for (QSize size : { QSize(320, 240), QSize(640, 360) }) {

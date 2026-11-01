@@ -2992,10 +2992,42 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamConfigurationLevel() co
 
 void OverlayMenuPanel::updateStreamConfigurationState(const StreamConfigurationState& state)
 {
+    const bool stateChanged =
+        !m_HasStreamConfigurationState ||
+        m_StreamConfiguration.currentCodec != state.currentCodec ||
+        m_StreamConfiguration.currentHdr != state.currentHdr ||
+        m_StreamConfiguration.currentAudio != state.currentAudio ||
+        m_StreamConfiguration.requestedCodec != state.requestedCodec ||
+        m_StreamConfiguration.requestedHdrMode != state.requestedHdrMode ||
+        m_StreamConfiguration.requestedAudioConfig != state.requestedAudioConfig ||
+        m_StreamConfiguration.pending != state.pending ||
+        (state.pending && (m_StreamConfiguration.pendingCodec != state.pendingCodec ||
+                           m_StreamConfiguration.pendingHdrMode != state.pendingHdrMode ||
+                           m_StreamConfiguration.pendingAudioConfig != state.pendingAudioConfig)) ||
+        m_StreamConfiguration.pyrowaveSelected != state.pyrowaveSelected ||
+        m_StreamConfiguration.resultMessage != state.resultMessage;
+    if (!stateChanged) {
+        return;
+    }
+
+    const bool selectionChanged =
+        !m_HasStreamConfigurationState || m_StreamConfiguration.pending != state.pending ||
+        m_StreamConfiguration.requestedCodec != state.requestedCodec ||
+        m_StreamConfiguration.requestedHdrMode != state.requestedHdrMode ||
+        m_StreamConfiguration.requestedAudioConfig != state.requestedAudioConfig ||
+        (state.pending && (m_StreamConfiguration.pendingCodec != state.pendingCodec ||
+                           m_StreamConfiguration.pendingHdrMode != state.pendingHdrMode ||
+                           m_StreamConfiguration.pendingAudioConfig != state.pendingAudioConfig)) ||
+        m_StreamConfiguration.pyrowaveSelected != state.pyrowaveSelected;
+
     m_StreamConfiguration = state;
-    m_PendingCodec = state.pending ? state.pendingCodec : state.requestedCodec;
-    m_PendingHdrMode = state.pending ? state.pendingHdrMode : state.requestedHdrMode;
-    m_PendingAudioConfig = state.pending ? state.pendingAudioConfig : state.requestedAudioConfig;
+    m_HasStreamConfigurationState = true;
+    if (selectionChanged) {
+        m_PendingCodec = state.pending ? state.pendingCodec : state.requestedCodec;
+        m_PendingHdrMode = state.pending ? state.pendingHdrMode : state.requestedHdrMode;
+        m_PendingAudioConfig =
+            state.pending ? state.pendingAudioConfig : state.requestedAudioConfig;
+    }
     buildMenuLevels();
     if (m_Visible) {
         repositionWindow();
@@ -3065,6 +3097,23 @@ bool OverlayMenuPanel::handleStreamConfigurationItem(const MenuItem& item)
 
 void OverlayMenuPanel::updateStreamQualityState(const StreamQualityState& state)
 {
+    if (m_StreamQuality.resolution == state.resolution && m_StreamQuality.fps == state.fps &&
+        m_StreamQuality.nativeResolution == state.nativeResolution &&
+        m_StreamQuality.displayHz == state.displayHz &&
+        m_StreamQuality.hostSupportsLiveResolution == state.hostSupportsLiveResolution &&
+        m_StreamQuality.hostDisplaySize == state.hostDisplaySize &&
+        m_StreamQuality.resolutionOperationBusy == state.resolutionOperationBusy &&
+        m_StreamQuality.liveRequestPending == state.liveRequestPending &&
+        m_StreamQuality.pendingResolution == state.pendingResolution &&
+        m_StreamQuality.resultMessage == state.resultMessage &&
+        m_StreamQuality.canRetryLiveResolution == state.canRetryLiveResolution &&
+        m_StreamQuality.retryLiveResolutionEnabled == state.retryLiveResolutionEnabled &&
+        m_StreamQuality.canReconnectStreamQuality == state.canReconnectStreamQuality &&
+        m_StreamQuality.failedResolution == state.failedResolution &&
+        m_StreamQuality.failedFps == state.failedFps) {
+        return;
+    }
+
     m_StreamQuality = state;
     m_PendingStreamResolution =
         state.liveRequestPending ? state.pendingResolution : state.resolution;

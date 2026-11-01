@@ -776,6 +776,7 @@ private:
     int m_PendingCodec = 0;
     int m_PendingHdrMode = 0;
     int m_PendingAudioConfig = 0;
+    bool m_HasStreamConfigurationState = false;
 
     // Last updateMenuPositionState() choice, re-applied after a rebuild
     std::optional<MenuAction> m_ActivePlacementAction;

@@ -228,10 +228,28 @@ bool StreamUtils::getExactDisplayRefreshRate(SDL_Window* window, uint32_t* numer
     if (!SDL_GetWindowWMInfo(window, &info) || info.subsystem != SDL_SYSWM_WINDOWS) {
         return false;
     }
+    return getExactNativeWindowRefreshRate(info.info.win.window, numerator, denominator);
+#else
+    Q_UNUSED(window);
+    return false;
+#endif
+}
+
+bool StreamUtils::getExactNativeWindowRefreshRate(void* nativeWindow, uint32_t* numerator,
+                                                  uint32_t* denominator)
+{
+    *numerator = 0;
+    *denominator = 0;
+
+#ifdef Q_OS_WINDOWS
+    if (nativeWindow == nullptr) {
+        return false;
+    }
 
     MONITORINFOEXW monitorInfo = {};
     monitorInfo.cbSize = sizeof(monitorInfo);
-    const HMONITOR monitor = MonitorFromWindow(info.info.win.window, MONITOR_DEFAULTTONEAREST);
+    const HMONITOR monitor =
+        MonitorFromWindow(static_cast<HWND>(nativeWindow), MONITOR_DEFAULTTONEAREST);
     if (monitor == nullptr || !GetMonitorInfoW(monitor, &monitorInfo)) {
         return false;
     }
@@ -290,7 +308,7 @@ bool StreamUtils::getExactDisplayRefreshRate(SDL_Window* window, uint32_t* numer
     }
     return *numerator != 0 && *denominator != 0;
 #else
-    Q_UNUSED(window);
+    Q_UNUSED(nativeWindow);
     return false;
 #endif
 }

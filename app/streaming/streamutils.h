@@ -31,6 +31,10 @@ public:
     static bool getExactDisplayRefreshRate(SDL_Window* window, uint32_t* numerator,
                                            uint32_t* denominator);
 
+    // The same for a native window (HWND on Windows)
+    static bool getExactNativeWindowRefreshRate(void* nativeWindow, uint32_t* numerator,
+                                                uint32_t* denominator);
+
     static
     bool hasFastAes();
 

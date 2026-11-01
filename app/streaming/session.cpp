@@ -38,6 +38,7 @@
 #ifdef HAVE_FFMPEG
 #include "video/ffmpeg.h"
 #endif
+#include "video/framepacingpolicy.h"
 #include "video/vrrpolicy.h"
 
 #ifdef Q_OS_DARWIN
@@ -2299,6 +2300,29 @@ bool Session::initialize(QQuickWindow* qtWindow)
     m_VideoCallbacks.setup = drSetup;
 
     m_StreamConfig.fps = m_Preferences->fps;
+
+    // On a fractional refresh rate (119.88 Hz shows as 120), ask the host to
+    // capture at exactly the panel's rate when the user picked its rounded
+    // rate. Otherwise every 120 FPS frame queues a little longer for a
+    // 119.88 Hz panel until one is dropped. Hosts that don't support it ignore
+    // it; the stream window opens on the GUI window's display.
+    if (m_QtWindow != nullptr) {
+        uint32_t refreshNumerator = 0;
+        uint32_t refreshDenominator = 0;
+        if (StreamUtils::getExactNativeWindowRefreshRate(
+                reinterpret_cast<void*>(m_QtWindow->winId()), &refreshNumerator,
+                &refreshDenominator)) {
+            m_StreamConfig.clientRefreshRateX100 = FramePacing::clientRefreshRateX100(
+                m_StreamConfig.fps, refreshNumerator, refreshDenominator);
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Display refresh rate %u/%u Hz; requesting %d FPS%s", refreshNumerator,
+                        refreshDenominator, m_StreamConfig.fps,
+                        m_StreamConfig.clientRefreshRateX100 != 0
+                            ? qPrintable(QStringLiteral(" at %1 FPS exactly")
+                                             .arg(m_StreamConfig.clientRefreshRateX100 / 100.0))
+                            : "");
+        }
+    }
     m_StreamConfig.bitrate = m_Preferences->bitrateKbps;
     m_StreamConfig.videoFecPercentage = m_Preferences->fecPercentage;
 

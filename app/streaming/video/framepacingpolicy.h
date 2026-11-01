@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 // Frame pacing (V-Sync on, without VRR) policy. Pure so it can be unit tested.
 namespace FramePacing {
 
@@ -38,6 +40,23 @@ constexpr bool presentNewestOnly(bool vrr, bool readyToPresentAfterWait, bool fr
                                  bool noBuffering)
 {
     return !vrr && !noBuffering && (readyToPresentAfterWait || framePacing);
+}
+
+// The display's refresh rate x 100 to send the host as
+// clientRefreshRateX100, so that it captures at the panel's exact rate.
+// 0 = don't send one (the host uses the integer FPS).
+constexpr int clientRefreshRateX100(int streamFps, uint32_t numerator, uint32_t denominator)
+{
+    if (streamFps <= 0 || numerator == 0 || denominator == 0) {
+        return 0;
+    }
+    const uint64_t x100 = (static_cast<uint64_t>(numerator) * 100 + denominator / 2) / denominator;
+    // Only for a fractional rate, and only when the user's FPS is that
+    // rate rounded: an explicit other FPS choice is kept
+    if (x100 % 100 == 0 || (x100 + 50) / 100 != static_cast<uint64_t>(streamFps)) {
+        return 0;
+    }
+    return static_cast<int>(x100);
 }
 
 } // namespace FramePacing

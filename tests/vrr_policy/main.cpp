@@ -978,6 +978,51 @@ static void testVrrQueueReport()
     }
 }
 
+// A host capturing at fps (may be fractional, e.g. 119.88) with RTP timestamps
+// on the 90 kHz clock, frames arriving 1.5 ms after capture
+static std::vector<Arrival> pacedArrivals(double fps, int frames)
+{
+    std::vector<Arrival> out;
+    for (int i = 1; i <= frames; i++) {
+        const uint64_t ticks = 90000 + static_cast<uint64_t>(std::llround(i * 90000.0 / fps));
+        const uint64_t sourceUs = ticks * 100 / 9;
+        out.push_back({ sourceUs, sourceUs + 1500 });
+    }
+    return out;
+}
+
+// A 119.88 Hz (120000/1001) panel can't show a 120 FPS stream: every mode
+// waits up to a refresh or drops a frame every ~8 s. When the user picked the
+// panel's rounded rate, ask the host for the exact rate (clientRefreshRateX100,
+// which Sunshine uses as a fractional capture and encode rate).
+static void testFractionalStreamRate()
+{
+    using FramePacing::clientRefreshRateX100;
+    CHECK(clientRefreshRateX100(120, 120000, 1001) == 11988);
+    CHECK(clientRefreshRateX100(60, 60000, 1001) == 5994);
+    CHECK(clientRefreshRateX100(144, 143981, 1000) == 14398);
+    // An integer refresh rate, or an FPS the user chose that isn't the
+    // panel's: nothing to send
+    CHECK(clientRefreshRateX100(120, 120000, 1000) == 0);
+    CHECK(clientRefreshRateX100(60, 120000, 1001) == 0);
+    CHECK(clientRefreshRateX100(120, 0, 0) == 0);
+
+    const int x100 = clientRefreshRateX100(120, 120000, 1001);
+    const auto arrivals = pacedArrivals(x100 != 0 ? x100 / 100.0 : 120.0, 3600);
+    for (bool pacing : { false, true }) {
+        const VsyncLoopResult r = worstVsyncLoop(arrivals, 120000, 1001, pacing);
+        printVsyncLoop(pacing ? "V-Sync + pacing, requested rate on 119.88 Hz"
+                              : "V-Sync, requested rate on 119.88 Hz",
+                       r);
+        CHECK(r.dropPercent == 0);
+        CHECK(r.p99QueueUs <= 500);
+    }
+    const VrrLoopResult vrr = simulateVrrLoop(arrivals, spinSleep, false, 120, 120000, 1001);
+    printLoop("VRR, requested rate on 119.88 Hz", vrr);
+    CHECK(vrr.dropPercent == 0);
+    CHECK(vrr.p99AgeUs <= 500);
+}
+
 int main()
 {
     testMinInterval();
@@ -994,6 +1039,7 @@ int main()
     testSmoothExactRefresh();
     testVsyncQueue();
     testVrrQueueReport();
+    testFractionalStreamRate();
 
     if (s_Failures != 0) {
         std::fprintf(stderr, "%d VRR policy check(s) failed\n", s_Failures);

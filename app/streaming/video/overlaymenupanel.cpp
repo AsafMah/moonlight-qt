@@ -2932,6 +2932,9 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamConfigurationLevel() co
                                      hdrName(m_StreamConfiguration.requestedHdrMode),
                                      audioName(m_StreamConfiguration.requestedAudioConfig)),
                             MenuItemType::Info, MenuAction::MenuActionMax, 0, false, false, true });
+    level.items.push_back({ tr("Next stream (saved)"),
+                            codecName(m_StreamConfiguration.nextStreamCodec), MenuItemType::Info,
+                            MenuAction::MenuActionMax, 0, false, false, true });
     if (!m_StreamConfiguration.resultMessage.isEmpty()) {
         level.items.push_back({ m_StreamConfiguration.resultMessage, QString(), MenuItemType::Info,
                                 MenuAction::MenuActionMax, 0, false, false, true });
@@ -2945,22 +2948,27 @@ OverlayMenuPanel::MenuLevel OverlayMenuPanel::buildStreamConfigurationLevel() co
                                 StreamingPreferences::VCC_FORCE_AV1,
                                 StreamingPreferences::VCC_FORCE_PYROWAVE };
     for (int codec : codecs) {
+        const bool nextStream = m_StreamConfiguration.pyrowaveSelected ||
+                                codec == StreamingPreferences::VCC_FORCE_PYROWAVE;
         const bool selected =
-            m_PendingCodec == codec ||
+            (nextStream ? m_StreamConfiguration.nextStreamCodec : m_PendingCodec) == codec ||
             (codec == StreamingPreferences::VCC_FORCE_HEVC &&
-             m_PendingCodec == StreamingPreferences::VCC_FORCE_HEVC_HDR_DEPRECATED);
+             (nextStream ? m_StreamConfiguration.nextStreamCodec : m_PendingCodec) ==
+                 StreamingPreferences::VCC_FORCE_HEVC_HDR_DEPRECATED);
         const QString note =
-            m_StreamConfiguration.pyrowaveSelected
-                ? tr("PyroWave remains selected; changing codecs requires a new stream")
-            : codec == StreamingPreferences::VCC_FORCE_PYROWAVE
-                ? tr("Select PyroWave in settings before starting a new stream")
+            codec == StreamingPreferences::VCC_FORCE_PYROWAVE &&
+                    !m_StreamConfiguration.pyrowaveAvailable
+                ? tr("PyroWave runtime is unavailable")
+            : nextStream ? tr("Saves the next stream's codec; current stream stays unchanged")
             : m_StreamConfiguration.requestedCodec == codec ? tr("Requested")
                                                             : QString();
-        level.items.push_back({ codecName(codec), detailText(selected, note), MenuItemType::Action,
-                                MenuAction::SelectStreamCodec, 0,
-                                !operationBusy && !m_StreamConfiguration.pyrowaveSelected &&
-                                    codec != StreamingPreferences::VCC_FORCE_PYROWAVE,
-                                false, false, QString::number(codec) });
+        level.items.push_back(
+            { nextStream ? tr("%1 — next stream").arg(codecName(codec)) : codecName(codec),
+              detailText(selected, note), MenuItemType::Action,
+              nextStream ? MenuAction::SelectNextStreamCodec : MenuAction::SelectStreamCodec, 0,
+              !operationBusy && (codec != StreamingPreferences::VCC_FORCE_PYROWAVE ||
+                                 m_StreamConfiguration.pyrowaveAvailable),
+              false, false, QString::number(codec) });
     }
 
     level.items.push_back({ tr("HDR"), QString(), MenuItemType::Header, MenuAction::MenuActionMax,
@@ -3013,6 +3021,8 @@ void OverlayMenuPanel::updateStreamConfigurationState(const StreamConfigurationS
                            m_StreamConfiguration.pendingHdrMode != state.pendingHdrMode ||
                            m_StreamConfiguration.pendingAudioConfig != state.pendingAudioConfig)) ||
         m_StreamConfiguration.pyrowaveSelected != state.pyrowaveSelected ||
+        m_StreamConfiguration.pyrowaveAvailable != state.pyrowaveAvailable ||
+        m_StreamConfiguration.nextStreamCodec != state.nextStreamCodec ||
         m_StreamConfiguration.resultMessage != state.resultMessage;
     if (!stateChanged) {
         return;
@@ -3219,7 +3229,8 @@ void OverlayMenuPanel::dispatchActionItem(const MenuItem& item)
         return;
     }
     if (item.action == MenuAction::SendHostKeys || item.action == MenuAction::RunHostCommand ||
-        item.action == MenuAction::SetMenuScale || item.action == MenuAction::SetStatsOpacity) {
+        item.action == MenuAction::SetMenuScale || item.action == MenuAction::SetStatsOpacity ||
+        item.action == MenuAction::SelectNextStreamCodec) {
         closeMenu();
         if (m_PayloadActionCallback) {
             m_PayloadActionCallback(item.action, payload);

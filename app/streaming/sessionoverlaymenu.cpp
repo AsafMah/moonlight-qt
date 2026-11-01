@@ -6,6 +6,7 @@
 #include "session.h"
 #include "settings/overlaymenusettings.h"
 #include "video/overlaystatscontroller.h"
+#include "video/pyrowave/pyrowaveruntime.h"
 
 #include <QCursor>
 #include <QGuiApplication>
@@ -146,6 +147,30 @@ bool Session::handleOverlayMenuOptionAction(OverlayMenuPanel::MenuAction action)
 bool Session::handleOverlayMenuOptionPayload(OverlayMenuPanel::MenuAction action,
                                              const QString& payload)
 {
+    if (action == OverlayMenuPanel::MenuAction::SelectNextStreamCodec) {
+        bool ok = false;
+        const int codec = payload.toInt(&ok);
+        if (!ok || (codec != StreamingPreferences::VCC_AUTO &&
+                    codec != StreamingPreferences::VCC_FORCE_H264 &&
+                    codec != StreamingPreferences::VCC_FORCE_HEVC &&
+                    codec != StreamingPreferences::VCC_FORCE_AV1 &&
+                    codec != StreamingPreferences::VCC_FORCE_PYROWAVE)) {
+            qWarning("Invalid next-stream codec preference: %s", qPrintable(payload));
+            showStreamingToast(tr("Could not save the next stream's codec"));
+            return true;
+        }
+        if (codec == StreamingPreferences::VCC_FORCE_PYROWAVE &&
+            !PyrowaveRuntime::get().isAvailable()) {
+            showStreamingToast(tr("PyroWave runtime is unavailable"));
+            return true;
+        }
+        m_Preferences->videoCodecConfig =
+            static_cast<StreamingPreferences::VideoCodecConfig>(codec);
+        m_Preferences->save();
+        updateStreamConfigurationMenuState();
+        showStreamingToast(tr("Codec saved for next stream; current stream unchanged"));
+        return true;
+    }
     if (action == OverlayMenuPanel::MenuAction::SetStatsOpacity) {
         bool ok = false;
         const int percent = payload.toInt(&ok);

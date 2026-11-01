@@ -349,11 +349,19 @@ OverlayStatsWindow::Cell OverlayStatsWindow::cellFor(Metric metric) const
         }
         break;
     case Metric::Bitrate:
-        cell.label = m_Extras.abr.state == SunshineAbrRuntime::State::Active ? tr("ABR bitrate")
-                                                                             : tr("Bitrate");
-        cell.shortLabel = m_Extras.abr.state == SunshineAbrRuntime::State::Active
-                              ? tr("ABR")
-                              : tr("Rate", "Short form of the Bitrate label");
+        cell.label =
+            m_Extras.abr.state == SunshineAbrRuntime::State::Active && m_Extras.abr.detail.isEmpty()
+                ? tr("ABR bitrate")
+                : tr("Bitrate");
+        cell.shortLabel =
+            m_Extras.abr.state == SunshineAbrRuntime::State::Active && m_Extras.abr.detail.isEmpty()
+                ? tr("ABR")
+                : tr("Rate", "Short form of the Bitrate label");
+        if (m_Extras.abr.state == SunshineAbrRuntime::State::Active &&
+            !m_Extras.abr.detail.isEmpty()) {
+            cell.label = tr("ABR target (not applied)");
+            cell.shortLabel = tr("ABR target");
+        }
         if (m_Extras.abr.state != SunshineAbrRuntime::State::Disabled &&
             m_Extras.abr.state != SunshineAbrRuntime::State::Active) {
             cell.label += QStringLiteral(" · ") + tr("ABR: %1").arg(cellFor(Metric::Abr).value);
@@ -1246,9 +1254,16 @@ OverlayStatsWindow::tooltipAt(const QPoint& windowPoint) const
                             .arg(m_Snapshot.valid ? number(m_Snapshot.bitrateMbps, 1) : dash());
                 if (m_Extras.targetBitrateKbps > 0)
                     value += QStringLiteral("\n") +
-                             tr("Target budget: %1 Mbps")
+                             (m_Extras.abr.state == SunshineAbrRuntime::State::Stopped
+                                  ? tr("Last target budget: %1 Mbps")
+                                  : tr("Target budget: %1 Mbps"))
                                  .arg(number(m_Extras.targetBitrateKbps / 1000.0, 0));
                 value += QStringLiteral("\n") + tr("ABR: %1").arg(cellFor(Metric::Abr).value);
+                if (!m_Extras.abr.detail.isEmpty()) {
+                    value += QStringLiteral("\n") + m_Extras.abr.detail.simplified().left(256);
+                    if (m_Extras.abr.state == SunshineAbrRuntime::State::Active)
+                        value += QStringLiteral("\n") + tr("Target not applied");
+                }
             }
             if (region.metric == Metric::Abr) {
                 if (!m_Extras.abr.detail.isEmpty()) {

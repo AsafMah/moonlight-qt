@@ -205,6 +205,24 @@ int main(int argc, char** argv)
                         bitrate->value.contains("400"),
                     "Bitrate must distinguish received rate from target budget");
         }
+        OverlayStatsWindow::Extras notApplied;
+        notApplied.abr.state = State::Active;
+        notApplied.abr.detail = "bitrateApplyError: encoder rejected update";
+        notApplied.targetBitrateKbps = 400000;
+        window.setStats(measured, notApplied);
+        window.render();
+        std::optional<OverlayStatsWindow::TooltipInfo> rejected;
+        for (int y = 0; y < window.height() && !rejected; ++y)
+            for (int x = 0; x < window.width(); ++x) {
+                auto hit = window.tooltipAt({ x, y });
+                if (hit && hit->metric == StatsOverlay::Metric::Bitrate) {
+                    rejected = hit;
+                    break;
+                }
+            }
+        require(rejected && rejected->value.contains("Target not applied") &&
+                    rejected->value.contains("encoder rejected update"),
+                "Host-accepted target with apply error must not masquerade as applied ABR");
     } catch (const std::exception& error) {
         qCritical("FAIL: %s", error.what());
         return 1;

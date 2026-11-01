@@ -15,6 +15,41 @@ def function(source, signature):
 
 
 class MenuSessionTests(unittest.TestCase):
+    def test_next_stream_codec_preference_click(self):
+        source = (ROOT / "app/streaming/sessionoverlaymenu.cpp").read_text(encoding="utf-8")
+        handler = function(source, "bool Session::handleOverlayMenuOptionPayload(")
+        harness = Path(__file__).with_name("next_stream_codec_harness.cpp").read_text()
+        qmake = shutil.which("qmake6") or shutil.which("qmake")
+        self.assertIsNotNone(qmake)
+        with tempfile.TemporaryDirectory(prefix="moonlight-next-codec-") as directory:
+            path = Path(directory)
+            (path / "main.cpp").write_text(harness.replace("// METHOD", handler), encoding="utf-8")
+            sources = ("streaming/video/overlaymenupanel.cpp",
+                       "streaming/video/overlaymenugeometry.cpp",
+                       "streaming/input/shortcuts.cpp", "streaming/streamquality.cpp")
+            headers = ("streaming/video/overlaymenupanel.h",
+                       "streaming/video/overlayrasterwindow.h")
+            (path / "next.pro").write_text(
+                "QT = core gui qml svg testlib\nCONFIG += console c++17 release\n"
+                "CONFIG -= app_bundle debug debug_and_release\nTARGET = next\n"
+                "SOURCES = main.cpp\n" +
+                f'INCLUDEPATH += "{ROOT.as_posix()}/app"\n' +
+                "SOURCES += " + " ".join(f'"{ROOT.as_posix()}/app/{s}"' for s in sources) + "\n" +
+                "HEADERS += " + " ".join(f'"{ROOT.as_posix()}/app/{s}"' for s in headers) + "\n",
+                encoding="utf-8")
+            for command in ([qmake, "next.pro"],
+                            ["nmake", "/nologo"] if os.name == "nt" else ["make", "-s"]):
+                result = subprocess.run(command, cwd=path, capture_output=True, text=True,
+                                        timeout=120)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            command = (["pwsh", "-NoProfile", "-File", str(ROOT / "scripts/run-built-test.ps1"),
+                        "-Exe", str(next(path.rglob("next.exe"))), "-Platform", "offscreen"]
+                       if os.name == "nt" else [str(path / "next")])
+            result = subprocess.run(command, cwd=path, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertIn("next-stream-codec passed", result.stdout)
+
     def test_launch_and_reconnect_share_video_format_priorities(self):
         source = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
         for signature in ("bool Session::initialize(", "bool Session::prepareStreamConfiguration("):

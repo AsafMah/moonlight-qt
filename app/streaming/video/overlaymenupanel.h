@@ -165,6 +165,7 @@ public:
         SelectStreamHdr,
         SelectStreamAudio,
         ApplyStreamConfiguration,
+        SelectNextStreamCodec,
         MenuActionMax
     };
 
@@ -294,6 +295,8 @@ public:
         int pendingHdrMode = 0;
         int pendingAudioConfig = 0;
         bool pyrowaveSelected = false;
+        bool pyrowaveAvailable = false;
+        int nextStreamCodec = 0;
         QString resultMessage;
     };
     struct StreamConfigurationRequest

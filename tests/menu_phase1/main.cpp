@@ -74,13 +74,14 @@ private slots:
         OverlayMenuPanel p;
         OverlayMenuPanel::StreamConfigurationState state;
         state.currentCodec = "AV1";
+        state.pyrowaveAvailable = true;
         p.updateStreamConfigurationState(state);
         open(p);
         QVERIFY(p.showLevel(A::OpenStreamConfiguration));
-        const int pyro = p.rowOfAction(A::SelectStreamCodec, "5");
+        const int pyro = p.rowOfAction(A::SelectNextStreamCodec, "5");
         QVERIFY(pyro >= 0);
-        QVERIFY(!p.rowEnabled(pyro));
-        QVERIFY(p.rowDetail(pyro).contains("new stream"));
+        QVERIFY(p.rowEnabled(pyro));
+        QVERIFY(p.rowDetail(pyro).contains("current stream stays unchanged"));
     }
     void mouseChoices()
     {
@@ -151,15 +152,18 @@ private slots:
         QVERIFY(!p.isMenuVisible());
 
         state.pyrowaveSelected = true;
+        state.requestedCodec = 5;
+        state.nextStreamCodec = 5;
         p.updateStreamConfigurationState(state);
         open(p);
         p.showTab(T::Stream);
         click(p, A::OpenStreamConfiguration);
-        QVERIFY(!p.rowEnabled(p.rowOfAction(A::SelectStreamCodec, "0")));
-        QVERIFY(p.rowDetail(p.rowOfAction(A::SelectStreamCodec, "0"))
-                    .contains("PyroWave remains selected"));
+        QVERIFY(p.rowEnabled(p.rowOfAction(A::SelectNextStreamCodec, "0")));
+        QVERIFY(p.rowDetail(p.rowOfAction(A::SelectNextStreamCodec, "0"))
+                    .contains("current stream stays unchanged"));
 
         state.pyrowaveSelected = false;
+        state.requestedCodec = 0;
         state.pending = true;
         state.pendingCodec = 4;
         state.pendingHdrMode = 2;

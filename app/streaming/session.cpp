@@ -5150,6 +5150,8 @@ void Session::updateStreamConfigurationMenuState()
     state.requestedHdrMode = m_RequestedStreamConfiguration.hdrMode;
     state.requestedAudioConfig = m_RequestedStreamConfiguration.audioConfig;
     state.pyrowaveSelected = state.requestedCodec == StreamingPreferences::VCC_FORCE_PYROWAVE;
+    state.pyrowaveAvailable = PyrowaveRuntime::get().isAvailable();
+    state.nextStreamCodec = m_Preferences->videoCodecConfig;
     state.busy = m_RuntimeBitrateInFlight || m_PendingStreamQuality ||
                  m_LiveResolutionTransaction.isActive() || m_SuppressConnectionErrorDialog;
     if (m_PendingStreamConfiguration) {

@@ -9,17 +9,17 @@ fail when:
   R2  an interactive control has no searchable ancestor (it could never be
       found by search);
   R3  a searchable item can't be resolved to a settings category;
-  R4  a settingsCategory names a category that SettingsView doesn't have, or
+  R4  a searchCategory names a category that SettingsView doesn't have, or
       a category has no settings at all;
   R5  a category is compared against a string literal instead of
-      `settingsCategory` (the category must have a single source of truth);
+      `searchCategory` (the category must have a single source of truth);
   R6  a searchable item, or a container between it and its category, uses a
       `visible:` binding instead of `applicable` (search can only evaluate
       `applicable` for categories that aren't open).
 
 Adding a settings section (e.g. Clipboard): use SettingsCard + SettingsRow /
 ToggleRow / ChoiceRow, put it on a page instance or card with
-`settingsCategory`, and add English `settingsSearchKeywords` where the title
+`searchCategory`, and add English `searchKeywords` where the title
 doesn't contain the words people will type. Custom composite controls declare
 `property string settingsSearchTitle` themselves.
 
@@ -52,9 +52,7 @@ EXEMPT_SUBTREES = {
 NON_SETTING_FILES = {
     "SettingsView.qml": "the shell: rail, search box, scroll area",
     "CategoryRail.qml": "category navigation",
-    "SettingsSearchField.qml": "the search box",
-    "SettingsSearchResults.qml": "search results",
-    "SettingsSearchController.qml": "search logic",
+    "SettingsSearchControl.qml": "the single upstream search UI",
     "SettingsScrollArea.qml": "scroll container",
     "PlatformNavButton.qml": "ecosystem navigation button, not a setting",
     "EcosystemPlatformCatalog.qml": "download links catalog inside the searchable Clients card",
@@ -287,12 +285,12 @@ def has_title(obj):
 
 
 def declares_category(obj):
-    v = obj.props.get("settingsCategory", "")
+    v = obj.props.get("searchCategory", "")
     return re.fullmatch(r'"\w+"', v.strip()) is not None
 
 
 def category_of(obj):
-    return obj.props["settingsCategory"].strip().strip('"')
+    return obj.props["searchCategory"].strip().strip('"')
 
 
 def check(files, raw_category_keys):
@@ -362,7 +360,7 @@ def check(files, raw_category_keys):
         for o in root.walk():
             if o is not root and searchable(o) and not exempt(o):
                 if not any(declares_category(a) for a in [o] + list(o.ancestors())):
-                    errors.append("R3 %s:%d %s has no category: declare settingsCategory on the page "
+                    errors.append("R3 %s:%d %s has no category: declare searchCategory on the page "
                                   "instance in SettingsView.qml or on an enclosing card" % (page_type + ".qml", o.line, o.type))
 
     # R4: categories referenced exist, and every category is claimed
@@ -373,10 +371,10 @@ def check(files, raw_category_keys):
                 key = category_of(o)
                 used.add(key)
                 if key not in raw_category_keys:
-                    errors.append("R4 %s:%d settingsCategory \"%s\" is not a SettingsView category" % (name, o.line, key))
+                    errors.append("R4 %s:%d searchCategory \"%s\" is not a SettingsView category" % (name, o.line, key))
     for key in raw_category_keys:
         if key not in used:
-            errors.append("R4 SettingsView category \"%s\" has no settingsCategory anywhere" % key)
+            errors.append("R4 SettingsView category \"%s\" has no searchCategory anywhere" % key)
     return errors
 
 
@@ -390,7 +388,7 @@ def check_literal_compares(texts):
         for n, line in enumerate(text.splitlines(), 1):
             code = line.split("//")[0]
             if LITERAL_COMPARE.search(code):
-                errors.append("R5 %s:%d compares a category to a literal; use settingsCategory: %s"
+                errors.append("R5 %s:%d compares a category to a literal; use searchCategory: %s"
                               % (name, n, line.strip()))
     return errors
 
@@ -427,6 +425,33 @@ def run_all(texts):
 
 
 class RepositoryGate(unittest.TestCase):
+    def test_single_upstream_search_system(self):
+        texts = load_repo()
+        shell = texts["SettingsView.qml"]
+        self.assertEqual(len(re.findall(r"\bSettingsSearchControl\s*\{", shell)), 1)
+        for component in ("SettingsSearchController", "SettingsSearchField", "SettingsSearchResults"):
+            self.assertNotIn(component, shell)
+            self.assertFalse(os.path.exists(os.path.join(SETTINGS, component + ".qml")))
+            with open(os.path.join(REPO, "app", "qml.qrc"), encoding="utf-8") as fh:
+                self.assertNotIn(component + ".qml", fh.read())
+        self.assertIn("SearchIndex.collect(scrollArea.contentItem", shell)
+        self.assertIn('key: "clipboard"', shell)
+        self.assertIn("ClipboardSettingsPage", shell)
+        self.assertIn("PyrowaveCodecPanel.qml", texts)
+        self.assertNotRegex(shell, r'sequences\s*:\s*\[[^\]]*["\'](?:Ctrl|Meta)\+K',
+                            "main.qml already owns Ctrl/Cmd+K; duplicate shortcuts are ambiguous")
+
+    def test_metadata_has_one_keyword_and_category_annotation(self):
+        for name, text in load_repo().items():
+            root = parse_qml(text)
+            for obj in root.walk():
+                self.assertFalse("settingsSearchKeywords" in obj.props and "searchKeywords" in obj.props,
+                                 "%s:%d duplicates search keywords" % (name, obj.line))
+                self.assertFalse("settingsCategory" in obj.props and "searchCategory" in obj.props,
+                                 "%s:%d duplicates search category" % (name, obj.line))
+                self.assertFalse({"settingsCategory", "settingsSearchKeywords", "settingsSearchFocusTarget"} &
+                                 obj.props.keys(), "%s:%d uses obsolete metadata" % (name, obj.line))
+
     def test_settings_search_metadata(self):
         texts = load_repo()
         self.assertIn("ScreenCombinationModeSelector.qml", texts,
@@ -475,8 +500,8 @@ BASE = {
 SHELL = ('FocusScope {\n    readonly property var rawCategories: [\n'
          '        { key: "audio", title: qsTr("Audio") }\n    ]\n'
          '    SettingsScrollArea {\n        AudioPage {\n'
-         '            readonly property string settingsCategory: "audio"\n'
-         '            visible: settingsPage.category === settingsCategory\n'
+         '            readonly property string searchCategory: "audio"\n'
+         '            visible: settingsPage.category === searchCategory\n'
          '        }\n    }\n}\n')
 
 
@@ -539,22 +564,22 @@ class GateFixtures(unittest.TestCase):
         self.assertEqual(fixture(**{"AudioPage.qml": page}), [])
 
     def test_R3_page_without_category(self):
-        shell = SHELL.replace('            readonly property string settingsCategory: "audio"\n', "") \
-                     .replace("visible: settingsPage.category === settingsCategory", "")
+        shell = SHELL.replace('            readonly property string searchCategory: "audio"\n', "") \
+                     .replace("visible: settingsPage.category === searchCategory", "")
         self.assertRule("R3", fixture(**{"SettingsView.qml": shell}))
 
     def test_R3_mixed_page_with_card_categories_passes(self):
-        shell = SHELL.replace('            readonly property string settingsCategory: "audio"\n', "") \
-                     .replace("visible: settingsPage.category === settingsCategory", "")
+        shell = SHELL.replace('            readonly property string searchCategory: "audio"\n', "") \
+                     .replace("visible: settingsPage.category === searchCategory", "")
         page = BASE["AudioPage.qml"].replace('title: qsTr("Audio")',
-                                             'settingsCategory: "audio"\n        title: qsTr("Audio")')
+                                             'searchCategory: "audio"\n        title: qsTr("Audio")')
         self.assertEqual(fixture(**{"SettingsView.qml": shell, "AudioPage.qml": page}), [])
 
     def test_R4_unknown_and_unclaimed_categories(self):
         errors = fixture(**{"SettingsView.qml": SHELL.replace('"audio"\n', '"clipboard"\n')})
         self.assertRule("R4", errors)
         self.assertTrue(any("\"clipboard\" is not a SettingsView category" in e for e in errors), errors)
-        self.assertTrue(any("\"audio\" has no settingsCategory" in e for e in errors), errors)
+        self.assertTrue(any("\"audio\" has no searchCategory" in e for e in errors), errors)
 
     def test_R5_literal_category_compare(self):
         page = BASE["AudioPage.qml"].replace('title: qsTr("Audio")',

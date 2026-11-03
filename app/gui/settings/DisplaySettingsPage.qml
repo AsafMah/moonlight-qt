@@ -26,12 +26,14 @@ Column {
     spacing: Theme.spaceLg
 
     SettingsCard {
+        searchCategory: "display"
         title: qsTr("Display")
 
         SettingsRow {
             applicable: SystemProperties.hasDesktopEnvironment
-            settingsSearchKeywords: "fullscreen windowed borderless window"
+            searchKeywords: "fullscreen windowed borderless window Display mode"
             title: qsTr("Display mode")
+            searchFocusTarget: windowModeComboBox
             description: qsTr("Fullscreen generally provides the best performance, but borderless windowed may work better with features like macOS Spaces, Alt+Tab, screenshot tools, on-screen overlays, etc.")
 
             AutoResizingComboBox {
@@ -107,7 +109,7 @@ Column {
 
         ToggleRow {
             applicable: SystemProperties.hasDesktopEnvironment
-            settingsSearchKeywords: "resolution resize window dynamic display matching sunshine"
+            searchKeywords: "resolution resize window dynamic display matching sunshine"
             title: qsTr("Match stream resolution to window size")
             description: qsTr("Asks the host to change the stream resolution to match the window when it is resized. Fullscreen returns to the configured resolution. Requires a compatible Sunshine host.")
             checked: StreamingPreferences.resolutionMatchWindow
@@ -115,7 +117,7 @@ Column {
         }
 
         ToggleRow {
-            settingsSearchKeywords: "aspect ratio stretch sbs 3d vr xr"
+            searchKeywords: "aspect ratio stretch sbs 3d vr xr Stretch presentation"
             title: qsTr("Stretch presentation")
             description: qsTr("Ignores both client and host PC aspect ratios, which is required for displaying Half-SBS (Side-By-Side) 3D signals to AR/XR devices that only support Full-SBS (usually 1920x1080 per eye, meaning a total resolution of 3840x1080)")
             checked: StreamingPreferences.ignoreAspectRatio
@@ -124,7 +126,7 @@ Column {
 
         ToggleRow {
             id: vsyncToggle
-            settingsSearchKeywords: "vsync vertical sync tearing"
+            searchKeywords: "vsync vertical sync tearing V-Sync"
             title: qsTr("V-Sync")
             description: StreamingPreferences.enableVrr
                          ? qsTr("Not used while variable refresh rate is on.")
@@ -136,7 +138,7 @@ Column {
         }
 
         ToggleRow {
-            settingsSearchKeywords: "stutter smooth judder"
+            searchKeywords: "stutter smooth judder Frame pacing"
             title: qsTr("Frame pacing")
             description: StreamingPreferences.enableVrr
                          ? qsTr("Not used while variable refresh rate is on.")
@@ -151,7 +153,7 @@ Column {
         // 可变刷新率：每帧一解码完就呈现（允许撕裂的翻转模型 / Vulkan Immediate），让
         // G-Sync/FreeSync 显示器跟着串流的帧时间刷新；取代垂直同步和帧平滑。
         ToggleRow {
-            settingsSearchKeywords: "vrr gsync freesync adaptive sync"
+            searchKeywords: "vrr gsync freesync adaptive sync"
             title: qsTr("Variable refresh rate (G-Sync / FreeSync)")
             description: qsTr("Shows each frame as soon as it arrives, so a VRR display refreshes in step with the stream: low latency without tearing. Replaces V-Sync and frame pacing. Needs a G-Sync or FreeSync display, VRR turned on in the graphics driver, and the Fullscreen or Borderless windowed display mode (Windowed works only if the driver enables VRR for windowed apps). Frames are only dropped when the stream is faster than the display's refresh rate.")
             checked: StreamingPreferences.enableVrr
@@ -160,7 +162,7 @@ Column {
 
         // VRR 节奏器：分叉自带的「呈现上限」或移植自 Nonary 的「按主机时间戳排程」，方便 A/B 对比。
         ChoiceRow {
-            settingsSearchKeywords: "vrr gsync freesync pacer pacing nonary timestamp cap limiter"
+            searchKeywords: "vrr gsync freesync pacer pacing nonary timestamp cap limiter"
             title: qsTr("Variable refresh rate pacer")
             description: qsTr("How VRR frames are timed. Present on arrival shows each frame as soon as it arrives, at most one per display refresh. Host-timestamp scheduling (ported from Nonary's Moonlight fork) spaces frames by their capture time on the host, behind a small adaptive delay; it needs the D3D11 renderer and the Borderless windowed display mode, and presents on arrival otherwise. Changes apply to the next stream.")
             controlEnabled: StreamingPreferences.enableVrr
@@ -174,7 +176,7 @@ Column {
         }
 
         ChoiceRow {
-            settingsSearchKeywords: "vrr pacer latency buffer jitter smooth nonary"
+            searchKeywords: "vrr pacer latency buffer jitter smooth nonary"
             title: qsTr("Variable refresh rate pacer latency")
             description: qsTr("Host-timestamp scheduling only. Smooth keeps a larger buffer to hide network jitter; Low latency keeps a smaller one and shows more of the jitter.")
             controlEnabled: StreamingPreferences.enableVrr &&
@@ -192,7 +194,7 @@ Column {
         // VRR 平滑：按主机发送时间戳 + 自适应播放延迟呈现，而不是一到就呈现。
         // 抖动更小，代价是多几毫秒延迟；只在 VRR 开着时可用，默认关。
         ToggleRow {
-            settingsSearchKeywords: "vrr smooth jitter playout buffer stutter latency nonary present-rate cap"
+            searchKeywords: "vrr smooth jitter playout buffer stutter latency nonary present-rate cap"
             title: qsTr("Smooth VRR")
             description: !StreamingPreferences.enableVrr
                          ? qsTr("Turn on variable refresh rate to use Smooth VRR.")
@@ -221,7 +223,7 @@ Column {
         Component.onCompleted: StatsOverlaySettings.reload()
 
         ChoiceRow {
-            settingsSearchKeywords: "stats performance overlay osd fps latency"
+            searchKeywords: "stats performance overlay osd fps latency"
             title: qsTr("Preset")
             description: qsTr("What the performance overlay shows while streaming. Cycle presets in a stream with %1, or pick one from the overlay menu.")
                              .arg("Ctrl+Alt+Shift+P")
@@ -373,7 +375,7 @@ Column {
         }
 
         ToggleRow {
-            settingsSearchKeywords: "csv log export statistics"
+            searchKeywords: "csv log export statistics"
             title: qsTr("Record session stats to CSV")
             description: qsTr("Writes one row per second of stream statistics to a CSV file in %1.")
                              .arg(SessionStatsSettings.statsDirectory)
@@ -395,10 +397,13 @@ Column {
 
     // ================= HDR =================
     SettingsCard {
+        searchCategory: "display"
+        searchKeywords: "HDR brightness Peak brightness Minimum brightness Full-frame brightness"
+        searchTarget: hdrCard
         title: qsTr("HDR")
 
         ToggleRow {
-            settingsSearchKeywords: "hdr high dynamic range"
+            searchKeywords: "hdr high dynamic range Enable HDR"
             title: qsTr("Enable HDR")
             description: SystemProperties.supportsHdr ?
                              qsTr("The stream will be HDR-capable, but some games may require an HDR monitor on your host PC to enable HDR mode.")
@@ -411,7 +416,7 @@ Column {
 
         SettingsRow {
             id: hdrModeRow
-            settingsSearchKeywords: "hdr10 pq hlg"
+            searchKeywords: "hdr10 pq hlg HDR format"
             title: qsTr("HDR format")
             description: qsTr("HDR10 (PQ) is the standard HDR format. HLG offers better compatibility with SDR displays when HDR is not active on the host.")
 

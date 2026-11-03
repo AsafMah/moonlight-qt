@@ -89,7 +89,7 @@ one manual upgrade because its checker still points upstream.
 | stream_quality | 串流画质菜单的分辨率/帧率预设生成、配置差异与切换路径判定 | Windows |
 | app_picker | 名称/类型/运行状态/隐藏状态筛选，排序与分组顺序 | Windows |
 | settings_localization | 中文翻译 .qm + 设置页布局(qmltestrunner) | Windows |
-| settings_search | 设置搜索：排序/归一化，以及在真实 SettingsRow/Card/ScrollArea 搭的壳上验证分类切换、滚动入视野、焦点落到控件、高亮、Esc/手柄键（qmltestrunner + `-import tests\settings_search\mocks`）；`test_*.py` 是元数据门禁（每个设置有标题、能解析到分类、用 applicable 而非 visible） | Windows（QML）+ Ubuntu（unittest） |
+| settings_search | Unified upstream SettingsSearchControl + SettingsView owner with a shared live-tree/ranking helper (no parallel search components): weighted/token-AND ranking, normalization, type-anywhere, two-stage Escape, gamepad Tab/Backtab/A, exact category/layout-settle/scroll/focus/highlight; real Clipboard/PyroWave coverage and applicability, VRR/Nonary, ABR/codec, capture policy and 40% stats-scale regressions (`qmltestrunner -import tests\settings_search\mocks`). Python metadata gates enforce one upstream UI/owner, one category/keyword annotation, titles, category coverage and applicable instead of conditional visible. | Windows（QML）+ Ubuntu（unittest） |
 | linux_display_event_monitor | Linux 显示事件唤醒 | Linux |
 
 ## 仅本地/手动

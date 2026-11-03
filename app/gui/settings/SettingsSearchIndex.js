@@ -5,7 +5,7 @@
 // There is no hand-maintained list of settings. collect() walks the live item
 // tree and picks up every item that exposes `settingsSearchTitle` (SettingsRow
 // and SettingsCard do so automatically; custom composites declare it). The
-// category comes from the nearest ancestor with `settingsCategory`, the
+// category comes from the nearest ancestor with `searchCategory`, the
 // section from the nearest SettingsCard. tests/settings_search guards both.
 
 var FIELD_WEIGHTS = {
@@ -173,14 +173,14 @@ function collect(root, context) {
         if (!item || item.applicable === false) {
             return 0
         }
-        if (typeof item.settingsCategory === "string" && item.settingsCategory !== "") {
-            category = item.settingsCategory
+        if (typeof item.searchCategory === "string" && item.searchCategory !== "") {
+            category = item.searchCategory
         }
         var searchable = isSearchable(item)
         var isCard = searchable && item.settingsSearchKind === "card"
         var childSection = isCard ? item.settingsSearchTitle : section
         // A card's keywords describe everything in it, so its rows match them too
-        var childKeywords = isCard ? (item.settingsSearchKeywords || "") : sectionKeywords
+        var childKeywords = isCard ? (item.searchKeywords || "") : sectionKeywords
         var myOrder = counter.order++
 
         var found = 0
@@ -214,7 +214,7 @@ function collect(root, context) {
             kind: item.settingsSearchKind || "item",
             title: item.settingsSearchTitle,
             description: item.settingsSearchDescription || "",
-            keywords: item.settingsSearchKeywords || "",
+            keywords: item.searchKeywords || "",
             section: isCard ? "" : (section || ""),
             sectionKeywords: isCard ? "" : (sectionKeywords || ""),
             categoryKey: category,
@@ -234,11 +234,18 @@ function isFocusable(item) {
             && item.width > 0 && item.height > 0
 }
 
-// The control to focus for a result: an explicit settingsSearchFocusTarget,
+// The control to focus for a result: an explicit upstream searchFocusTarget,
+// a card's searchTarget container,
 // else the first visible, enabled, Tab-focusable descendant, else null.
 function focusTargetFor(item) {
-    if (item.settingsSearchFocusTarget) {
-        return item.settingsSearchFocusTarget
+    if (item.searchFocusTarget && isFocusable(item.searchFocusTarget)) {
+        return item.searchFocusTarget
+    }
+    if (item.searchTarget && item.searchTarget !== item) {
+        var explicit = focusTargetFor(item.searchTarget)
+        if (explicit) {
+            return explicit
+        }
     }
     if (isFocusable(item)) {
         return item
@@ -254,4 +261,56 @@ function focusTargetFor(item) {
         }
     }
     return null
+}
+
+// Stateless helpers; SettingsView owns the query and navigation transaction.
+function isTypeToSearch(event) {
+    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) {
+        return false
+    }
+    var t = event.text
+    return !!t && t.length === 1 && t.trim() !== "" &&
+            t.charCodeAt(0) >= 32 && t.charCodeAt(0) !== 127
+}
+
+function beginOpen(page, result) {
+    if (!result || !result.source || !result.source.item) {
+        return
+    }
+    page.closeSearch()
+    page.settleTicks = 0
+    page.settleLastY = NaN
+    page.category = result.categoryKey
+    page.pendingTarget = result.source.item
+}
+
+function settleOpen(page, scrollArea) {
+    var target = page.pendingTarget
+    if (!target) {
+        return
+    }
+    page.settleTicks++
+    if (target.visible && target.height > 0) {
+        var y = target.mapToItem(scrollArea.contentItem, 0, 0).y
+        if (y === page.settleLastY) {
+            page.pendingTarget = null
+            var focusItem = focusTargetFor(target)
+            scrollArea.revealItem(target, focusItem)
+            scrollArea.suppressAutoScroll = true
+            if (focusItem) {
+                focusItem.forceActiveFocus(Qt.TabFocusReason)
+            }
+            else {
+                target.forceActiveFocus(Qt.TabFocusReason)
+            }
+            scrollArea.suppressAutoScroll = false
+            scrollArea.flashItem(target)
+            return
+        }
+        page.settleLastY = y
+    }
+    if (page.settleTicks >= 60) {
+        page.pendingTarget = null
+        page.openSearch()
+    }
 }

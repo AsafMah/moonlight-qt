@@ -548,6 +548,24 @@ jobs:
       run: |
         scripts/generate-dmg.sh Release
 
+    - name: Verify DMG app bundle signature
+      run: |
+        # qiin2333/moonlight-qt#285: 防止再次发布签名 Identifier 与 Bundle ID
+        # 不一致、或整包校验不通过的产物。generate-dmg.sh 里已有同样校验,
+        # 这里针对最终 DMG 里的 app 再验一遍。
+        DMG=$(ls build/installer-Release/*.dmg | head -1)
+        test -n "$DMG" || { echo "no DMG found" >&2; exit 1; }
+        MNT=$(mktemp -d /tmp/dmgverify.XXXXXX)
+        hdiutil attach "$DMG" -readonly -nobrowse -mountpoint "$MNT"
+        APP="$MNT/Moonlight.app"
+        codesign --verify --deep --strict "$APP"
+        BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")
+        SIGNED_ID=$(codesign -dv "$APP" 2>&1 | sed -n 's/^Identifier=\(.*\)$/\1/p')
+        echo "CFBundleIdentifier=$BUNDLE_ID"
+        echo "Signature identifier=$SIGNED_ID"
+        test "$BUNDLE_ID" = "$SIGNED_ID"
+        hdiutil detach "$MNT"
+
     - name: Smoke test USB forwarding helper
       run: |
         HELPER="build/build-Release/app/Moonlight.app/Contents/MacOS/moonlight-usbd"
@@ -669,7 +687,7 @@ jobs:
           libxi-dev libxinerama-dev libxkbcommon-dev libxrandr-dev libxss-dev libxt-dev \
           libxv-dev libxxf86vm-dev libxcb1-dev libxcb-dri3-dev libx11-xcb-dev libwayland-dev wayland-protocols \
           libxfixes-dev libxtst-dev libpipewire-0.3-dev \
-          libopus-dev libvdpau-dev cmake xvfb xauth
+          libopus-dev libvdpau-dev libssl-dev cmake xvfb xauth
 
         if [[ "${{ matrix.arch }}" == "x86_64" ]]; then
           sudo apt install -y vulkan-sdk
@@ -700,6 +718,15 @@ jobs:
           # Needed for AppImage
           sudo apt install libfuse2
         fi
+
+    - name: Test restart capability separation and local discard classification
+      run: |
+        cmake -S moonlight-common-c/moonlight-common-c -B build/common-c-protocol \
+          -DBUILD_TESTING=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_STANDARD_LIBRARIES=-lm
+        cmake --build build/common-c-protocol \
+          --target host-restart-protocol-tests video-local-discard-tests -j"$(nproc)"
+        ctest --test-dir build/common-c-protocol \
+          -R 'host-restart-protocol|video-local-discard' --output-on-failure
 
     - name: Test Linux display event wakeups
       run: |

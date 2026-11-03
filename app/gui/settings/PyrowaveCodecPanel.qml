@@ -21,7 +21,7 @@ Column {
     // Settings search metadata (see SettingsSearchIndex.js)
     property string settingsSearchTitle: "PyroWave"
     property string settingsSearchDescription: qsTr("PyroWave capability check")
-    property string settingsSearchKeywords: "pyrowave codec wavelet gpu capability check bitrate"
+    property string searchKeywords: "pyrowave codec wavelet gpu capability check bitrate"
 
     // Not in Theme: an amber for "works, but not here yet" states.
     readonly property color warnColor: "#FFC861"

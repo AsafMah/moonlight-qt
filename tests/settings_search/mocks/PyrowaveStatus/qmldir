@@ -1,0 +1,2 @@
+module PyrowaveStatus
+singleton PyrowaveStatus 1.0 PyrowaveStatus.qml

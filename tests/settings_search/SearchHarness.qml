@@ -2,12 +2,15 @@ import QtQuick
 import QtQuick.Controls
 import "../../app/gui/settings"
 import "../../app/gui/theme"
+import "../../app/gui"
+import "../../app/gui/settings/SettingsSearchIndex.js" as SearchIndex
 
 // Stand-in for SettingsView: same stacking pattern (pages with a
-// settingsCategory, zero height when hidden, LegacySettingsPage-style cards that
+// searchCategory, zero height when hidden, LegacySettingsPage-style cards that
 // carry their own category), the real SettingsScrollArea with its focus-follow
 // auto-scroll, and the same key routing as SettingsView. Real pages can't load
-// here because they need the app's C++ singletons.
+// here because they need the app's C++ singletons. The owner API mirrors
+// SettingsView; tst_upstream_shell also exercises that actual owner source.
 FocusScope {
     id: shell
 
@@ -17,24 +20,65 @@ FocusScope {
     property string category: "basic"
     property int escapesReachedShell: 0
 
-    readonly property var categories: [
+    property var categories: [
         { key: "basic", title: "Streaming" },
         { key: "display", title: "Display Settings" },
         { key: "audio", title: "Audio Settings" },
         { key: "input", title: "Input Settings" },
-        { key: "about", title: "About" }
+        { key: "about", title: "About" },
+        { key: "clipboard", title: "Clipboard" }
     ]
 
-    property alias controller: search
-    property alias field: field
-    property alias results: results
+    property alias results: searchControl.resultsView
+    property alias field: searchControl.field
+    property alias searchControl: searchControl
     property alias scrollArea: scrollArea
     property alias railStandIn: railStandIn
     property alias vrrRow: vrrRow
     property alias resolutionRow: resolutionRow
+    property alias resolutionFocusTarget: resolutionFocusTarget
     property alias exclusiveMode: modeRepeater
     property alias aboutCard: aboutCard
     property alias nextCategoryRow: audioRow
+    property alias clipboardPage: clipboardPage
+    property alias pyrowavePanel: pyrowavePanel
+
+    property string searchQuery: ""
+    property bool searchExpanded: false
+    property var searchIndex: []
+    property var searchResults: []
+    property var uncategorized: []
+    property Item pendingTarget: null
+    property int settleTicks: 0
+    property real settleLastY: NaN
+    signal searchFocusRequested()
+
+    function rebuildSearchIndex() {
+        var context = { categories: categories, currentCategory: category, uncategorized: [] }
+        searchIndex = SearchIndex.collect(scrollArea.contentItem, context)
+        uncategorized = context.uncategorized
+        searchResults = SearchIndex.search(SearchIndex.prepare(searchIndex), searchQuery, 50)
+    }
+    function openSearch() {
+        searchExpanded = true
+        searchFocusRequested()
+    }
+    function clearSearch() { searchQuery = "" }
+    function closeSearch() {
+        searchExpanded = false
+        searchQuery = ""
+        pendingTarget = null
+    }
+    function openSearchResult(result) { SearchIndex.beginOpen(shell, result) }
+    onSearchQueryChanged: rebuildSearchIndex()
+    onCategoriesChanged: rebuildSearchIndex()
+
+    Timer {
+        interval: 16
+        repeat: true
+        running: shell.pendingTarget !== null
+        onTriggered: SearchIndex.settleOpen(shell, scrollArea)
+    }
 
     // Same routing as SettingsView.qml
     Keys.onEscapePressed: function(event) {
@@ -43,26 +87,18 @@ FocusScope {
     }
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_PageUp || event.key === Qt.Key_PageDown) {
-            search.handlePageKey(event)
+            closeSearch()
             var keys = categories.map(function(c) { return c.key })
             var i = keys.indexOf(category) + (event.key === Qt.Key_PageDown ? 1 : -1)
             category = keys[(i + keys.length) % keys.length]
             railStandIn.forceActiveFocus()
             event.accepted = true
         }
-        else if (search.handleTypeToSearch(event)) {
+        else if (SearchIndex.isTypeToSearch(event)) {
+            searchQuery += event.text
+            openSearch()
             event.accepted = true
         }
-    }
-
-    SettingsSearchController {
-        id: search
-        categories: shell.categories
-        currentCategory: shell.category
-        indexRoot: scrollArea.contentItem
-        scrollArea: scrollArea
-        onCategoryRequested: function(key) { shell.category = key }
-        onFocusFieldRequested: field.focusField()
     }
 
     Column {
@@ -70,11 +106,10 @@ FocusScope {
         width: 220
         spacing: 8
 
-        SettingsSearchField {
-            id: field
+        SettingsSearchControl {
+            id: searchControl
             width: parent.width
-            controller: search
-            resultsView: results
+            page: shell
         }
 
         Button {
@@ -89,14 +124,14 @@ FocusScope {
         x: 240
         width: shell.width - x
         height: shell.height
-        opacity: search.active ? 0 : 1
-        enabled: !search.active
+        opacity: SearchIndex.normalize(shell.searchQuery) !== "" ? 0 : 1
+        enabled: opacity === 1
 
         Column {
             id: basicPage
-            readonly property string settingsCategory: "basic"
+            readonly property string searchCategory: "basic"
             width: parent.width
-            visible: shell.category === settingsCategory
+            visible: shell.category === searchCategory
             height: visible ? implicitHeight : 0
 
             SettingsCard {
@@ -106,8 +141,15 @@ FocusScope {
                     id: resolutionRow
                     title: "Resolution and FPS"
                     description: "Increasing resolution and frame rate requires more bandwidth"
-                    settingsSearchKeywords: "fps framerate"
+                    searchKeywords: "fps framerate"
+                    searchFocusTarget: resolutionFocusTarget
                     HardSwitch {}
+                    HardSwitch { id: resolutionFocusTarget }
+                }
+
+                PyrowaveCodecPanel {
+                    id: pyrowavePanel
+                    applicable: false
                 }
 
                 Repeater {
@@ -123,10 +165,10 @@ FocusScope {
 
         Column {
             id: displayPage
-            readonly property string settingsCategory: "display"
+            readonly property string searchCategory: "display"
             y: basicPage.height
             width: parent.width
-            visible: shell.category === settingsCategory
+            visible: shell.category === searchCategory
             height: visible ? implicitHeight : 0
 
             SettingsCard {
@@ -145,13 +187,13 @@ FocusScope {
                     id: vrrRow
                     title: "Variable refresh rate (G-Sync / FreeSync)"
                     description: "Shows each frame as soon as it arrives."
-                    settingsSearchKeywords: "vrr gsync freesync adaptive sync"
+                    searchKeywords: "vrr gsync freesync adaptive sync"
                 }
             }
 
             SettingsCard {
                 title: "Performance overlay"
-                settingsSearchKeywords: "osd stats"
+                searchKeywords: "osd stats"
 
                 Repeater {
                     model: ["Frame time", "Decoder latency"]
@@ -172,20 +214,20 @@ FocusScope {
             width: parent.width
 
             SettingsCard {
-                settingsCategory: "audio"
-                visible: shell.category === settingsCategory && hasVisibleContent
+                searchCategory: "audio"
+                visible: shell.category === searchCategory && hasVisibleContent
                 title: "Audio Settings"
 
                 ToggleRow {
                     id: audioRow
                     title: "Mute host PC speakers while streaming"
-                    settingsSearchKeywords: "sound"
+                    searchKeywords: "sound"
                 }
             }
 
             SettingsCard {
-                settingsCategory: "input"
-                visible: shell.category === settingsCategory && hasVisibleContent
+                searchCategory: "input"
+                visible: shell.category === searchCategory && hasVisibleContent
                 title: "Screen Combination Mode"
 
                 // Custom composite like ScreenCombinationModeSelector: each
@@ -214,22 +256,21 @@ FocusScope {
 
             SettingsCard {
                 id: aboutCard
-                settingsCategory: "about"
-                visible: shell.category === settingsCategory && hasVisibleContent
+                searchCategory: "about"
+                visible: shell.category === searchCategory && hasVisibleContent
                 title: "About"
                 subtitle: "Version and license information"
 
                 Text { text: "Moonlight"; color: "white" }
             }
         }
-    }
-
-    SettingsSearchResults {
-        id: results
-        x: scrollArea.x
-        width: scrollArea.width
-        height: scrollArea.height
-        controller: search
-        searchField: field
+        ClipboardSettingsPage {
+            id: clipboardPage
+            readonly property string searchCategory: "clipboard"
+            y: basicPage.height + displayPage.height + legacyPage.height
+            width: parent.width
+            visible: shell.category === searchCategory
+            height: visible ? implicitHeight : 0
+        }
     }
 }

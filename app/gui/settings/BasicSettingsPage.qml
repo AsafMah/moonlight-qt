@@ -64,11 +64,12 @@ Column {
 
     // ================= 画面 =================
     SettingsCard {
+        searchCategory: "basic"
         title: qsTr("Video")
         subtitle: qsTr("Setting values too high for your PC or network connection may cause lag, stuttering, or errors.")
 
         SettingsRow {
-            settingsSearchKeywords: "fps framerate frame rate refresh rate hz resolution 4k 1440p 1080p"
+            searchKeywords: "fps framerate frame rate refresh rate hz resolution 4k 1440p 1080p Resolution and FPS"
             title: qsTr("Resolution and FPS")
 
             Row {
@@ -615,7 +616,7 @@ Column {
         }
 
         ChoiceRow {
-            settingsSearchKeywords: "codec h264 hevc h265 av1 pyrowave encoder compression"
+            searchKeywords: "codec h264 hevc h265 av1 pyrowave encoder compression Video codec"
             title: qsTranslate("LegacySettingsPage", "Video codec")
             selectedValue: StreamingPreferences.videoCodecConfig
             onValueActivated: function(value) { StreamingPreferences.videoCodecConfig = value }
@@ -646,11 +647,12 @@ Column {
     }
 
     SettingsCard {
+        searchCategory: "basic"
         title: qsTr("Network and stability")
         subtitle: qsTr("These settings apply to the next stream. Bitrate adjustment and packet loss protection can be used independently.")
 
         ToggleRow {
-            settingsSearchKeywords: "abr adaptive bitrate auto bandwidth network"
+            searchKeywords: "abr adaptive bitrate auto bandwidth network Automatically adjust bitrate"
             title: qsTr("Automatically adjust bitrate (ABR)")
             description: qsTr("Requests adaptive bitrate for the next stream, up to the limit below. A compatible Sunshine host must accept it. Check ABR in the performance overlay for its status.")
             checked: StreamingPreferences.enableSunshineAbr
@@ -659,7 +661,7 @@ Column {
 
         SettingsRow {
             id: bitrateRow
-            settingsSearchKeywords: "bitrate mbps kbps bandwidth quality"
+            searchKeywords: "bitrate mbps kbps bandwidth quality Video bitrate limit"
             title: StreamingPreferences.enableSunshineAbr ? qsTr("Stream bitrate limit") : qsTr("Video bitrate")
             description: (StreamingPreferences.enableSunshineAbr
                           ? qsTr("The highest stream bitrate ABR may request. The host divides this budget between video and packet loss protection.")
@@ -750,7 +752,7 @@ Column {
 
         SettingsRow {
             id: fecRow
-            settingsSearchKeywords: "fec packet loss error correction redundancy network"
+            searchKeywords: "fec packet loss error correction redundancy network Packet loss protection"
             title: qsTr("Packet loss protection (FEC)")
             description: StreamingPreferences.fecPercentage === -2
                          ? qsTr("Use the host's FEC settings. Requires a compatible host; otherwise its default behavior is used.")
@@ -801,6 +803,7 @@ Column {
 
     // ================= 画质增强 =================
     SettingsCard {
+        searchCategory: "basic"
         title: qsTr("Enhancements")
 
         ToggleRow {
@@ -808,7 +811,7 @@ Column {
             readonly property bool softwareDecoderForced:
                 StreamingPreferences.videoDecoderSelection === StreamingPreferences.VDS_FORCE_SOFTWARE
 
-            settingsSearchKeywords: "ai upscaling super resolution rtx video vsr sharpen"
+            searchKeywords: "ai upscaling super resolution rtx video vsr sharpen Video AI-Enhancement Experimental Not supported by the GPU"
             title: !enhancementCapable
                    ? qsTr("Video AI-Enhancement (Not supported by the GPU)")
                    : (SystemProperties.isVideoEnhancementExperimental()
@@ -835,7 +838,7 @@ Column {
         }
 
         SettingsRow {
-            settingsSearchKeywords: "scale scaling render resolution upscale"
+            searchKeywords: "scale scaling render resolution upscale Stream Resolution Scale"
             title: qsTr("Stream Resolution Scale")
             description: qsTr("Renders the stream below the selected resolution and upscales it on the client.")
 
@@ -880,11 +883,12 @@ Column {
 
     // ================= 远程覆盖 =================
     SettingsCard {
+        searchCategory: "basic"
         title: qsTr("Remote overrides")
         subtitle: qsTr("Used instead of the values above when streaming over the internet.")
 
         SettingsRow {
-            settingsSearchKeywords: "host resolution override"
+            searchKeywords: "host resolution override Remote Resolution"
             title: qsTr("Remote Resolution")
 
             Row {
@@ -945,7 +949,7 @@ Column {
         }
 
         SettingsRow {
-            settingsSearchKeywords: "fps framerate host override"
+            searchKeywords: "fps framerate host override Remote Frame Rate"
             title: qsTr("Remote Frame Rate")
 
             Row {

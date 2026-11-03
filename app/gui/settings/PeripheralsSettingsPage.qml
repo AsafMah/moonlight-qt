@@ -24,10 +24,11 @@ Column {
 
     SettingsCard {
         id: usbForwardingCard
+        searchCategory: "peripherals"
         title: qsTr("USB Device Forwarding")
         subtitle: qsTr("Share local gamepads and other peripherals with the streaming host. Forwarding is confirmed per device during a stream and can be stopped at any time.")
         applicable: SystemProperties.usbForwardingAvailable
-        settingsSearchKeywords: "usb usbip passthrough forwarding device"
+        searchKeywords: "usb usbip passthrough forwarding device"
 
         readonly property string usbipdUrl: "https://github.com/dorssel/usbipd-win/releases/latest"
 
@@ -40,6 +41,7 @@ Column {
 
         ToggleRow {
             title: qsTr("Enable USB device forwarding")
+            searchKeywords: "Enable USB device forwarding"
             description: qsTr("When off, streaming will not discover or start any USB forwarding service.")
             checked: StreamingPreferences.usbForwardingEnabled
             onToggled: function(value) { StreamingPreferences.usbForwardingEnabled = value }
@@ -50,6 +52,7 @@ Column {
 
             title: !peripheralsPage.isMac && !peripheralsPage.isLinux
                    ? "usbipd-win" : qsTr("USB sharing service")
+            searchKeywords: "usbipd-win USB sharing service"
             description: {
                 if (UsbForwardingEnvironment.checking) {
                     return qsTr("Checking environment…")
@@ -112,6 +115,7 @@ Column {
 
         SettingsRow {
             title: qsTr("Shared devices")
+            searchKeywords: "Shared devices"
             description: qsTr("Choose which devices can be forwarded to the streaming host. Sharing takes over the device on this computer.")
 
             Flow {
@@ -130,6 +134,7 @@ Column {
         SettingsRow {
             applicable: peripheralsPage.isMac
             title: qsTr("Device availability")
+            searchKeywords: "Device availability"
             description: qsTr("Devices managed by macOS itself — keyboards, mice, storage, and cameras — are shown as \"In use by macOS\" and cannot be shared without administrator access.")
         }
 
@@ -137,11 +142,13 @@ Column {
         SettingsRow {
             applicable: peripheralsPage.isLinux
             title: qsTr("Device availability")
+            searchKeywords: "Device availability"
             description: qsTr("While a device is shared, it is taken over by the USB/IP driver and stops working on this computer until you release it. The first share asks for administrator confirmation; the authorization is remembered for a few minutes.")
         }
 
         SettingsRow {
             title: qsTr("Voice input")
+            searchKeywords: "Voice input"
             description: qsTr("Microphone audio does not travel through USB forwarding. Use the in-stream microphone feature for voice.")
         }
     }

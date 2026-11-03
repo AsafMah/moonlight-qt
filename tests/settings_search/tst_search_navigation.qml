@@ -37,7 +37,7 @@ TestCase {
     }
 
     function resultTitles() {
-        return shell.controller.results.map(function(r) { return r.title })
+        return shell.searchResults.map(function(r) { return r.title })
     }
 
     function isInside(item, ancestor) {
@@ -63,41 +63,41 @@ TestCase {
     // ---- index collection ----------------------------------------------
 
     function test_collectsRowsRepeaterRowsAndCustomMarkers() {
-        shell.controller.query = "frame"
+        shell.searchQuery = "frame"
         var titles = resultTitles()
         verify(titles.indexOf("Frame time") >= 0, "Repeater delegate rows are indexed")
         verify(titles.indexOf("Hidden frame option") < 0, "non-applicable rows are excluded")
 
-        var frameTime = shell.controller.results[titles.indexOf("Frame time")]
+        var frameTime = shell.searchResults[titles.indexOf("Frame time")]
         compare(frameTime.categoryKey, "display")
         compare(frameTime.categoryTitle, "Display Settings")
         compare(frameTime.section, "Performance overlay")
 
-        shell.controller.query = "exclusive"
+        shell.searchQuery = "exclusive"
         compare(resultTitles()[0], "Exclusive display streaming mode")
-        compare(shell.controller.results[0].categoryKey, "input")
-        compare(shell.controller.results[0].section, "Screen Combination Mode")
-        compare(shell.controller.uncategorized.length, 0)
+        compare(shell.searchResults[0].categoryKey, "input")
+        compare(shell.searchResults[0].section, "Screen Combination Mode")
+        compare(shell.uncategorized.length, 0)
     }
 
     function test_cardIsOwnResultOnlyWithoutSearchableRows() {
-        shell.controller.query = "about"
+        shell.searchQuery = "about"
         verify(resultTitles().indexOf("About") >= 0, "card without rows is a result")
-        shell.controller.query = "audio settings"
+        shell.searchQuery = "audio settings"
         verify(resultTitles().indexOf("Audio Settings") < 0, "card with rows is only a section")
         verify(resultTitles().indexOf("Mute host PC speakers while streaming") >= 0)
     }
 
     function test_cardKeywordsApplyToTheirRows() {
-        shell.controller.query = "osd"
+        shell.searchQuery = "osd"
         compare(resultTitles().sort(), ["Decoder latency", "Frame time"])
     }
 
     function test_unknownCategoryIsNotSearchable() {
         // Category filtered out of the rail (like Peripherals without USB/IP)
-        shell.controller.categories = shell.categories.filter(function(c) { return c.key !== "audio" })
-        shell.controller.query = "mute"
-        compare(shell.controller.results.length, 0)
+        shell.categories = shell.categories.filter(function(c) { return c.key !== "audio" })
+        shell.searchQuery = "mute"
+        compare(shell.searchResults.length, 0)
     }
 
     // ---- keyboard flow: type, Down, Enter --------------------------------
@@ -105,7 +105,7 @@ TestCase {
     function test_typeArrowEnterNavigatesScrollsFocusesHighlights() {
         shell.field.focusField()
         typeText("vrr")
-        compare(shell.controller.query, "vrr")
+        compare(shell.searchQuery, "vrr")
         tryCompare(shell.results, "visible", true)
         compare(shell.scrollArea.opacity, 0)
         compare(resultTitles()[0], "Variable refresh rate (G-Sync / FreeSync)")
@@ -116,7 +116,7 @@ TestCase {
 
         keyClick(Qt.Key_Return)
         compare(shell.category, "display")
-        compare(shell.controller.query, "", "query cleared after opening")
+        compare(shell.searchQuery, "", "query cleared after opening")
         compare(shell.results.visible, false)
 
         tryVerify(function() { return isInside(focusedItem(), shell.vrrRow) }, 2000,
@@ -173,6 +173,7 @@ TestCase {
         mouseClick(delegate)
         compare(shell.category, "basic")
         tryVerify(function() { return isInside(focusedItem(), shell.resolutionRow) }, 2000)
+        verify(focusedItem() === shell.resolutionFocusTarget, "upstream explicit focus metadata wins over tree order")
     }
 
     // ---- Esc semantics ---------------------------------------------------
@@ -181,7 +182,7 @@ TestCase {
         shell.field.focusField()
         typeText("fps")
         keyClick(Qt.Key_Escape)
-        compare(shell.controller.query, "")
+        compare(shell.searchQuery, "")
         compare(shell.escapesReachedShell, 0, "first Esc only clears")
         verify(shell.field.activeFocus)
 
@@ -196,7 +197,7 @@ TestCase {
         keyClick(Qt.Key_Down)
         verify(shell.results.listFocused)
         keyClick(Qt.Key_Escape)
-        compare(shell.controller.query, "")
+        compare(shell.searchQuery, "")
         compare(shell.escapesReachedShell, 0)
         tryVerify(function() { return shell.field.activeFocus })
     }
@@ -206,7 +207,7 @@ TestCase {
     function test_gamepadTabBacktabAndA() {
         shell.field.focusField()
         typeText("frame")
-        verify(shell.controller.results.length >= 2)
+        verify(shell.searchResults.length >= 2)
         keyClick(Qt.Key_Tab)
         verify(shell.results.listFocused)
         compare(shell.results.currentIndex, 0)
@@ -219,7 +220,7 @@ TestCase {
 
         keyClick(Qt.Key_Tab)
         keyClick(Qt.Key_Tab)
-        var expected = shell.controller.results[1].source.item
+        var expected = shell.searchResults[1].source.item
         keyClick(Qt.Key_Space)
         tryVerify(function() { return isInside(focusedItem(), expected) }, 2000)
     }
@@ -229,7 +230,7 @@ TestCase {
         typeText("vrr")
         keyClick(Qt.Key_Down)
         keyClick(Qt.Key_PageDown)
-        compare(shell.controller.query, "")
+        compare(shell.searchQuery, "")
         compare(shell.category, "display")
         compare(shell.scrollArea.opacity, 1)
     }
@@ -240,17 +241,58 @@ TestCase {
         shell.railStandIn.forceActiveFocus()
         keyClick("h")
         keyClick("d")
-        compare(shell.controller.query, "hd")
+        compare(shell.searchQuery, "hd")
         verify(shell.field.activeFocus)
     }
 
     function test_noMatchesShowsEmptyState() {
         shell.field.focusField()
         typeText("zzzq")
-        compare(shell.controller.results.length, 0)
+        compare(shell.searchResults.length, 0)
         verify(shell.results.visible)
         verify(shell.results.emptyStateVisible)
         keyClick(Qt.Key_Down)
         verify(shell.field.activeFocus, "nothing to move to")
+    }
+
+    function test_upstreamControlOwnsOnlySearchUi() {
+        compare(shell.searchControl.page, shell)
+        compare(shell.searchControl.field, shell.field)
+        compare(shell.field.objectName, "settingsSearchField")
+        compare(shell.searchControl.resultsView, shell.results)
+        shell.searchControl.focusField()
+        verify(shell.searchExpanded)
+        typeText("frame time")
+        compare(shell.searchQuery, "frame time")
+        compare(resultTitles()[0], "Frame time")
+        compare(shell.searchResults.length, 1, "all query tokens must match")
+    }
+
+    function test_realForkClipboardAndPyrowaveCoverageAndApplicability() {
+        shell.field.focusField()
+        typeText("clipboard")
+        compare(shell.searchResults.length, 6, "every real clipboard row inherits card keywords")
+        var result = shell.searchResults.filter(function(r) { return r.title === "Drop files onto the stream" })[0]
+        verify(result)
+        compare(result.categoryKey, "clipboard")
+        shell.openSearchResult(result)
+        tryVerify(function() { return isInside(focusedItem(), result.source.item) }, 2000)
+        verify(inViewport(result.source.item))
+        compare(shell.scrollArea.highlightTarget, result.source.item)
+
+        shell.category = "display"
+        shell.searchQuery = "wavelet"
+        compare(shell.searchResults.length, 0, "non-applicable real panel is excluded on another page")
+        shell.pyrowavePanel.applicable = true
+        shell.rebuildSearchIndex()
+        compare(shell.searchResults.length, 1)
+        compare(shell.searchResults[0].title, "PyroWave")
+        compare(shell.searchResults[0].categoryKey, "basic")
+        shell.openSearchResult(shell.searchResults[0])
+        tryVerify(function() { return isInside(focusedItem(), shell.pyrowavePanel) }, 2000)
+        compare(shell.scrollArea.highlightTarget, shell.pyrowavePanel)
+        shell.pyrowavePanel.applicable = false
+        shell.searchQuery = "wavelet"
+        compare(shell.searchResults.length, 0, "applicability updates are read live")
     }
 }

@@ -19,8 +19,7 @@ Item {
     // 设置搜索元数据（见 SettingsSearchIndex.js）。标题和说明直接取卡片里显示的文字。
     property string settingsSearchTitle: profileTitle.text
     property string settingsSearchDescription: profileDescription.text
-    property string settingsSearchKeywords: "hdr brightness nits luminance peak metadata calibration"
-    property Item settingsSearchFocusTarget: hdrBrightnessModeComboBox
+    property string searchKeywords: "hdr brightness nits luminance peak metadata calibration"
 
     // 方角硬投影面板。数值不合法时整块的描边和粗条都转成珊瑚色 ——
     // 比原来只换一圈 1px 描边更扫得见。
@@ -48,6 +47,7 @@ Item {
     property real previewMax: StreamingPreferences.hdrMaxBrightness
     property real previewMin: StreamingPreferences.hdrMinBrightness
     property real previewAverage: StreamingPreferences.hdrMaxAverageBrightness
+    readonly property Item searchFocusTarget: hdrBrightnessModeComboBox
 
     function formatBrightness(value, decimals) {
         return Number(Number(value).toFixed(decimals)).toString()

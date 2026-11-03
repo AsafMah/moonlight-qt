@@ -8,6 +8,7 @@ import SystemProperties 1.0
 
 import "settings"
 import "theme"
+import "settings/SettingsSearchIndex.js" as SearchIndex
 
 // 设置页外壳：左侧分类 rail + 右侧卡片内容。
 // 「基本设置」「显示」使用独立页面；其余 6 组保留在 LegacySettingsPage.qml
@@ -23,11 +24,20 @@ FocusScope {
     objectName: qsTr("Settings")
 
     signal languageChanged()
+    signal searchFocusRequested()
 
     // 窄窗口时 rail 折叠成顶部横向 tab 条
     readonly property bool compact: width < Theme.compactBreakpoint
 
     property string category: "basic"
+    property string searchQuery: ""
+    property bool searchExpanded: false
+    property var searchIndex: []
+    property var searchResults: []
+    property var uncategorized: []
+    property Item pendingTarget: null
+    property int settleTicks: 0
+    property real settleLastY: NaN
 
     // 图标取自 Microsoft Fluent UI System Icons（MIT），和 FluentWinUI3 是同一套设计语言。
     // 之前用 emoji，各平台字体不同，渲染出来大小、粗细、配色都对不齐。
@@ -52,6 +62,64 @@ FocusScope {
         function(c) {
             return c.key !== "peripherals" || SystemProperties.usbForwardingAvailable
         })
+
+    function categoryTitle(key) {
+        for (var i = 0; i < rawCategories.length; ++i) {
+            if (rawCategories[i].key === key) {
+                return rawCategories[i].title
+            }
+        }
+        return key
+    }
+
+    function rebuildSearchIndex() {
+        var context = { categories: categories, currentCategory: category, uncategorized: [] }
+        searchIndex = SearchIndex.collect(scrollArea.contentItem, context)
+        uncategorized = context.uncategorized
+        updateSearchResults()
+    }
+
+    function updateSearchResults() {
+        searchResults = SearchIndex.search(SearchIndex.prepare(searchIndex), searchQuery, 50)
+    }
+
+    function openSearch() {
+        searchExpanded = true
+        searchFocusRequested()
+    }
+
+    function closeSearch() {
+        searchExpanded = false
+        searchQuery = ""
+        pendingTarget = null
+    }
+
+    function clearSearch() {
+        searchQuery = ""
+    }
+
+    function handleTypeToSearch(event) {
+        if (!SearchIndex.isTypeToSearch(event)) {
+            return false
+        }
+        searchQuery += event.text
+        openSearch()
+        return true
+    }
+
+    function openSearchResult(result) {
+        SearchIndex.beginOpen(settingsPage, result)
+    }
+
+    Timer {
+        interval: 16
+        repeat: true
+        running: settingsPage.pendingTarget !== null
+        onTriggered: SearchIndex.settleOpen(settingsPage, scrollArea)
+    }
+
+    onSearchQueryChanged: rebuildSearchIndex()
+    onCategoriesChanged: rebuildSearchIndex()
 
     StackView.onActivated: {
         // This enables Tab and BackTab based navigation rather than arrow keys.
@@ -116,7 +184,7 @@ FocusScope {
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_PageUp) {
             // 搜索中切分类先退出搜索，结果列表不能盖在另一个分类的页面上
-            search.handlePageKey(event)
+            closeSearch()
             rail.step(-1)
             // 切完分类要把焦点收回分类栏：原来持焦的控件已经随着旧分类隐藏了，
             // 焦点会凭空消失，手柄看起来就像失灵。
@@ -124,37 +192,21 @@ FocusScope {
             event.accepted = true
         }
         else if (event.key === Qt.Key_PageDown) {
-            search.handlePageKey(event)
+            closeSearch()
             rail.step(1)
             rail.focusCurrent()
             event.accepted = true
         }
         // 焦点不在输入框时直接打字，等于在设置搜索里输入
-        else if (search.handleTypeToSearch(event)) {
+        else if (handleTypeToSearch(event)) {
             event.accepted = true
         }
-    }
-
-    // 设置搜索。索引不是手写清单，而是每次输入时从 scrollArea 里的真实控件现采：
-    // SettingsRow / SettingsCard 自带标题、说明和 settingsSearchKeywords，分类取
-    // 最近的 settingsCategory 祖先。新增分区只要用这些组件、放在带 settingsCategory
-    // 的页面或卡片里就能被搜到；tests/settings_search 里的门禁会检查这一点。
-    SettingsSearchController {
-        id: search
-        categories: settingsPage.categories
-        currentCategory: settingsPage.category
-        indexRoot: scrollArea.contentItem
-        scrollArea: scrollArea
-        onCategoryRequested: function(key) {
-            settingsPage.category = key
-        }
-        onFocusFieldRequested: searchField.focusField()
     }
 
     Shortcut {
         sequences: [StandardKey.Find]
         enabled: settingsPage.StackView.status === StackView.Active
-        onActivated: searchField.focusField()
+        onActivated: settingsPage.openSearch()
     }
 
     // Reuse the background already owned by the application window. Creating a
@@ -197,9 +249,7 @@ FocusScope {
                 top: parent.top
             }
             width: settingsPage.compact ? body.width : Theme.railWidth
-            height: settingsPage.compact
-                    ? 52 + searchField.height + Theme.spaceXs
-                    : body.height
+            height: settingsPage.compact ? 96 : body.height
 
             // 分类栏底板。方角 + 1px 描边，不用硬投影：它贴着窗口左边，
             // 投影只会在右侧和内容区挤在一起。
@@ -208,28 +258,17 @@ FocusScope {
             border.width: 1
             border.color: Theme.line
 
-            // 搜索框放在分类栏顶上：窄窗口时分类栏变成横向 tab 条，搜索框跟着变成
-            // 整行宽，仍在 tab 条上方。
-            SettingsSearchField {
-                id: searchField
-                anchors {
-                    left: parent.left
-                    right: parent.right
-                    top: parent.top
-                    margins: Theme.spaceXs
-                }
-                controller: search
-                resultsView: searchResults
-            }
-
             CategoryRail {
                 id: rail
                 anchors {
                     left: parent.left
                     right: parent.right
-                    top: searchField.bottom
                     bottom: parent.bottom
-                    margins: Theme.spaceXs
+                    leftMargin: Theme.spaceXs
+                    rightMargin: Theme.spaceXs
+                    bottomMargin: Theme.spaceXs
+                    top: sidebarSearch.bottom
+                    topMargin: Theme.spaceXs
                 }
                 compact: settingsPage.compact
                 categories: settingsPage.categories
@@ -240,15 +279,25 @@ FocusScope {
                 }
                 onContentRequested: settingsPage.focusContent()
             }
+
+            SettingsSearchControl {
+                id: sidebarSearch
+                anchors {
+                    top: parent.top
+                    left: parent.left
+                    topMargin: Theme.spaceXs
+                    leftMargin: Theme.spaceXs
+                }
+                width: parent.width - Theme.spaceXs * 2
+                page: settingsPage
+                z: 10
+            }
         }
 
         SettingsScrollArea {
             id: scrollArea
-
-            // 搜索时内容区让给结果列表。用 opacity 而不是 visible：搜索要读当前分类里控件的
-            // 真实 visible 来判断它们此刻是否可用，整块隐藏会让它们全变成不可见。
-            opacity: search.active ? 0 : 1
-            enabled: !search.active
+            opacity: SearchIndex.normalize(settingsPage.searchQuery) !== "" ? 0 : 1
+            enabled: opacity === 1
 
             anchors {
                 top: settingsPage.compact ? railBackground.bottom : parent.top
@@ -262,8 +311,8 @@ FocusScope {
             BasicSettingsPage {
                 id: basicPage
                 width: parent.width
-                readonly property string settingsCategory: "basic"
-                visible: settingsPage.category === settingsCategory
+                readonly property string searchCategory: "basic"
+                visible: settingsPage.category === searchCategory
                 height: visible ? implicitHeight : 0
             }
 
@@ -271,8 +320,8 @@ FocusScope {
                 id: displayPage
                 y: basicPage.height
                 width: parent.width
-                readonly property string settingsCategory: "display"
-                visible: settingsPage.category === settingsCategory
+                readonly property string searchCategory: "display"
+                visible: settingsPage.category === searchCategory
                 height: visible ? implicitHeight : 0
             }
 
@@ -290,8 +339,8 @@ FocusScope {
                 id: ecosystemPage
                 y: basicPage.height + displayPage.height + legacyPage.height
                 width: parent.width
-                readonly property string settingsCategory: "ecosystem"
-                visible: settingsPage.category === settingsCategory
+                readonly property string searchCategory: "ecosystem"
+                visible: settingsPage.category === searchCategory
                 height: visible ? implicitHeight : 0
                 onAboutRequested: {
                     settingsPage.category = "about"
@@ -304,8 +353,8 @@ FocusScope {
                 id: aboutPage
                 y: basicPage.height + displayPage.height + legacyPage.height + ecosystemPage.height
                 width: parent.width
-                readonly property string settingsCategory: "about"
-                visible: settingsPage.category === settingsCategory
+                readonly property string searchCategory: "about"
+                visible: settingsPage.category === searchCategory
                 height: visible ? implicitHeight : 0
                 onScrollToEndRequested: scrollArea.scrollToEnd()
             }
@@ -315,8 +364,8 @@ FocusScope {
                 y: basicPage.height + displayPage.height + legacyPage.height
                    + ecosystemPage.height + aboutPage.height
                 width: parent.width
-                readonly property string settingsCategory: "peripherals"
-                visible: settingsPage.category === settingsCategory
+                readonly property string searchCategory: "peripherals"
+                visible: settingsPage.category === searchCategory
                 height: visible ? implicitHeight : 0
             }
 
@@ -325,23 +374,19 @@ FocusScope {
                 y: basicPage.height + displayPage.height + legacyPage.height
                    + ecosystemPage.height + aboutPage.height + peripheralsPage.height
                 width: parent.width
-                readonly property string settingsCategory: "clipboard"
-                visible: settingsPage.category === settingsCategory
+                readonly property string searchCategory: "clipboard"
+                visible: settingsPage.category === searchCategory
                 height: visible ? implicitHeight : 0
             }
         }
 
-        SettingsSearchResults {
-            id: searchResults
-            anchors.fill: scrollArea
-            controller: search
-            searchField: searchField
-        }
     }
 
     Component.onCompleted: {
         // 语言切换需要重建若干下拉的模型
         settingsPage.languageChanged.connect(basicPage.languageChanged)
         settingsPage.languageChanged.connect(displayPage.languageChanged)
+        settingsPage.languageChanged.connect(settingsPage.rebuildSearchIndex)
+        Qt.callLater(settingsPage.rebuildSearchIndex)
     }
 }

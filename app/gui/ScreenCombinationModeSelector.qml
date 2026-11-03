@@ -15,6 +15,7 @@ Item {
     property Item navDownItem: null
     readonly property int columns: compact ? 3 : 2
     readonly property Item firstItem: optionRepeater.count > 0 ? optionRepeater.itemAt(0) : null
+    readonly property Item searchFocusTarget: firstItem
     readonly property int optionCount: modes.length
     readonly property var modes: [
         {
@@ -78,7 +79,7 @@ Item {
                 // 每个模式都是独立的设置项，设置搜索能直接搜到并定位到这个按钮
                 property string settingsSearchTitle: modelData.title
                 property string settingsSearchDescription: modelData.description
-                property string settingsSearchKeywords: "display monitor screen layout virtual display"
+                property string searchKeywords: "display monitor screen layout virtual display"
                 Layout.fillWidth: true
                 Layout.preferredWidth: (selector.width - optionGrid.columnSpacing * (selector.columns - 1)) / selector.columns
                 Layout.preferredHeight: selector.compact ? 78 : 112

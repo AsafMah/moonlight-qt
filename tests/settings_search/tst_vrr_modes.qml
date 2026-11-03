@@ -59,7 +59,7 @@ TestCase {
         compare(row.checked, false)
         compare(preferences.vrrSmooth, true)
         verify(row.description.indexOf("Present on arrival") >= 0)
-        verify(row.settingsSearchKeywords.indexOf("nonary") >= 0)
+        verify(row.searchKeywords.indexOf("nonary") >= 0)
         var control = row.controlContent[0]
         mouseClick(control, control.width / 2, control.height / 2)
         compare(writes, 0, "a disabled Smooth control must not overwrite the saved preference")

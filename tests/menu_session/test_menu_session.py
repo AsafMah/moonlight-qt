@@ -15,6 +15,25 @@ def function(source, signature):
 
 
 class MenuSessionTests(unittest.TestCase):
+    def test_overlay_focus_lifecycle(self):
+        source = (ROOT / "app/streaming/session.cpp").read_text(encoding="utf-8")
+        methods = "\n".join(function(source, signature) for signature in (
+            "bool Session::isStreamingWindowVisible(",
+            "bool Session::isStreamingWindowMinimized(",
+            "void Session::syncQtOverlayWindowsWithSdlWindowState(",
+        ))
+        if "bool Session::isStreamingWindowFocused(" in source:
+            methods += function(source, "bool Session::isStreamingWindowFocused(")
+        exec_body = function(source, "void Session::exec(")
+        cases = exec_body.split("case SDL_WINDOWEVENT_FOCUS_LOST:", 1)[1]
+        cases = "case SDL_WINDOWEVENT_FOCUS_LOST:" + cases.split(
+            "case SDL_WINDOWEVENT_LEAVE:", 1)[0]
+        methods += ("\nvoid Session::focusEvent(int event) {\nswitch (event) {\n"
+                    + cases + "\n}\n}\n")
+        harness = Path(__file__).with_name("overlay_focus_harness.cpp").read_text()
+        self.compile_run(harness.replace("// METHODS", methods),
+                         definitions=["MOONLIGHT_ENABLE_FUNCTION_TESTS"])
+
     def test_next_stream_codec_preference_click(self):
         source = (ROOT / "app/streaming/sessionoverlaymenu.cpp").read_text(encoding="utf-8")
         handler = function(source, "bool Session::handleOverlayMenuOptionPayload(")

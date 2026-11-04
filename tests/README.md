@@ -81,7 +81,7 @@ one manual upgrade because its checker still points upstream.
 | stats_overlay_layout | Production stats painter/layout and move-mode controls, compiled zh_CN/zh_TW labels, real controller preset/detach/Off-preview lifecycle with a fake connection/renderer (offscreen) | Windows |
 | overlay_menu_navigation | 悬浮菜单键盘/鼠标导航(QTest 事件,需 offscreen) | Windows |
 | live_window_mode | Production Session mode transitions and menu dispatch/capture using a fake SDL/Qt shell and the real menu (offscreen) | Windows |
-| menu_session | Production menu dispatch, delayed close/capture ownership, pending mouse mode and manual/focus audio policy with fake SDL | Ubuntu / Windows (unittest + C++) |
+| menu_session | Production menu dispatch, delayed close/capture ownership, pending mouse mode, focus/audio policy and floating-button visibility with fake SDL | Ubuntu / Windows (unittest + C++) |
 | restart_recovery | Actual termination callback, retry pump and HTTP event loop with fake clock/network; Desktop identity, shared deadline, first host frame and cancellation | Ubuntu / Windows (unittest + C++) |
 | restart_recovery/verify_library_cancellation.py | Real common-c setup cancellation latency using loopback RTSP/STUN and deterministic TCP/DNS/NAT64 hooks; supplied library sources are not edited | Windows (CMake + MSVC) |
 | menu_phase1 | Real menu Phase 1 pins/state gates, confirmation, shortcut editor and narrow-window keyboard/controller scrolling at DPR 1/1.5/2 | Windows (offscreen QtTest) |
@@ -253,6 +253,10 @@ environment (or a C++ compiler on Linux); Windows executables use the DLL-safe
 PowerShell launcher. It covers
 Release mouse, pending Game/Desktop changes with both pre-menu capture states,
 Desktop-only guards, manual mute across focus changes and one-shot dispatch.
+The focus fixture drives the actual SDL focus-event cases and overlay synchronization:
+the button, menu, toast and pending stylus panel hide on focus loss; refocus respects
+disabled buttons, closing menus, minimization and the Wayland Qt window's active state.
+The stats controller retains its separate stream-visibility policy.
 It does not replace native streamed-input/audio verification.
 Windows replay harnesses use the local DLL-safe launcher when available, otherwise
 `scripts\run-built-test.ps1`, which finds Qt using `qmake` and suppresses native

@@ -719,14 +719,14 @@ jobs:
           sudo apt install libfuse2
         fi
 
-    - name: Test restart capability separation and local discard classification
+    - name: Test fork capabilities, resolution requests and local discard classification
       run: |
         cmake -S moonlight-common-c/moonlight-common-c -B build/common-c-protocol \
           -DBUILD_TESTING=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_STANDARD_LIBRARIES=-lm
         cmake --build build/common-c-protocol \
-          --target host-restart-protocol-tests video-local-discard-tests -j"$(nproc)"
+          --target host-restart-protocol-tests resolution-change-request-tests video-local-discard-tests -j"$(nproc)"
         ctest --test-dir build/common-c-protocol \
-          -R 'host-restart-protocol|video-local-discard' --output-on-failure
+          -R 'host-restart-protocol|resolution-change-request|video-local-discard' --output-on-failure
 
     - name: Test Linux display event wakeups
       run: |

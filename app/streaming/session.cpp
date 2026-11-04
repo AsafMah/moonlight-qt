@@ -3944,6 +3944,15 @@ bool Session::isStreamingWindowVisible() const
            !(windowFlags & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED));
 }
 
+bool Session::isStreamingWindowFocused() const
+{
+    if (m_WaylandStreamWindow != nullptr) {
+        return m_WaylandStreamWindow->isActive();
+    }
+
+    return m_Window != nullptr && (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+}
+
 bool Session::isStreamingWindowMinimized() const
 {
 #ifdef HAS_QT_SDL_WAYLAND_BRIDGE
@@ -3960,7 +3969,11 @@ void Session::syncQtOverlayWindowsWithSdlWindowState()
         m_StatsOverlay->syncWithStreamWindow(isStreamingWindowVisible());
     }
 
-    if (!isStreamingWindowVisible()) {
+    // Detached menu and toast windows use WindowStaysOnTopHint so they can sit above
+    // the SDL stream window. Hide them while another application owns input
+    // focus; otherwise the button would remain visible above that application
+    // even though the stream window itself is covered.
+    if (!isStreamingWindowVisible() || !isStreamingWindowFocused()) {
         if (m_MenuPanel && m_MenuPanel->isMenuVisible()) {
             m_MenuPanel->closeMenu();
         }
@@ -7589,12 +7602,14 @@ void Session::exec()
                 if (m_MenuPanel && m_MenuPanel->isMenuVisible()) {
                     m_MenuPanel->closeMenu();
                 }
+                syncQtOverlayWindowsWithSdlWindowState();
                 break;
             case SDL_WINDOWEVENT_FOCUS_GAINED:
                 m_InputHandler->reloadShortcuts();
                 m_StreamInputFocused = true;
                 updateAudioMuteState();
                 m_InputHandler->notifyFocusGained();
+                syncQtOverlayWindowsWithSdlWindowState();
                 break;
             case SDL_WINDOWEVENT_LEAVE:
                 m_InputHandler->notifyMouseLeave();

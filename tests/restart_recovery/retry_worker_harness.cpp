@@ -160,7 +160,18 @@ struct StreamQuality
 };
 struct Input
 {
-    void raiseAllKeys(bool = true) {}
+    struct KeyReleaseCall
+    {
+        bool clearLocalKeys;
+        bool includeForwardedKeys;
+        bool clearForwardedKeys;
+    };
+    std::vector<KeyReleaseCall> keyReleaseCalls;
+    void raiseAllKeys(bool clearLocalKeys = true, bool includeForwardedKeys = false,
+                      bool clearForwardedKeys = false)
+    {
+        keyReleaseCalls.push_back({ clearLocalKeys, includeForwardedKeys, clearForwardedKeys });
+    }
     void notifyHostOfConnectedGamepads() {}
     void handleControllerDeviceEvent(int*, bool) {}
 };
@@ -369,9 +380,18 @@ int main()
     {
         reset();
         Session session;
+        Input input;
+        session.m_InputHandler = &input;
         session.m_RecoveryBudget.begin(clockMs);
         workerSuccess = true;
         check(session.tryReconnect(), "successful connection may re-enter the stream loop");
+        check(input.keyReleaseCalls.size() == 2 && !input.keyReleaseCalls[0].clearLocalKeys &&
+                  input.keyReleaseCalls[0].includeForwardedKeys &&
+                  !input.keyReleaseCalls[0].clearForwardedKeys &&
+                  input.keyReleaseCalls[1].clearLocalKeys &&
+                  input.keyReleaseCalls[1].includeForwardedKeys &&
+                  !input.keyReleaseCalls[1].clearForwardedKeys,
+              "reconnect must retry forwarded releases without clearing the ledger");
         check(session.m_RecoveryBudget.active(), "connection success must not end the outage");
         bool falseHealthyToast = false;
         for (const auto& text : session.toasts)

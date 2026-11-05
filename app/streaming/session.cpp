@@ -5742,7 +5742,7 @@ bool Session::tryReconnect(ReconnectReason reason, bool* teardownStarted)
     // If the old control stream is still partly alive, this gives the host one last
     // chance to clear stuck key state before reconnecting.
     if (m_InputHandler != nullptr) {
-        m_InputHandler->raiseAllKeys(false);
+        m_InputHandler->raiseAllKeys(false, true);
     }
 
     // The decoder can only be used between LiStartConnection() and
@@ -5941,7 +5941,9 @@ bool Session::tryReconnect(ReconnectReason reason, bool* teardownStarted)
                 }
                 if (m_InputHandler != nullptr) {
                     m_InputHandler->notifyHostOfConnectedGamepads();
-                    m_InputHandler->raiseAllKeys();
+                    // Keep the forwarded-key ledger until terminal session cleanup,
+                    // in case this recovered connection drops before its key-up arrives.
+                    m_InputHandler->raiseAllKeys(true, true);
                 }
                 break;
             }
@@ -8313,7 +8315,7 @@ DispatchDeferredCleanup:
     }
 
     // Raise any keys that are still down
-    m_InputHandler->raiseAllKeys();
+    m_InputHandler->raiseAllKeys(true, true, true);
 
     // Destroy the input handler now. This must be destroyed
     // before allowwing the UI to continue execution or it could

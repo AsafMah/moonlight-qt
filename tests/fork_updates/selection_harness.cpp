@@ -151,6 +151,15 @@ int main(int argc, char** argv)
           "setup installation must select the verified Setup executable");
     check(VersionUtils::parseBuild("6.5.3.181+2.gabcdef01") == QVersionNumber({ 6, 5, 3, 183 }),
           "version-shaped release tags must retain revision across future commits");
+    check(VersionUtils::compare(VersionUtils::parseBuild("6.5.4.1"),
+                                VersionUtils::parseBuild("6.5.3.229")) > 0,
+          "the upstream base upgrade must be newer even when the fork revision restarts");
+    checker.m_CurrentVersion = VersionUtils::parseBuild("6.5.3.229");
+    auto upgraded = response("Moonlight-VPlus-Setup-6.5.4.1.exe", digest);
+    upgraded["tag_name"] = "v6.5.4.1";
+    replay(upgraded);
+    check(notifications == 1 && checker.m_UpdateDownloadUrl.endsWith("6.5.4.1.exe"),
+          "6.5.3.229 clients must select a verified update under the new upstream base");
     if (failures)
         return 1;
     std::puts("Fork release selection passed");

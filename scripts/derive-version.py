@@ -3,7 +3,8 @@
 
 Version precedence:
   1. CI_VERSION environment variable (explicit CI/release override)
-  2. `git describe --tags --long --dirty` from the source tree
+  2. Highest reachable stable release base, with Git distance from its latest fork tag
+     (or `git describe --tags --long --dirty` for prerelease history)
   3. app/version.txt fallback for source archives without Git metadata
 
 The script intentionally emits separate display/artifact/numeric forms because
@@ -14,6 +15,7 @@ application/about-box versions can include Git metadata.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -70,6 +72,30 @@ def tagged_revision(version: str) -> int:
     return int(match.group(1)) if match else 0
 
 
+def upstream_release_tags(source_root: Path) -> dict[str, str] | None:
+    manifest = source_root / "scripts" / "upstream-release-tags.json"
+    if not manifest.is_file():
+        return None
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    if data["repository"] != "qiin2333/moonlight-qt":
+        raise RuntimeError("Unexpected upstream release-tag repository")
+    anchor = data["anchor"]
+    if not re.fullmatch(r"[0-9a-f]{40}", anchor):
+        raise RuntimeError("Invalid upstream release-lineage anchor")
+    if run_git(source_root, "merge-base", "--is-ancestor", anchor, "HEAD") is None:
+        raise RuntimeError("Upstream release-lineage anchor is not reachable from HEAD")
+    if anchor not in data["tags"].values():
+        raise RuntimeError("Upstream release-lineage anchor has no registered tag")
+    for tag, commit in data["tags"].items():
+        if not re.fullmatch(r"v\d+\.\d+\.\d+", tag) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise RuntimeError("Invalid upstream release-tag manifest entry")
+        if run_git(source_root, "rev-parse", f"refs/tags/{tag}^{{commit}}") != commit:
+            raise RuntimeError(f"Upstream release tag {tag} is missing or has the wrong commit")
+        if run_git(source_root, "merge-base", "--is-ancestor", anchor, commit) is None:
+            raise RuntimeError(f"Upstream release tag {tag} is outside the release lineage")
+    return data["tags"]
+
+
 def derive(source_root: Path) -> dict[str, str]:
     ci_version = os.environ.get("CI_VERSION", "").strip()
     fallback = read_fallback_version(source_root)
@@ -97,6 +123,8 @@ def derive(source_root: Path) -> dict[str, str]:
             "commit": run_git(source_root, "rev-parse", "--short=8", "HEAD") or "unknown",
         }
 
+    commit = run_git(source_root, "rev-parse", "--short=8", "HEAD") or "unknown"
+    upstream_tags = upstream_release_tags(source_root) if commit != "unknown" else None
     describe = run_git(
         source_root,
         "describe",
@@ -108,11 +136,37 @@ def derive(source_root: Path) -> dict[str, str]:
         "--match",
         "[0-9]*",
     )
-    commit = run_git(source_root, "rev-parse", "--short=8", "HEAD") or "unknown"
 
     if describe:
         match = GIT_DESCRIBE_RE.fullmatch(describe)
         if match:
+            tags = run_git(source_root, "tag", "--merged", "HEAD")
+            releases = []
+            for tag in (tags or "").splitlines():
+                stable = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?", tag)
+                if stable and (upstream_tags is None or stable.group(4) is not None
+                               or tag in upstream_tags):
+                    parts = tuple(int(part) for part in stable.groups()[:3])
+                    releases.append((parts, int(stable.group(4) or 0), tag))
+            if releases:
+                release_base, release_revision, anchor = max(releases)
+                described_base = split_numeric_base(match.group("base"))
+                described_revision = tagged_revision(
+                    match.group("base") + (match.group("prerelease") or ""))
+                unregistered_base = (upstream_tags is not None
+                                     and not match.group("prerelease")
+                                     and f"v{match.group('base')}" not in upstream_tags)
+                if unregistered_base or (release_base, release_revision) > (
+                        described_base, described_revision):
+                    # Restrict to one exact tag: describe normally favors a nearer
+                    # old-base fork tag over the upstream release merged behind it.
+                    anchored = run_git(source_root, "describe", "--tags", "--long",
+                                       "--dirty", "--match", anchor)
+                    anchored_match = GIT_DESCRIBE_RE.fullmatch(anchored or "")
+                    if anchored_match is None:
+                        raise RuntimeError(f"Cannot derive version from reachable release {anchor}")
+                    describe = anchored
+                    match = anchored_match
             base = match.group("base")
             version = base + (match.group("prerelease") or "")
             count = int(match.group("count"))

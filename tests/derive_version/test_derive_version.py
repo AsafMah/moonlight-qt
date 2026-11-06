@@ -1,5 +1,8 @@
 import importlib.util
+import json
 import os
+import subprocess
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -30,16 +33,98 @@ class DeriveVersionTests(unittest.TestCase):
                 return describe
             if args == ("rev-parse", "--short=8", "HEAD"):
                 return "feedface"
+            if args == ("tag", "--merged", "HEAD"):
+                return ""
             raise AssertionError(f"Unexpected git command: {args}")
 
         with (
             mock.patch.dict(os.environ, {"CI_VERSION": ""}),
             mock.patch.object(derive_version, "run_git", side_effect=run_git),
+            mock.patch.object(derive_version, "upstream_release_tags", return_value=None),
             mock.patch.object(
                 derive_version, "read_fallback_version", return_value="6.2.84"
             ),
         ):
             return derive_version.derive(Path("."))
+
+    def test_reachable_upstream_base_overrides_nearer_fork_release(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="moonlight-version-") as directory:
+            root = Path(directory)
+
+            def git(*args: str) -> str:
+                return subprocess.check_output(
+                    ["git", "-c", "user.name=Version Test", "-c",
+                     "user.email=version-test@example.invalid", *args],
+                    cwd=root, text=True,
+                ).strip()
+
+            git("init", "--quiet")
+            git("commit", "--quiet", "--allow-empty", "-m", "inherited numbering")
+            git("tag", "v6.21.46")
+            git("commit", "--quiet", "--allow-empty", "-m", "upstream")
+            git("tag", "v6.5.4")
+            anchor = git("rev-parse", "HEAD")
+            (root / "scripts").mkdir()
+            manifest = root / "scripts" / "upstream-release-tags.json"
+            manifest.write_text(json.dumps({
+                "repository": "qiin2333/moonlight-qt", "anchor": anchor,
+                "tags": {"v6.5.4": anchor},
+            }), encoding="utf-8")
+            git("add", "scripts/upstream-release-tags.json")
+            git("commit", "--quiet", "--allow-empty", "-m", "fork release")
+            git("tag", "v6.5.3.229")
+            with mock.patch.dict(os.environ, {"CI_VERSION": ""}):
+                result = derive_version.derive(root)
+            self.assertEqual(result["base"], "6.5.4")
+            self.assertEqual(result["numeric"], "6.5.4.1")
+            self.assertEqual(self.derive_from_ci(result["artifact"])["numeric"], "6.5.4.1")
+
+            git("tag", "v6.5.4.12")
+            git("commit", "--quiet", "--allow-empty", "-m", "next fork revision")
+            git("tag", "v6.5.3.230")
+            with mock.patch.dict(os.environ, {"CI_VERSION": ""}):
+                result = derive_version.derive(root)
+            self.assertEqual(result["numeric"], "6.5.4.13")
+            self.assertEqual(self.derive_from_ci(result["artifact"])["numeric"], "6.5.4.13")
+
+            # A future release tag not yet merged must not advance this build.
+            head = git("rev-parse", "HEAD")
+            git("checkout", "--quiet", "--detach")
+            git("commit", "--quiet", "--allow-empty", "-m", "unmerged future upstream")
+            git("tag", "v6.5.40")
+            git("checkout", "--quiet", "--detach", head)
+            with mock.patch.dict(os.environ, {"CI_VERSION": ""}):
+                self.assertEqual(derive_version.derive(root)["numeric"], "6.5.4.13")
+            git("tag", "v6.99.0")
+            with mock.patch.dict(os.environ, {"CI_VERSION": ""}):
+                self.assertEqual(derive_version.derive(root)["numeric"], "6.5.4.13")
+            for tag, commit, message in (
+                ("v6.5.5", anchor, "missing or has the wrong commit"),
+                ("v6.21.46", git("rev-parse", "v6.21.46"), "outside the release lineage"),
+            ):
+                with self.subTest(tag=tag):
+                    manifest.write_text(json.dumps({
+                        "repository": "qiin2333/moonlight-qt", "anchor": anchor,
+                        "tags": {"v6.5.4": anchor, tag: commit},
+                    }), encoding="utf-8")
+                    with mock.patch.dict(os.environ, {"CI_VERSION": ""}):
+                        with self.assertRaisesRegex(RuntimeError, message):
+                            derive_version.derive(root)
+            git("tag", "v6.5.5")
+            manifest.write_text(json.dumps({
+                "repository": "qiin2333/moonlight-qt", "anchor": anchor,
+                "tags": {"v6.5.4": anchor, "v6.5.5": head},
+            }), encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CI_VERSION": ""}):
+                self.assertEqual(derive_version.derive(root)["base"], "6.5.5")
+            manifest.write_text(json.dumps({
+                "repository": "qiin2333/moonlight-qt",
+                "anchor": git("rev-parse", "v6.5.40"),
+                "tags": {"v6.5.4": anchor},
+            }), encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CI_VERSION": ""}):
+                with self.assertRaisesRegex(RuntimeError, "anchor is not reachable"):
+                    derive_version.derive(root)
 
     def test_exact_stable_tag(self) -> None:
         result = self.derive_from_git("v6.3.13-0-g12345678")

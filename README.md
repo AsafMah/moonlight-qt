@@ -60,6 +60,7 @@ Foundation Sunshine 是 Moonlight V+ for PC 的主要服务端配套项目。客
 
 - **Moonlight V+ 更新检查**：客户端更新检查指向 `qiin2333/moonlight-qt` 的 GitHub Releases。
 - **基于 Git tag 的版本号**：`scripts/derive-version.py` 支持 CI 与本地构建产物使用一致的版本命名。
+  基础版本取 `scripts/upstream-release-tags.json` 中已合并的最高 qiin 发布版本与分支发布版本的较大者，同一基础版本的分支修订号继续递增，排除旧有的其他标签命名空间。合并新的 qiin 发布时，应对照 `qiin2333/moonlight-qt` 核实标签与提交，将其加入清单并保留谱系锚点，且必须先将已核实的上游标签推送至本分支仓库，再推送 integration。CI 获取全部标签；清单标签缺失、提交不符或不属于锚定谱系时，构建会明确失败。
 - **自动翻译构建**：`.github/workflows/build-translate.yml` 用于周期性更新 `.ts` / `.qm` 翻译资源。
 - **CI 构建矩阵**：Windows、macOS、Linux AppImage 和 Steam Link 均有独立工作流维护。
 

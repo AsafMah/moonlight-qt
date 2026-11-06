@@ -60,6 +60,7 @@ You can use it like a regular Moonlight client, or pair it with a Foundation Sun
 
 - **Fork-specific update checks** using GitHub Releases from `qiin2333/moonlight-qt`.
 - **Git tag based versioning** through `scripts/derive-version.py`, keeping CI and local artifact names consistent.
+  The base follows the highest reachable qiin release registered in `scripts/upstream-release-tags.json`, or a newer fork release base; fork revisions continue from the highest reachable revision for that base. Older inherited tag namespaces are excluded. When merging a new qiin release, verify its tag/commit against `qiin2333/moonlight-qt`, register it in the manifest (keeping the lineage anchor), and push the verified upstream tag to this fork **before** pushing integration. CI fetches all tags and fails if a registered tag is missing, mismatched, or outside the anchored lineage.
 - **Automated translation build** via `.github/workflows/build-translate.yml` for `.ts` / `.qm` resources.
 - **CI build matrix** for Windows, macOS, Linux AppImage, and Steam Link artifacts.
 

@@ -3,12 +3,14 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import zipfile
 from urllib.parse import quote
 
 
@@ -59,6 +61,74 @@ def numeric_tag(tag: str) -> tuple[int, ...]:
         raise ValueError(f"Cannot compare release tag: {tag}")
     parts = tuple(int(part) for part in tag.removeprefix("v").split("."))
     return parts if len(parts) == 4 else parts + (0,)
+
+
+def artifact_numeric(version: str) -> tuple[int, ...]:
+    match = re.fullmatch(r"(\d+\.\d+\.\d+(?:\.\d+)?)(?:[+-](\d+)\.g[0-9a-f]+)?", version)
+    if match is None:
+        raise RuntimeError(f"Invalid asset version {version}")
+    parts = list(numeric_tag(match.group(1)))
+    parts[3] += int(match.group(2) or 0)
+    if any(part > 65535 for part in parts):
+        raise RuntimeError(f"Asset version exceeds numeric resource limits: {version}")
+    return tuple(parts)
+
+
+def pe_file_version(data: bytes) -> str:
+    import pefile
+
+    with pefile.PE(data=data) as image:
+        if not getattr(image, "VS_FIXEDFILEINFO", None):
+            raise RuntimeError("Packaged executable has no FileVersion resource")
+        info = image.VS_FIXEDFILEINFO[0]
+        return ".".join(str(part) for part in (
+            info.FileVersionMS >> 16, info.FileVersionMS & 0xFFFF,
+            info.FileVersionLS >> 16, info.FileVersionLS & 0xFFFF,
+        ))
+
+
+def verify_package_versions(assets: list[Path], numeric: str, tag: str) -> None:
+    expected = numeric_tag(numeric)
+    if numeric_tag(tag) != expected:
+        raise RuntimeError(f"release tag {tag} does not match derived version {numeric}")
+    for path in assets:
+        name = re.fullmatch(
+            r"Moonlight-VPlus-(?:Portable-(?:x64|arm64)-|Setup-|SteamLink-)?"
+            r"(?P<version>\d+\.\d+\.\d+(?:\.\d+)?(?:[+-]\d+\.g[0-9a-f]+)?)"
+            r"(?:-(?:x86_64|aarch64|arm64))?\.(?:zip|exe|dmg|AppImage(?:\.zsync)?)",
+            path.name,
+        )
+        if name is None or artifact_numeric(name.group("version")) != expected:
+            raise RuntimeError(f"asset {path.name} version does not match derived version {numeric}")
+        if path.name.startswith("Moonlight-VPlus-Portable-"):
+            with zipfile.ZipFile(path) as archive:
+                entries = [item for item in archive.infolist()
+                           if Path(item.filename).name.lower() == "moonlight.exe"]
+                if len(entries) != 1:
+                    raise RuntimeError(f"{path.name} must contain exactly one Moonlight.exe")
+                data = archive.read(entries[0])
+            actual = pe_file_version(data)
+        elif path.name.startswith("Moonlight-VPlus-Setup-"):
+            actual = pe_file_version(path.read_bytes())
+        else:
+            continue
+        if actual != numeric:
+            raise RuntimeError(f"{path.name} FileVersion {actual} != derived version {numeric}")
+
+
+def verify_release_identity(release: dict, tag: str, head: str) -> None:
+    if release["tag_name"] != tag or release["target_commitish"] != head:
+        raise RuntimeError("Published release tag or target differs from the verified version")
+
+
+def verify_previous_update(candidate: dict, previous: dict | None) -> None:
+    if previous is None:
+        raise RuntimeError("Previous published release is missing; updater replay cannot be verified")
+    script = Path(__file__).with_name("verify-release-update.py")
+    spec = importlib.util.spec_from_file_location("release_update_gate", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.verify_update(candidate, previous["tag_name"])
 
 
 def verify_assets(repo: str, release_id: int, assets: list[Path]):
@@ -151,15 +221,21 @@ def main():
     if args.artifacts is None:
         parser.error("--artifacts is required for publication")
     script = Path(__file__).with_name("derive-version.py")
-    version = subprocess.check_output(["python3", str(script), "--field", "artifact"], text=True).strip()
-    numeric = subprocess.check_output(["python3", str(script), "--field", "numeric"], text=True).strip()
+    environment = dict(os.environ)
+    environment.pop("CI_VERSION", None)
+    version = subprocess.check_output([sys.executable, str(script), "--field", "artifact"],
+                                      text=True, env=environment).strip()
+    numeric = subprocess.check_output([sys.executable, str(script), "--field", "numeric"],
+                                      text=True, env=environment).strip()
     if not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", numeric):
         raise RuntimeError("Invalid numeric release version")
     assets = packages(args.artifacts, version)
     tag = "v" + numeric
+    verify_package_versions(assets, numeric, tag)
     existing = optional_release(repo, f"tags/{tag}")
     if existing and not existing["draft"]:
         release = verify_assets(repo, existing["id"], assets)
+        verify_release_identity(release, tag, head)
         reference = json.loads(gh("api", f"repos/{repo}/git/ref/tags/{tag}"))
         if reference["object"]["type"] != "commit" or reference["object"]["sha"] != head:
             raise RuntimeError("Existing release tag belongs to another commit")
@@ -188,10 +264,13 @@ def main():
                                 "-f", f"name=Moonlight V+ r{run} ({numeric})", "-f", f"body={notes}",
                                 "-F", "draft=true", "-F", "prerelease=false"))
     upload_missing_assets(repo, release, assets)
-    verify_assets(repo, release["id"], assets)
+    candidate = verify_assets(repo, release["id"], assets)
+    verify_release_identity(candidate, tag, head)
+    verify_previous_update(candidate, latest)
     gh("api", f"repos/{repo}/releases/{release['id']}", "--method", "PATCH",
        "-F", "draft=false", "-F", "prerelease=false", "-f", f"make_latest={str(make_latest).lower()}")
     final = verify_assets(repo, release["id"], assets)
+    verify_release_identity(final, tag, head)
     print(final["html_url"])
 
 

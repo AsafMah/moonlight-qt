@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -97,7 +98,12 @@ class PublicationFlowTests(unittest.TestCase):
                 root = Path(directory)
                 for name in ("Portable-x64", "Portable-arm64", "Setup"):
                     suffix = ".exe" if name == "Setup" else ".zip"
-                    (root / f"Moonlight-VPlus-{name}-{VERSION}{suffix}").write_bytes(b"verified package")
+                    package = root / f"Moonlight-VPlus-{name}-{VERSION}{suffix}"
+                    if suffix == ".zip":
+                        with zipfile.ZipFile(package, "w") as archive:
+                            archive.writestr("Moonlight.exe", b"verified PE")
+                    else:
+                        package.write_bytes(b"verified PE")
                 assets = [{"name": p.name, "digest": "sha256:" + publisher.sha256(p)} for p in sorted(root.iterdir())]
                 fake = FakeGh(assets, orphan, latest, workflows_match)
                 environment = dict(GITHUB_ACTIONS="true", GITHUB_REF="refs/heads/integration",
@@ -111,10 +117,13 @@ class PublicationFlowTests(unittest.TestCase):
 
                 with patch.dict(os.environ, environment), patch.object(sys, "argv", ["publisher", "--artifacts", str(root)]), \
                         patch.object(publisher.subprocess, "check_output", side_effect=check_output), \
+                        patch.object(publisher, "pe_file_version", return_value="6.5.3.184"), \
+                        patch.object(publisher, "verify_previous_update") as replay, \
                         patch.object(publisher.subprocess, "run", side_effect=fake.run):
                     if not override and not workflows_match:
                         with self.assertRaisesRegex(RuntimeError, "default branch integration"):
                             publisher.main()
+                            replay.assert_called_once()
                         self.assertEqual(fake.releases, [], "Preflight must fail before creating any draft")
                         continue
                     publisher.main()

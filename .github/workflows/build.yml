@@ -57,6 +57,10 @@ jobs:
       uses: actions/checkout@v4
       with:
         persist-credentials: false
+        fetch-depth: 0
+
+    - name: Gate derived base against reachable qiin release tags
+      run: python3 scripts/derive-version.py --verify-upstream
 
     - name: Test version derivation
       run: python3 -m unittest discover -s tests/derive_version -p 'test_*.py'
@@ -1043,6 +1047,17 @@ jobs:
       with:
         pattern: Moonlight-VPlus-*
         path: ${{ runner.temp }}/release-artifacts
+
+    - name: Select Python for release gates
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install hash-pinned PE reader and Qt replay toolchain
+      run: |
+        python3 -m pip install --require-hashes -r scripts/release-gates-requirements.txt
+        sudo apt-get update
+        sudo apt-get install -y qt6-base-dev build-essential
 
     - name: Publish full release without rebuilding or replacing assets
       run: python3 scripts/publish-integration-release.py --artifacts "${{ runner.temp }}/release-artifacts"

@@ -24,7 +24,7 @@ class ForkUpdateTests(unittest.TestCase):
     def test_production_fork_selection(self):
         self.run_checker_harness("selection_harness.cpp", "Fork release selection passed")
 
-    def run_checker_harness(self, filename, marker):
+    def run_checker_harness(self, filename, marker, harness=None, windows_selection=False):
         qmake = shutil.which("qmake") or shutil.which("qmake6")
         self.assertIsNotNone(qmake, "Qt and a C++ compiler must be on PATH")
         source = (ROOT / "app/backend/autoupdatechecker.cpp").read_text(encoding="utf-8")
@@ -32,7 +32,12 @@ class ForkUpdateTests(unittest.TestCase):
         source = source.replace("new QNetworkAccessManager(this)",
                                 "new ScriptedNetworkAccessManager(this)")
         source = source.replace("QSysInfo::buildCpuArchitecture()", "testArchitecture")
-        harness = Path(__file__).with_name(filename).read_text(encoding="utf-8")
+        if windows_selection:
+            # Exercise the unchanged Windows selector bodies on Linux release
+            # runners too, without redefining Qt's own platform macros.
+            source = source.replace("defined(Q_OS_WIN32)", "1")
+        if harness is None:
+            harness = Path(__file__).with_name(filename).read_text(encoding="utf-8")
         if filename == "automatic_harness.cpp":
             base = Path(__file__).with_name("selection_harness.cpp").read_text(encoding="utf-8")
             harness = base[:base.index("int main(")] + harness

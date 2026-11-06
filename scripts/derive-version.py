@@ -97,6 +97,36 @@ def upstream_release_tags(source_root: Path) -> dict[str, str] | None:
     return data["tags"]
 
 
+def verify_upstream_release_base(source_root: Path) -> None:
+    if upstream_release_tags(source_root) is None:
+        raise RuntimeError("Missing upstream release-lineage manifest")
+    anchor = json.loads((source_root / "scripts/upstream-release-tags.json")
+                        .read_text(encoding="utf-8"))["anchor"]
+    # Query qiin itself, not the maintained manifest: forgetting to register a
+    # newly merged release must fail CI rather than preserve an outdated base.
+    output = subprocess.check_output(
+        ["git", "ls-remote", "--tags", "https://github.com/qiin2333/moonlight-qt.git"],
+        text=True, encoding="utf-8", timeout=60,
+    )
+    tags = {}
+    for line in output.splitlines():
+        commit, ref = line.split()
+        match = re.fullmatch(r"refs/tags/v(\d+\.\d+\.\d+)(\^\{\})?", ref)
+        if match:
+            name = match.group(1)
+            if name not in tags or match.group(2):
+                tags[name] = commit
+    if not tags:
+        raise RuntimeError("qiin returned no stable upstream release tags")
+    base = derive(source_root)["base"]
+    for tag, commit in tags.items():
+        if (split_numeric_base(tag) > split_numeric_base(base)
+                and run_git(source_root, "merge-base", "--is-ancestor", commit, "HEAD") is not None
+                and run_git(source_root, "merge-base", "--is-ancestor", anchor, commit) is not None):
+            raise RuntimeError(f"Reachable qiin release {tag} exceeds derived base {base}; "
+                               "register the verified upstream tag before publishing")
+
+
 def derive(source_root: Path) -> dict[str, str]:
     ci_version = os.environ.get("CI_VERSION", "").strip()
     fallback = read_fallback_version(source_root)
@@ -205,6 +235,10 @@ def derive(source_root: Path) -> dict[str, str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--verify-upstream", action="store_true",
+        help="Fail if a reachable qiin release exceeds the derived base (requires network)",
+    )
+    parser.add_argument(
         "--source-root",
         default=str(Path(__file__).resolve().parents[1]),
         help="Moonlight Qt source root (defaults to this script's parent repo)",
@@ -224,6 +258,9 @@ def main() -> int:
     args = parser.parse_args()
 
     source_root = Path(args.source_root).resolve()
+    if args.verify_upstream:
+        verify_upstream_release_base(source_root)
+        return 0
     info = derive(source_root)
 
     if args.format == "env":

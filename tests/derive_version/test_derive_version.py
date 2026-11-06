@@ -17,6 +17,18 @@ SPEC.loader.exec_module(derive_version)
 
 
 class DeriveVersionTests(unittest.TestCase):
+    def test_git_tag_output_is_decoded_as_utf8(self) -> None:
+        # Git emits UTF-8 tag names even on a Windows ANSI-code-page runner.
+        output = "v6.5.4\nunrelated-\u201d-tag".encode("utf-8")
+
+        def check_output(*args, **kwargs):
+            return output.decode(kwargs.get("encoding", "cp1252"))
+
+        with mock.patch.object(derive_version.subprocess, "check_output",
+                               side_effect=check_output):
+            self.assertEqual(derive_version.run_git(Path("."), "tag", "--merged", "HEAD"),
+                             output.decode("utf-8"))
+
     def derive_from_ci(self, version: str) -> dict[str, str]:
         with (
             mock.patch.dict(os.environ, {"CI_VERSION": version}),

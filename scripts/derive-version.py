@@ -37,6 +37,7 @@ def run_git(source_root: Path, *args: str) -> str | None:
             cwd=source_root,
             stderr=subprocess.DEVNULL,
             text=True,
+            encoding="utf-8",
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         return None

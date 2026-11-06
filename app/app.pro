@@ -19,8 +19,10 @@ win32 {
 
 VERSION_SCRIPT = $$shell_quote($$PWD/../scripts/derive-version.py)
 VERSION_SOURCE_ROOT = $$shell_quote($$PWD/..)
-MOONLIGHT_VERSION = $$system($$VERSION_PYTHON $$VERSION_SCRIPT --source-root $$VERSION_SOURCE_ROOT --field display)
-MOONLIGHT_NUMERIC_VERSION = $$system($$VERSION_PYTHON $$VERSION_SCRIPT --source-root $$VERSION_SOURCE_ROOT --field numeric)
+MOONLIGHT_VERSION = $$system($$VERSION_PYTHON $$VERSION_SCRIPT --source-root $$VERSION_SOURCE_ROOT --field display, lines, VERSION_STATUS)
+!equals(VERSION_STATUS, 0): error("Cannot derive Moonlight display version")
+MOONLIGHT_NUMERIC_VERSION = $$system($$VERSION_PYTHON $$VERSION_SCRIPT --source-root $$VERSION_SOURCE_ROOT --field numeric, lines, NUMERIC_VERSION_STATUS)
+!equals(NUMERIC_VERSION_STATUS, 0): error("Cannot derive Moonlight numeric version")
 
 isEmpty(MOONLIGHT_VERSION): MOONLIGHT_VERSION = $$cat(version.txt)
 isEmpty(MOONLIGHT_NUMERIC_VERSION): MOONLIGHT_NUMERIC_VERSION = $$cat(version.txt)

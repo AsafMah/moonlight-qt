@@ -232,20 +232,12 @@ QString NvHTTP::getAuthenticatedServerInfo(NvLogLevel logLevel, bool fastFail)
     return serverInfo;
 }
 
-void
-NvHTTP::startApp(QString verb,
-                 bool isGfe,
-                 int appId,
-                 PSTREAM_CONFIGURATION streamConfig,
-                 bool sops,
-                 bool localAudio,
-                 int gamepadMask,
-                 bool persistGameControllersOnDisconnect,
-                 QString& rtspSessionUrl,
-                 int screenCombinationMode,
-                 const std::optional<bool>& useVdd,
-                 const QString& displayName,
-                 RemoteStreamConfig &remoteStreamConfig)
+void NvHTTP::startApp(QString verb, bool isGfe, int appId, PSTREAM_CONFIGURATION streamConfig,
+                      bool sops, bool localAudio, int gamepadMask,
+                      bool persistGameControllersOnDisconnect, QString& rtspSessionUrl,
+                      int screenCombinationMode, const std::optional<bool>& useVdd,
+                      const QString& displayName, RemoteStreamConfig& remoteStreamConfig,
+                      const QString& displayGroupQueryArgs, QString* launchResponse)
 {
     int riKeyId;
 
@@ -322,6 +314,7 @@ NvHTTP::startApp(QString verb,
                  QString::number(qRound(remoteStreamConfig.sdrWhiteBrightness));
     }
 
+    query += displayGroupQueryArgs;
     query += LiGetLaunchUrlQueryParameters();
 
     QString response = openConnectionToString(m_BaseUrlHttps,
@@ -335,6 +328,9 @@ NvHTTP::startApp(QString verb,
     verifyResponseStatus(response);
 
     rtspSessionUrl = getXmlString(response, "sessionUrl0");
+    if (launchResponse != nullptr) {
+        *launchResponse = response;
+    }
 }
 
 void

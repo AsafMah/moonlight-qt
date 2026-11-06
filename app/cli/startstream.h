@@ -3,6 +3,8 @@
 #include <QObject>
 #include <QVariant>
 
+#include "streaming/displaygroup.h"
+
 class ComputerManager;
 class NvComputer;
 class Session;
@@ -24,6 +26,8 @@ public:
                       StreamingPreferences* preferences,
                       QObject *parent = nullptr);
     ~Launcher();
+    // Display group member options, or a leader head count (0 = preferences).
+    void setDisplayGroup(const DisplayGroup::SessionOptions &member, int leaderHeads);
     Q_INVOKABLE void execute(ComputerManager *manager);
     Q_INVOKABLE void quitRunningApp();
     Q_INVOKABLE bool isExecuted() const;

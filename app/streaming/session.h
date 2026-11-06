@@ -29,6 +29,7 @@
 #include "streamquality.h"
 #include "sunshineabrruntime.h"
 #include "clipboardipc.h"
+#include "displaygroup.h"
 #ifndef STEAM_LINK
 #include "micstream.h"
 #endif
@@ -48,6 +49,12 @@ class MacQtEventPumpInputGuard;
 class StylusReplayTest;
 #endif
 class OverlayStatsController;
+class NvHTTP;
+
+namespace DisplayGroup {
+class LeaderHub;
+class MemberLink;
+}
 
 class SupportedVideoFormatList : public QList<int>
 {
@@ -194,6 +201,14 @@ public:
     bool usesQtWaylandStreamWindow() const;
     void minimizeStreamingWindow();
 
+    // Display groups (experimental). A member is started by its leader with
+    // the group to join; call before initialize(). A leader is chosen at
+    // launch from preferences or setDisplayGroupLeaderHeads() when the host
+    // supports it.
+    void setDisplayGroupOptions(const DisplayGroup::SessionOptions& options);
+    void setDisplayGroupLeaderHeads(int heads);
+    bool isDisplayGroupMember() const { return m_DisplayGroup.role == DisplayGroup::Role::Member; }
+
 signals:
     void stageStarting(QString stage);
 
@@ -281,6 +296,19 @@ private:
     };
 
     void handleSdlUserEvent(const SDL_UserEvent& event);
+
+    // Display group plumbing (sessiondisplaygroup.cpp)
+    static constexpr int k_SdlCodeDisplayGroupLayout = 115;
+    static constexpr int k_SdlCodeDisplayGroupEnded = 116;
+    static void clDisplayGroup(const DISPLAY_GROUP_INFO* info);
+    QString prepareDisplayGroupLaunch(NvHTTP& http, bool resumingSession);
+    void finishDisplayGroupLaunch(const QString& launchResponse, bool resumingSession);
+    bool startDisplayGroupMemberLink();
+    void startDisplayGroupLeaderHub();
+    void serviceDisplayGroup();
+    void launchDisplayGroupMembers(const DisplayGroup::Layout& layout);
+    void stopDisplayGroup(const char* reason);
+    int displayGroupWaitTimeoutMs() const;
 
     void updateDualSenseHapticsControllerTarget();
 
@@ -541,6 +569,15 @@ private:
     QString m_LaunchDisplayName;
     QString m_ClientDisplayName;
     std::optional<bool> m_LaunchUseVdd;
+
+    // Display group state (Role::None for ordinary sessions)
+    DisplayGroup::SessionOptions m_DisplayGroup;
+    std::unique_ptr<DisplayGroup::LeaderHub> m_DisplayGroupHub;
+    std::unique_ptr<DisplayGroup::MemberLink> m_DisplayGroupLink;
+    std::mutex m_DisplayGroupLayoutLock;
+    std::optional<DisplayGroup::Layout> m_PendingDisplayGroupLayout;
+    bool m_DisplayGroupMembersLaunched = false;
+    Uint32 m_DisplayGroupFallbackDeadline = 0;
     SDL_Window* m_Window;
     QStringList m_DroppedPaths;
     bool m_DropInProgress = false;

@@ -202,20 +202,15 @@ public:
     // <supercmd> is non-zero. Throws on transport or status errors.
     bool sendSuperCmd(const QString& cmdId);
 
-    void
-    startApp(QString verb,
-             bool isGfe,
-             int appId,
-             PSTREAM_CONFIGURATION streamConfig,
-             bool sops,
-             bool localAudio,
-             int gamepadMask,
-             bool persistGameControllersOnDisconnect,
-             QString& rtspSessionUrl,
-             int screenCombinationMode,
-             const std::optional<bool>& useVdd,
-             const QString& displayName,
-             RemoteStreamConfig &remoteStreamConfig);
+    void startApp(QString verb, bool isGfe, int appId, PSTREAM_CONFIGURATION streamConfig,
+                  bool sops, bool localAudio, int gamepadMask,
+                  bool persistGameControllersOnDisconnect, QString& rtspSessionUrl,
+                  int screenCombinationMode, const std::optional<bool>& useVdd,
+                  const QString& displayName, RemoteStreamConfig& remoteStreamConfig,
+                  // Display group query args (empty for ordinary sessions) and,
+                  // if non-null, the raw launch response for reading the group id.
+                  const QString& displayGroupQueryArgs = QString(),
+                  QString* launchResponse = nullptr);
 
     QVector<NvApp>
     getAppList();

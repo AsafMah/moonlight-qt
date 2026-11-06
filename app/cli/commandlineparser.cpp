@@ -390,6 +390,17 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     parser.addChoiceOption("capture-system-keys", "capture system key combos", m_CaptureSysKeysModeMap.keys());
     parser.addChoiceOption("video-codec", "video codec", m_VideoCodecMap.keys());
     parser.addChoiceOption("video-decoder", "video decoder", m_VideoDecoderMap.keys());
+    parser.addValueOption("display-heads",
+                          "number of host displays to stream, one window each (experimental; "
+                          "needs host support)");
+    // Internal: set by a display group leader when it starts a member process.
+    parser.addValueOption("display-group", "display group to join (internal)");
+    parser.addValueOption("display-head", "display head to stream (internal)");
+    parser.addValueOption("display-group-ipc", "display group leader socket (internal)");
+    parser.addValueOption("display-group-size", "display group head <width>x<height> (internal)");
+    parser.addValueOption("display-group-fps", "display group head FPS (internal)");
+    parser.addValueOption("display-group-display", "client display index (internal)");
+    parser.addFlagOption("display-group-fullscreen", "fullscreen display group head (internal)");
 
     if (!parser.parse(args)) {
         parser.showError(parser.errorText());
@@ -550,6 +561,39 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
         preferences->videoDecoderSelection = mapValue(m_VideoDecoderMap, parser.getChoiceOptionValue("video-decoder"));
     }
 
+    // Resolve display group options. These never touch the saved preferences.
+    if (parser.isSet("display-heads")) {
+        const int heads = parser.getIntOption("display-heads");
+        if (!inRange(heads, 1, DisplayGroup::kMaxHeads)) {
+            parser.showError(
+                QString("Display heads must be in range: 1 - %1").arg(DisplayGroup::kMaxHeads));
+        }
+        m_DisplayGroupLeaderHeads = heads;
+    }
+    if (parser.isSet("display-group")) {
+        m_DisplayGroup.role = DisplayGroup::Role::Member;
+        m_DisplayGroup.groupId = parser.value("display-group");
+        m_DisplayGroup.head =
+            parser.isSet("display-head") ? parser.getIntOption("display-head") : 0;
+        m_DisplayGroup.ipcName = parser.value("display-group-ipc");
+        if (parser.isSet("display-group-size")) {
+            const auto size = parser.getResolutionOptionValue("display-group-size");
+            m_DisplayGroup.width = size.first;
+            m_DisplayGroup.height = size.second;
+        }
+        if (parser.isSet("display-group-fps")) {
+            m_DisplayGroup.fps = parser.getIntOption("display-group-fps");
+        }
+        if (parser.isSet("display-group-display")) {
+            m_DisplayGroup.displayIndex = parser.getIntOption("display-group-display");
+        }
+        m_DisplayGroup.fullscreen = parser.isSet("display-group-fullscreen");
+        QString error;
+        if (!DisplayGroup::validateMemberOptions(m_DisplayGroup, &error)) {
+            parser.showError(QString("Invalid display group options: %1").arg(error));
+        }
+    }
+
     // This method will not return and terminates the process if --version or
     // --help is specified
     parser.handleHelpAndVersionOptions();
@@ -575,6 +619,16 @@ QString StreamCommandLineParser::getHost() const
 QString StreamCommandLineParser::getAppName() const
 {
     return m_AppName;
+}
+
+DisplayGroup::SessionOptions StreamCommandLineParser::getDisplayGroupOptions() const
+{
+    return m_DisplayGroup;
+}
+
+int StreamCommandLineParser::getDisplayGroupLeaderHeads() const
+{
+    return m_DisplayGroupLeaderHeads;
 }
 
 ListCommandLineParser::ListCommandLineParser()

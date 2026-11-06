@@ -295,6 +295,9 @@ public:
     Q_PROPERTY(bool reverseScrollDirection MEMBER reverseScrollDirection NOTIFY reverseScrollDirectionChanged)
     Q_PROPERTY(bool swapFaceButtons MEMBER swapFaceButtons NOTIFY swapFaceButtonsChanged)
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
+    // Experimental: stream this many host displays, one window each (0 = off).
+    // Only used when the host advertises display group support.
+    Q_PROPERTY(int displayGroupHeads MEMBER displayGroupHeads NOTIFY displayGroupHeadsChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
     Q_PROPERTY(Language language MEMBER language NOTIFY languageChanged)
     Q_PROPERTY(ScreenCombinationMode screenCombinationMode MEMBER screenCombinationMode NOTIFY screenCombinationModeChanged)
@@ -374,6 +377,7 @@ public:
     bool reverseScrollDirection;
     bool swapFaceButtons;
     bool keepAwake;
+    int displayGroupHeads;
     int packetSize;
     AudioConfig audioConfig;
     VideoCodecConfig videoCodecConfig;
@@ -474,6 +478,7 @@ signals:
     void swapFaceButtonsChanged();
     void captureSysKeysModeChanged();
     void keepAwakeChanged();
+    void displayGroupHeadsChanged();
     void languageChanged();
     void screenCombinationModeChanged();
     void enableMicrophoneChanged();

@@ -272,10 +272,14 @@ SOURCES += \
     streaming/input/shortcuts.cpp \
     streaming/input/hostkeys.cpp \
     streaming/input/hostkeysender.cpp \
+    streaming/input/keyboardsink.cpp \
     streaming/input/mouse.cpp \
     streaming/input/touchpad.cpp \
     streaming/input/reltouch.cpp \
     streaming/session.cpp \
+    streaming/sessiondisplaygroup.cpp \
+    streaming/displaygroup.cpp \
+    streaming/displaygroupipc.cpp \
     streaming/sessionhostactions.cpp \
     streaming/sessionfiledrop.cpp \
     streaming/hostcommandrunner.cpp \
@@ -374,7 +378,10 @@ HEADERS += \
     streaming/input/input.h \
     streaming/input/gamepadsensorrate.h \
     streaming/input/keyboardstate.h \
+    streaming/input/keyboardsink.h \
     streaming/session.h \
+    streaming/displaygroup.h \
+    streaming/displaygroupipc.h \
     streaming/recoverybudget.h \
     streaming/videocallbacks.h \
     streaming/hostcommandrunner.h \

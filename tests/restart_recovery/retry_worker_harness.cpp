@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 #include "recoverybudget.h"
+#include "displaygroup.h"
 
 using Uint32 = uint32_t;
 using Uint64 = uint64_t;
@@ -278,6 +279,10 @@ public:
         ++outcomeCount;
     }
     // HOST_FRAME_MARKER
+    DisplayGroup::SessionOptions m_DisplayGroup;
+    std::vector<QString> displayGroupStops;
+    bool isDisplayGroupMember() const { return m_DisplayGroup.role == DisplayGroup::Role::Member; }
+    void stopDisplayGroup(const char* reason) { displayGroupStops.push_back(reason); }
     void teardownUsbTunnel() {}
     void stopSunshineAbr() {}
     void updateDualSenseHapticsControllerTarget() {}
@@ -397,10 +402,37 @@ int main()
         for (const auto& text : session.toasts)
             falseHealthyToast |= text == "Reconnected";
         check(!falseHealthyToast, "success without recovered frame must not claim Reconnected");
+        check(session.displayGroupStops.empty(),
+              "an ordinary session's reconnect never touches display groups");
         clockMs = 50100;
         workerSuccess = false;
         session.tryReconnect();
         check(clockMs <= 60110, "repeated restart must retain original deadline");
+    }
+    {
+        // The host ends a display group with the leader's stream, so a
+        // reconnecting leader ends its members before it resumes as N=1.
+        reset();
+        Session session;
+        session.m_DisplayGroup.role = DisplayGroup::Role::Leader;
+        session.m_RecoveryBudget.begin(clockMs);
+        workerSuccess = true;
+        check(session.tryReconnect(), "leader reconnect succeeds");
+        check(session.displayGroupStops.size() == 1 &&
+                  session.displayGroupStops[0] == "leader reconnecting",
+              "a reconnecting leader ends its display group once");
+    }
+    {
+        // A member keeps its leader link and rejoins its head.
+        reset();
+        Session session;
+        session.m_DisplayGroup.role = DisplayGroup::Role::Member;
+        session.m_RecoveryBudget.begin(clockMs);
+        workerSuccess = true;
+        check(session.tryReconnect(), "member reconnect succeeds");
+        check(session.displayGroupStops.empty(), "a reconnecting member keeps its link");
+        session.setShouldExit(true);
+        check(!session.m_Preferences->quitAppAfter, "a member never asks to quit the leader's app");
     }
     {
         reset();

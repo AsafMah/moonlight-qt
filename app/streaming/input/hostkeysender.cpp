@@ -1,4 +1,5 @@
 #include "hostkeys.h"
+#include "keyboardsink.h"
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -22,9 +23,9 @@ bool HostKeys::send(const ShortcutBinding& binding)
 
     bool ok = true;
     for (const KeyStroke& stroke : keyStrokes) {
-        const int rc = LiSendKeyboardEvent2(short(0x8000 | stroke.keyCode),
-                                            stroke.down ? KEY_ACTION_DOWN : KEY_ACTION_UP,
-                                            char(stroke.modifiers), 0);
+        const int rc = KeyboardSink::sendKeyboardEvent2(
+            short(0x8000 | stroke.keyCode), stroke.down ? KEY_ACTION_DOWN : KEY_ACTION_UP,
+            char(stroke.modifiers), 0);
         if (rc != 0) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "LiSendKeyboardEvent2 failed: rc=%d action=%s vk=0x%04x", rc,

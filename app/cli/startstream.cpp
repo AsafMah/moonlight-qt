@@ -100,9 +100,20 @@ public:
                 if (-1 != index) {
                     app = m_Computer->appList[index];
                     m_TimeoutTimer->stop();
-                    if (isNotStreaming() || isStreamingApp(app)) {
+                    if (m_DisplayGroup.role == DisplayGroup::Role::Member && !isStreamingApp(app)) {
+                        // A member only joins its leader's running app.
+                        m_State = StateFailure;
+                        emit q->failed(
+                            QObject::tr("The display group's app is no longer running on %1.")
+                                .arg(m_Computer->name));
+                    } else if (isNotStreaming() || isStreamingApp(app)) {
                         m_State = StateStartSession;
                         session = new Session(m_Computer, app, m_Preferences);
+                        if (m_DisplayGroup.role == DisplayGroup::Role::Member) {
+                            session->setDisplayGroupOptions(m_DisplayGroup);
+                        } else if (m_DisplayGroupLeaderHeads > 0) {
+                            session->setDisplayGroupLeaderHeads(m_DisplayGroupLeaderHeads);
+                        }
                         emit q->sessionCreated(app.name, session);
                     } else {
                         emit q->appQuitRequired(getCurrentAppName());
@@ -179,6 +190,8 @@ public:
     NvComputer *m_Computer;
     State m_State;
     QTimer *m_TimeoutTimer;
+    DisplayGroup::SessionOptions m_DisplayGroup;
+    int m_DisplayGroupLeaderHeads = 0;
 };
 
 Launcher::Launcher(QString computer, QString app,
@@ -199,6 +212,13 @@ Launcher::Launcher(QString computer, QString app,
 
 Launcher::~Launcher()
 {
+}
+
+void Launcher::setDisplayGroup(const DisplayGroup::SessionOptions &member, int leaderHeads)
+{
+    Q_D(Launcher);
+    d->m_DisplayGroup = member;
+    d->m_DisplayGroupLeaderHeads = leaderHeads;
 }
 
 void Launcher::execute(ComputerManager *manager)

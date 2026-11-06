@@ -70,6 +70,7 @@ one manual upgrade because its checker still points upstream.
 | ds5_ir_renderer | DualSense IR 渲染、PCM 边界和控制报文 | Windows |
 | ds5_haptics_worker | 生产发送线程的状态顺序、阻塞写入、设备切换、停止屏障和短效果排空 | Windows |
 | keyboard_state | 扩展键区分、国际键标志、失焦松键失败重试 | Windows |
+| display_group | 多屏会话组(Option G)客户端:serverinfo 能力/launch、resume 参数、0x55F0 布局(假主机字节经 common-c 解析)、成员窗口规划、成员命令行、本地 socket 协议、主控端键盘中继与成员断开松键、主控结束/崩溃时成员退出、KeyboardSink 默认直发;`test_display_group_gate.py` 源码门禁保证未启用时单屏请求逐字节不变 | Windows + Ubuntu(unittest) |
 | system_key_capture | Production capture policy and menu-toggle lifecycle with fake native input | Ubuntu(unittest + C++) |
 | resolution_match | 客户端驱动分辨率:Session 方法 + 源码门禁(python unittest,需 C++ 编译器) | Ubuntu(unittest + C++) |
 | gamepad_sensor_rate | 低传感器频率周期存储、禁用值、全频率范围限速上界 | Windows |

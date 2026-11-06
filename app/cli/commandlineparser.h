@@ -1,6 +1,7 @@
 #pragma once
 
 #include "settings/streamingpreferences.h"
+#include "streaming/displaygroup.h"
 
 #include <QMap>
 #include <QString>
@@ -63,10 +64,14 @@ public:
 
     QString getHost() const;
     QString getAppName() const;
+    DisplayGroup::SessionOptions getDisplayGroupOptions() const;
+    int getDisplayGroupLeaderHeads() const;
 
 private:
     QString m_Host;
     QString m_AppName;
+    DisplayGroup::SessionOptions m_DisplayGroup;
+    int m_DisplayGroupLeaderHeads = 0;
     QMap<QString, StreamingPreferences::WindowMode> m_WindowModeMap;
     QMap<QString, StreamingPreferences::AudioConfig> m_AudioConfigMap;
     QMap<QString, StreamingPreferences::VideoCodecConfig> m_VideoCodecMap;

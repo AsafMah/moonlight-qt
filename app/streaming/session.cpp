@@ -25,6 +25,7 @@
 #include "backend/usbforwardingenvironment.h"
 #include "backend/usbforwardinglocalserver.h"
 #include "gui/windowsdisplaygeometry.h"
+#include "streaming/displaygroupipc.h"
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -2280,6 +2281,12 @@ bool Session::initialize(QQuickWindow* qtWindow)
         m_StreamConfig.height = (scaledHeight / 8) * 8;
     }
 
+    // A display group member streams its head at the size its leader chose.
+    if (isDisplayGroupMember() && m_DisplayGroup.width > 0 && m_DisplayGroup.height > 0) {
+        m_StreamConfig.width = m_DisplayGroup.width;
+        m_StreamConfig.height = m_DisplayGroup.height;
+    }
+
     int x, y, width, height;
     getWindowDimensions(x, y, width, height);
 
@@ -2300,6 +2307,9 @@ bool Session::initialize(QQuickWindow* qtWindow)
     m_VideoCallbacks.setup = drSetup;
 
     m_StreamConfig.fps = m_Preferences->fps;
+    if (isDisplayGroupMember() && m_DisplayGroup.fps > 0) {
+        m_StreamConfig.fps = m_DisplayGroup.fps;
+    }
 
     // On a fractional refresh rate (119.88 Hz shows as 120), ask the host to
     // capture at exactly the panel's rate when the user picked its rounded
@@ -2365,7 +2375,8 @@ bool Session::initialize(QQuickWindow* qtWindow)
         break;
     }
 
-    m_StreamConfig.enableMic = m_Preferences->enableMicrophone;
+    // The microphone belongs to the display group's leader.
+    m_StreamConfig.enableMic = m_Preferences->enableMicrophone && !isDisplayGroupMember();
 
     LiInitializeAudioCallbacks(&m_AudioCallbacks);
     m_AudioCallbacks.init = arInit;
@@ -2465,6 +2476,12 @@ bool Session::initialize(QQuickWindow* qtWindow)
         m_FullScreenFlag = SDL_WINDOW_FULLSCREEN;
 #endif
         break;
+    }
+
+    // Display group members cover their own client monitor without changing
+    // its mode, so the leader's monitor is never disturbed.
+    if (isDisplayGroupMember() && WMUtils::isRunningDesktopEnvironment()) {
+        m_FullScreenFlag = SDL_WINDOW_FULLSCREEN_DESKTOP;
     }
 
 #if !SDL_VERSION_ATLEAST(2, 0, 11)
@@ -2831,10 +2848,11 @@ private:
 
     void run() override
     {
-        // Only quit the running app if our session terminated gracefully
-        bool shouldQuit =
-                !m_Session->m_UnexpectedTermination &&
-                m_Session->m_Preferences->quitAppAfter;
+        // Only quit the running app if our session terminated gracefully.
+        // A display group member never quits the app; it belongs to the leader.
+        bool shouldQuit = !m_Session->m_UnexpectedTermination &&
+                          m_Session->m_Preferences->quitAppAfter &&
+                          !m_Session->isDisplayGroupMember();
 
         // Notify the UI
         if (shouldQuit) {
@@ -2854,7 +2872,11 @@ private:
         if (m_Session->m_DualSenseHapticsRenderer != nullptr) {
             m_Session->m_DualSenseHapticsRenderer->setControllerTarget(-1);
         }
+        // A leader releases its members' keys and tells them to quit while its
+        // connection can still send; the host ends the group with this stream.
+        m_Session->stopDisplayGroup("session ended");
         LiStopConnection();
+        LiSetDisplayGroupCallback(nullptr);
         stopControllerRumbleAtConnectionBoundary(nullptr);
         delete m_Session->m_DualSenseHapticsRenderer;
         m_Session->m_DualSenseHapticsRenderer = nullptr;
@@ -2891,6 +2913,11 @@ void Session::getWindowDimensions(int& x, int& y,
     if (m_Window != nullptr) {
         displayIndex = SDL_GetWindowDisplayIndex(m_Window);
         SDL_assert(displayIndex >= 0);
+    }
+    // A display group member opens on the client display its leader picked.
+    else if (isDisplayGroupMember() && m_DisplayGroup.displayIndex >= 0 &&
+             m_DisplayGroup.displayIndex < SDL_GetNumVideoDisplays()) {
+        displayIndex = m_DisplayGroup.displayIndex;
     }
     // Create our window on the same display that Qt's UI
     // was being displayed on.
@@ -4968,6 +4995,17 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
     case SDL_CODE_FLUSH_WINDOW_EVENT_BARRIER:
         m_FlushingWindowEventsRef--;
         break;
+    case k_SdlCodeDisplayGroupLayout:
+        serviceDisplayGroup();
+        break;
+    case k_SdlCodeDisplayGroupEnded: {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Display group ended; closing this head");
+        setShouldExit();
+        SDL_Event quitEvent = {};
+        quitEvent.type = SDL_QUIT;
+        SDL_PushEvent(&quitEvent);
+        break;
+    }
     case SDL_CODE_PYROWAVE_FATAL: {
         // PyroWave gave up after its bounded recovery. End the stream with
         // the failing stage; the codec is never switched mid-stream.
@@ -5745,6 +5783,13 @@ bool Session::tryReconnect(ReconnectReason reason, bool* teardownStarted)
         m_InputHandler->raiseAllKeys(false, true);
     }
 
+    // The host ends a display group with the leader's stream, and a leader
+    // that comes back resumes as an ordinary session. Members keep their link
+    // and rejoin their head.
+    if (m_DisplayGroup.role == DisplayGroup::Role::Leader) {
+        stopDisplayGroup("leader reconnecting");
+    }
+
     // The decoder can only be used between LiStartConnection() and
     // LiStopConnection(), so tear it down before stopping the dead connection.
     SDL_LockMutex(m_DecoderLock);
@@ -6139,6 +6184,10 @@ bool Session::startConnectionAsync()
 {
     m_ConnectionGeneration.fetch_add(1);
 
+    if (!startDisplayGroupMemberLink()) {
+        return false;
+    }
+
     bool enableGameOptimizations;
     if (m_Computer->isNvidiaServerSoftware) {
         // GFE will set all settings to 720p60 if it doesn't recognize
@@ -6215,6 +6264,13 @@ bool Session::startConnectionAsync()
     bool remoteFps = m_Preferences->remoteFps;
     int originalStreamWidth = m_Preferences->width;
     int originalStreamHeight = m_Preferences->height;
+    if (isDisplayGroupMember()) {
+        // A member asks for its head's mode; the host resizes only that head.
+        remoteResolution = false;
+        remoteFps = false;
+        originalStreamWidth = m_StreamConfig.width;
+        originalStreamHeight = m_StreamConfig.height;
+    }
     if (m_StreamQualityOverride) {
         if (m_StreamQualityOverride->width != m_Preferences->width ||
             m_StreamQualityOverride->height != m_Preferences->height) {
@@ -6255,25 +6311,25 @@ bool Session::startConnectionAsync()
                                                "The original Desktop app is no longer available");
             }
         }
-        const bool resumingSession = hostConnectionInfo.currentGameId != 0;
+        // A member always joins the leader's running app with /resume.
+        const bool resumingSession =
+            hostConnectionInfo.currentGameId != 0 || isDisplayGroupMember();
+        const QString displayGroupArgs = prepareDisplayGroupLaunch(http, resumingSession);
+        QString launchResponse;
         RemoteStreamConfig remoteStreamConfig(
             remoteResolution, m_Preferences->remoteResolutionWidth,
             m_Preferences->remoteResolutionHeight, remoteFps, m_Preferences->remoteFpsRate,
             originalStreamWidth, originalStreamHeight, maxBrightness, minBrightness,
             maxAverageBrightness, sdrWhiteBrightness);
         m_LastClientSdrWhiteNits = sdrWhiteBrightness;
-        http.startApp(resumingSession ? "resume" : "launch",
-                      m_Computer->isNvidiaServerSoftware,
-                      m_App.id, &m_StreamConfig,
-                      enableGameOptimizations,
+        http.startApp(resumingSession ? "resume" : "launch", m_Computer->isNvidiaServerSoftware,
+                      m_App.id, &m_StreamConfig, enableGameOptimizations,
                       m_Preferences->playAudioOnHost,
-                      m_InputHandler->getAttachedGamepadMask(),
-                      !m_Preferences->multiController,
-                      rtspSessionUrl,
-                      m_Preferences->screenCombinationMode,
-                      m_LaunchUseVdd,
-                      m_LaunchDisplayName,
-                      remoteStreamConfig);
+                      isDisplayGroupMember() ? 0 : m_InputHandler->getAttachedGamepadMask(),
+                      !m_Preferences->multiController, rtspSessionUrl,
+                      m_Preferences->screenCombinationMode, m_LaunchUseVdd, m_LaunchDisplayName,
+                      remoteStreamConfig, displayGroupArgs, &launchResponse);
+        finishDisplayGroupLaunch(launchResponse, resumingSession);
         m_RestartRecoveryEligible =
             restartRecoveryAppEligible(m_App.name.toStdString(), m_App.isAppCollectorGame, m_App.id,
                                        !http.serverCert().isNull() && http.httpsPort() != 0);
@@ -6385,6 +6441,9 @@ bool Session::startConnectionAsync()
 
     prepareVideoCallbacksForConnection(&m_VideoCallbacks);
 
+    LiSetDisplayGroupCallback(
+        m_DisplayGroup.role != DisplayGroup::Role::None ? Session::clDisplayGroup : nullptr);
+
     if (!prepareConnectionAttemptControl()) {
         return false;
     }
@@ -6449,9 +6508,13 @@ bool Session::startConnectionAsync()
 
     emit connectionStarted();
     startSunshineAbr();
-    startFileMappingUxProbe();
-    startFileMappingSmokeProbe();
-    if (m_Preferences->enableMicrophone) {
+    if (!isDisplayGroupMember()) {
+        // File mapping and the microphone belong to the display group's leader.
+        startFileMappingUxProbe();
+        startFileMappingSmokeProbe();
+    }
+    startDisplayGroupLeaderHub();
+    if (m_Preferences->enableMicrophone && !isDisplayGroupMember()) {
         // Use the deferred mic toggle mechanism instead of QueuedConnection to avoid
         // heap corruption when creating QAudioSource within nested event loops (processEvents).
         m_PendingMicToggle = true;
@@ -6543,7 +6606,12 @@ void Session::setShouldExit(bool quitHostApp)
     // caller doesn't override to force quit, let the preferences
     // dictate what we do.
     if (quitHostApp) {
-        m_Preferences->quitAppAfter = true;
+        if (isDisplayGroupMember()) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Display group member: leaving the host app to the leader");
+        } else {
+            m_Preferences->quitAppAfter = true;
+        }
     }
 
     m_ShouldExit = true;
@@ -6566,6 +6634,7 @@ void Session::start()
     // ClipboardHelperClient and flushed from the SDL loop. With sync disabled
     // (or nothing selected to sync) no helper runs and host frames are dropped.
     if (m_ClipboardHelper == nullptr && m_Preferences->clipboardSyncEnabled &&
+        !isDisplayGroupMember() &&
         (m_Preferences->clipboardSyncText || m_Preferences->clipboardSyncImages ||
          m_Preferences->clipboardReceiveFiles || m_Preferences->clipboardDropFiles ||
          m_Preferences->clipboardSyncFiles)) {
@@ -6627,6 +6696,11 @@ void Session::start()
     // NB: m_InputHandler must be initialized before starting the connection.
     m_InputHandler = new SdlInputHandler(*m_Preferences, m_StreamConfig.width,
                                          m_StreamConfig.height, enablePhysicalDualSenseHaptics);
+    if (isDisplayGroupMember()) {
+        // The host cursor is global across heads: members point absolutely
+        // into their own head and leave relative motion to the leader.
+        m_InputHandler->setAbsoluteMouseMode(true);
+    }
     setupStatsOverlayShortcuts();
     registerHostActionShortcuts();
     registerFileTransferShortcuts();
@@ -6902,7 +6976,7 @@ void Session::exec()
     //
     // Only initial creation uses the GUI frame. Live mode changes restore
     // the remembered streaming window's windowed bounds.
-    if (m_IsFullScreen && m_QtWindow != nullptr) {
+    if (m_IsFullScreen && m_QtWindow != nullptr && !isDisplayGroupMember()) {
         const QRect creationGeometry = qtWindowCreationGeometryForSdl(m_QtWindow);
         if (creationGeometry.isValid()) {
             x = creationGeometry.x();
@@ -7485,6 +7559,9 @@ void Session::exec()
                 (int)(Sint32)(m_LiveResolutionTransaction.deadline() - SDL_GetTicks());
             waitTimeoutMs = qMin(waitTimeoutMs, qMax(transactionDelayMs, 1));
         }
+        if (const int displayGroupDelayMs = displayGroupWaitTimeoutMs(); displayGroupDelayMs >= 0) {
+            waitTimeoutMs = qMin(waitTimeoutMs, qMax(displayGroupDelayMs, 1));
+        }
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         if (const int replayDelayMs = m_StylusReplayTest ? m_StylusReplayTest->nextDelayMs() : -1;
             replayDelayMs >= 0) {
@@ -7498,6 +7575,7 @@ void Session::exec()
             processFileMappingMountResult();
             processQtEventsDuringStream(true);
             processSunshineAbrFeedback();
+            serviceDisplayGroup();
             continue;
         }
 #else
@@ -7519,9 +7597,15 @@ void Session::exec()
             processFileMappingMountResult();
             processQtEventsDuringStream();
             processSunshineAbrFeedback();
+            serviceDisplayGroup();
             continue;
         }
 #endif
+        // Gamepads belong to the display group's leader.
+        if (isDisplayGroupMember() && event.type >= SDL_JOYAXISMOTION &&
+            event.type < SDL_FINGERDOWN) {
+            continue;
+        }
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
         // Developer-only replay isolation state, evaluated once per SDL event.
         const bool filterLocalMouseForStylusReplay =

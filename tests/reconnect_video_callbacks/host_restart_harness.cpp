@@ -211,6 +211,10 @@ public:
     }
     QString tr(const char* text) { return QString::fromUtf8(text); }
     void displayLaunchError(const QString&) {}
+    // Ordinary (non display group) session
+    bool isDisplayGroupMember() const { return false; }
+    QString prepareDisplayGroupLaunch(NvHTTP&, bool) { return {}; }
+    void finishDisplayGroupLaunch(const QString&, bool) {}
     bool attempt()
     {
         bool remoteResolution = false, remoteFps = false, enableGameOptimizations = false;

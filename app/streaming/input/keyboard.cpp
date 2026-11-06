@@ -3,6 +3,7 @@
 #include <Limelight.h>
 #include "SDL_compat.h"
 #include "keyboardstate.h"
+#include "keyboardsink.h"
 
 #define VK_0 0x30
 #define VK_A 0x41
@@ -118,7 +119,7 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
             }
 
             // Send this text to the PC
-            LiSendUtf8TextEvent(text, (unsigned int)strlen(text));
+            KeyboardSink::sendUtf8TextEvent(text, (unsigned int)strlen(text));
 
             // SDL_GetClipboardText() allocates, so we must free
             SDL_free((void*)text);
@@ -604,10 +605,7 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
                  (int)(unsigned char)flags,
                  (int)m_KeysDown.count());
 
-    int rc = LiSendKeyboardEvent2(0x8000 | keyCode,
-                                  keyAction,
-                                  modifiers,
-                                  flags);
+    int rc = KeyboardSink::sendKeyboardEvent2(0x8000 | keyCode, keyAction, modifiers, flags);
     if (rc != 0) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "LiSendKeyboardEvent2 failed: rc=%d action=%s scancode=%d vk=0x%04x keysDown=%d",
@@ -644,9 +642,9 @@ void SdlInputHandler::raiseAllKeys(bool clearLocalKeys, bool includeForwardedKey
         m_KeysDown, m_ForwardedKeys, clearLocalKeys, includeForwardedKeys, clearForwardedKeys,
         [](uint32_t keyDown) {
             const short code = KeyboardState::code(keyDown);
-            int rc =
-                LiSendKeyboardEvent2(code, KEY_ACTION_UP, KeyboardState::extendedModifier(keyDown),
-                                     KeyboardState::flags(keyDown));
+            int rc = KeyboardSink::sendKeyboardEvent2(code, KEY_ACTION_UP,
+                                                      KeyboardState::extendedModifier(keyDown),
+                                                      KeyboardState::flags(keyDown));
             if (rc != 0) {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                             "LiSendKeyboardEvent2 failed while raising key: rc=%d vk=0x%04x", rc,

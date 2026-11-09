@@ -12,7 +12,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
     def test_green_integration_release_and_token_fallback(self):
         workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
-        self.assertIn("branches: [ master, main, integration ]", workflow)
+        self.assertIn("branches: [ master, main, integration, staging/next-release ]", workflow)
         release = workflow[workflow.index("\n  release:\n"):]
         self.assertIn("github.ref == 'refs/heads/integration'", release)
         self.assertIn("github.token", release)
@@ -26,6 +26,16 @@ class ReleaseWorkflowTests(unittest.TestCase):
                       release)
         self.assertNotIn("softprops/action-gh-release", release,
                          "Verified artifact publication must not silently overwrite existing assets")
+
+    def test_staging_build_does_not_publish(self):
+        workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+        release = workflow[workflow.index("\n  release:\n"):]
+        self.assertIn("staging/next-release", workflow)
+        self.assertIn(
+            "if: github.ref == 'refs/heads/integration' && "
+            "(github.event_name == 'push' || github.event_name == 'workflow_dispatch')",
+            release,
+        )
 
     def test_side_branch_cannot_publish(self):
         workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")

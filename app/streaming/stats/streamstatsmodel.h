@@ -76,6 +76,7 @@ private:
     uint64_t m_SessionFramesRendered = 0;
     uint64_t m_SessionFramesNetworkDropped = 0;
     uint64_t m_SessionFramesLocalDropped = 0;
+    uint64_t m_SessionFramesHostSkipped = 0;
     uint64_t m_SessionFramesPacerDropped = 0;
     uint64_t m_SessionFramesPacerEligible = 0;
 

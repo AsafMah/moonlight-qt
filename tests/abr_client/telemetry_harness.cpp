@@ -219,6 +219,80 @@ int main(int argc, char** argv)
         split = race.classify(41, 1, restarted);
         require(split.networkDropped == 0 && split.localDropped == 1,
                 "Restarted discard counters were misread");
+
+        // Recorded host send-queue drop: 74 frames after frame 100 were never
+        // packetized, so common-c recorded them as one host-skipped range.
+        FakeDiscards noDiscards;
+        FakeDiscards hostSkips;
+        FrameGapClassifier host;
+        host.start(noDiscards, hostSkips);
+        hostSkips.add(101, 174, 74);
+        split = host.classify(175, 74, noDiscards, hostSkips);
+        require(split.hostSkipped == 74 && split.networkDropped == 0 && split.localDropped == 0,
+                "A host-skipped range was not classified as host skips");
+        StatsWindow skipped;
+        addFrameGap(skipped, split);
+        skipped.totalFrames += 1;
+        skipped.receivedFrames = skipped.decodedFrames = 1;
+        skipped.decodedFps = 60;
+        session.m_StatsModel.publishWindow(skipped, skipped, 6000000);
+        const auto hostView = session.m_StatsModel.snapshot(6000000);
+        session.sendSunshineAbrFeedback();
+        require(AbrFeedbackTask::calls == 5 && AbrFeedbackTask::loss == 0 &&
+                    AbrFeedbackTask::dropped == 0,
+                "Host-skipped frames were sent to ABR as network loss");
+        require(hostView.networkLossPercent == 0 && hostView.sessionFramesHostSkipped == 74 &&
+                    hostView.sessionFramesTotal == 48 && hostView.hostSkipPercent > 98,
+                "Host-skipped frames were not shown apart from the frame total");
+
+        // The same burst lost on the network (no recorded range) stays loss.
+        split = host.classify(250, 74, noDiscards, hostSkips);
+        require(split.networkDropped == 74 && split.hostSkipped == 0,
+                "A network-lost burst was not counted as network loss");
+        StatsWindow lost;
+        addFrameGap(lost, split);
+        lost.totalFrames += 1;
+        lost.receivedFrames = lost.decodedFrames = 1;
+        lost.decodedFps = 60;
+        session.m_StatsModel.publishWindow(lost, lost, 7000000);
+        session.sendSunshineAbrFeedback();
+        require(AbrFeedbackTask::calls == 6 && AbrFeedbackTask::dropped == 74 &&
+                    AbrFeedbackTask::loss > 98 && AbrFeedbackTask::loss < 99,
+                "Genuine network loss was not reported to ABR as before");
+
+        // Mixed gap after 250: host skipped 251..260, a flush discarded
+        // 261..265 and the network lost 266..269.
+        hostSkips.add(251, 260, 10);
+        noDiscards.add(261, 265, 5);
+        split = host.classify(270, 19, noDiscards, hostSkips);
+        require(split.hostSkipped == 10 && split.localDropped == 5 && split.networkDropped == 4,
+                "A mixed gap was not split into host, local and network frames");
+
+        // Only the part of a late-recorded range inside the gap counts, and a
+        // range ending after the dequeued frame waits for the next gap.
+        FakeDiscards lateDiscards;
+        FakeDiscards lateSkips;
+        FrameGapClassifier partial;
+        partial.start(lateDiscards, lateSkips);
+        lateSkips.add(12, 16, 5);
+        lateSkips.add(21, 22, 2);
+        split = partial.classify(20, 5, lateDiscards, lateSkips);
+        require(split.hostSkipped == 2 && split.networkDropped == 3,
+                "A range partly before the gap was not intersected with it");
+        split = partial.classify(23, 2, lateDiscards, lateSkips);
+        require(split.hostSkipped == 2 && split.networkDropped == 0,
+                "A host range recorded after the dequeue was lost before its gap");
+
+        // Congestion: the host skips every other frame and each frame it does
+        // send is lost, until the skip ranges overflow the ring. Frames
+        // 25..33 (odd) were sent, so only the still-visible skips (26..32)
+        // are host skips; the overwritten one and the sent frames are loss.
+        for (uint32_t frame = 24; frame < 34; frame += 2) {
+            lateSkips.add(frame, frame, 1);
+        }
+        split = partial.classify(34, 10, lateDiscards, lateSkips);
+        require(split.hostSkipped == 4 && split.networkDropped == 6 && split.localDropped == 0,
+                "Host-skip ring overflow hid sent-and-lost frames from network loss");
     } catch (const std::exception& error) {
         qCritical("FAIL: %s", error.what());
         return 1;

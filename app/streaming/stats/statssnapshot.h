@@ -36,6 +36,10 @@ struct StatsWindow
     // Complete frames moonlight-common-c discarded itself (decode unit queue
     // overflow, the IDR flush and the IDR wait after it). Not network loss.
     uint32_t localDroppedFrames = 0;
+    // Frames the host encoded but never sent (dropped from its send queue),
+    // proven by contiguous packet numbering around them. Left out of
+    // totalFrames, so they are neither network loss nor counted as expected.
+    uint32_t hostSkippedFrames = 0;
     // Frames eligible for a Pacer drop. PyroWave can drop before decode, so
     // this may exceed decodedFrames; zero falls back to decodedFrames.
     uint32_t pacerDropEligibleFrames = 0;
@@ -164,6 +168,9 @@ struct StatsSnapshot
     double networkLossPercent = 0; // frames lost by the network
     double pacerDropPercent = 0;   // decoded frames dropped by the Pacer
     double localDropPercent = 0;   // complete frames discarded by the client before decode
+    // Frames the host never sent, as a share of those it encoded
+    // (totalFrames + hostSkippedFrames). Excluded from networkLossPercent.
+    double hostSkipPercent = 0;
     uint32_t queueSamples = 0;     // rendered frames with a measured Pacer queue time
     double bitrateMbps = std::nan("");
     uint64_t bitrateTimestampUs = 0;
@@ -188,4 +195,5 @@ struct StatsSnapshot
     uint64_t sessionFramesPacerDropped = 0;
     uint64_t sessionFramesPacerEligible = 0;
     uint64_t sessionFramesLocalDropped = 0;
+    uint64_t sessionFramesHostSkipped = 0; // not part of sessionFramesTotal
 };

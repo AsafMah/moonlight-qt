@@ -69,6 +69,7 @@ void addVideoStats(const VIDEO_STATS& src, VIDEO_STATS& dst)
     dst.networkDroppedFrames += src.networkDroppedFrames;
     dst.pacerDroppedFrames += src.pacerDroppedFrames;
     dst.localDroppedFrames += src.localDroppedFrames;
+    dst.hostSkippedFrames += src.hostSkippedFrames;
     dst.totalReassemblyTimeUs += src.totalReassemblyTimeUs;
     dst.totalDecodeTimeUs += src.totalDecodeTimeUs;
     dst.totalPacerTimeUs += src.totalPacerTimeUs;
@@ -516,15 +517,17 @@ void PyrowaveVideoDecoder::accountReceivedFrame(PDECODE_UNIT du)
     // Read after the decode unit was dequeued, so discards before it are visible
     VIDEO_LOCAL_DISCARD_STATS discards;
     LiGetVideoLocalDiscardStats(&discards);
+    VIDEO_HOST_SKIP_STATS hostSkips;
+    LiGetVideoHostSkipStats(&hostSkips);
     if (!m_LastFrameNumber) {
         m_ActiveWndVideoStats.measurementStartUs = LiGetMicroseconds();
         m_LastFrameNumber = du->frameNumber;
-        m_FrameGaps.start(discards);
+        m_FrameGaps.start(discards, hostSkips);
     } else {
         // Any frame number greater than m_LastFrameNumber + 1 represents a dropped frame
         addFrameGap(m_ActiveWndVideoStats,
                     m_FrameGaps.classify(du->frameNumber, du->frameNumber - (m_LastFrameNumber + 1),
-                                         discards));
+                                         discards, hostSkips));
         m_LastFrameNumber = du->frameNumber;
     }
 
@@ -830,11 +833,14 @@ void PyrowaveVideoDecoder::stringifyVideoStats(const VIDEO_STATS& stats, char* o
 
         appendFormatted(
             output, length, offset,
-            " Network %s  Loss %.2f%%  Local drop %.2f%%  Bandwidth %s  {16}|  {18}Render "
-            "**%.2f**ms · Decode **%.2f**ms ",
+            " Network %s  Loss %.2f%%  Local drop %.2f%%  Host skip %.2f%%  Bandwidth %s  {16}|  "
+            "{18}Render **%.2f**ms · Decode **%.2f**ms ",
             rttString,
             stats.totalFrames ? (float)stats.networkDroppedFrames / stats.totalFrames * 100 : 0.0f,
             stats.totalFrames ? (float)stats.localDroppedFrames / stats.totalFrames * 100 : 0.0f,
+            stats.hostSkippedFrames ? (float)stats.hostSkippedFrames /
+                                          (stats.totalFrames + stats.hostSkippedFrames) * 100
+                                    : 0.0f,
             bandwidthString, (double)stats.totalRenderTimeUs / 1000.0 / stats.renderedFrames,
             stats.decodedFrames ? (double)stats.totalDecodeTimeUs / 1000.0 / stats.decodedFrames
                                 : 0.0);

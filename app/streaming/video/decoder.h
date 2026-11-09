@@ -16,6 +16,7 @@ typedef struct _VIDEO_STATS {
     uint32_t networkDroppedFrames;
     uint32_t pacerDroppedFrames;
     uint32_t localDroppedFrames;               // complete frames moonlight-common-c discarded
+    uint32_t hostSkippedFrames;                // never sent by the host; not in totalFrames
     uint16_t minHostProcessingLatency;         // low-res from RTP
     uint16_t maxHostProcessingLatency;         // low-res from RTP
     uint32_t totalHostProcessingLatency;       // low-res from RTP

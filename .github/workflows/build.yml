@@ -265,12 +265,16 @@ jobs:
       shell: pwsh
       env:
         QT_QPA_PLATFORM: offscreen
+        QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES: '1'
       run: |
         python -m pip install --require-hashes -r scripts\release-gates-requirements.txt
         if ($LASTEXITCODE -ne 0) { throw "Cannot install the pinned release PE reader" }
         $expected = python scripts\derive-version.py --field display
         if ($LASTEXITCODE -ne 0) { throw "Cannot derive application display version" }
-        $output = & scripts\run-built-test.ps1 -Exe build\build-x64-release\app\release\Moonlight.exe -TestArgs '--version'
+        $plugins = & qmake -query QT_INSTALL_PLUGINS
+        if ($LASTEXITCODE -ne 0) { throw "Cannot locate the offscreen Qt platform plugin" }
+        $env:QT_QPA_PLATFORM_PLUGIN_PATH = Join-Path $plugins 'platforms'
+        $output = & scripts\run-built-test.ps1 -Exe build\deploy-x64-release\Moonlight.exe -TestArgs '--version'
         if ($LASTEXITCODE -ne 0) { throw "Application --version failed" }
         if (@($output) -cnotcontains "Moonlight $expected") {
           throw "Application --version does not match $expected : $($output -join '; ')"

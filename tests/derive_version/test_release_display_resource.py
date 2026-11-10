@@ -62,8 +62,10 @@ class ReleaseDisplayResourceTests(unittest.TestCase):
         source = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
         step = source.split("    - name: Verify built application display version", 1)[1].split(
             "\n    - name:", 1)[0]
-        self.assertIn("run-built-test.ps1 -Exe build\\build-x64-release\\app\\release\\Moonlight.exe", step)
+        self.assertIn("run-built-test.ps1 -Exe build\\deploy-x64-release\\Moonlight.exe", step)
         self.assertIn("-TestArgs '--version'", step)
+        self.assertIn("QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES: '1'", step)
+        self.assertIn("QT_QPA_PLATFORM_PLUGIN_PATH", step)
         self.assertIn('-cnotcontains "Moonlight $expected"', step)
         self.assertLess(source.index("Verify built application display version"),
                         source.index("Upload portable artifact x64"))

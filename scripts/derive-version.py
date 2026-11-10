@@ -10,6 +10,8 @@ Version precedence:
 The script intentionally emits separate display/artifact/numeric forms because
 Windows file versions and Apple bundle versions must remain numeric, while
 application/about-box versions can include Git metadata.
+Integration GitHub Actions builds (or --release) use the numeric identity for
+display and artifact names; other builds retain the Git-describe forms.
 """
 
 from __future__ import annotations
@@ -127,7 +129,7 @@ def verify_upstream_release_base(source_root: Path) -> None:
                                "register the verified upstream tag before publishing")
 
 
-def derive(source_root: Path) -> dict[str, str]:
+def derive_build(source_root: Path) -> dict[str, str]:
     ci_version = os.environ.get("CI_VERSION", "").strip()
     fallback = read_fallback_version(source_root)
 
@@ -232,8 +234,22 @@ def derive(source_root: Path) -> dict[str, str]:
     }
 
 
+def derive(source_root: Path, *, release: bool = False) -> dict[str, str]:
+    result = derive_build(source_root)
+    if release or (os.environ.get("GITHUB_ACTIONS") == "true"
+                   and os.environ.get("GITHUB_REF") == "refs/heads/integration"):
+        if "dirty" in result["display"] or not re.fullmatch(
+                r"\d+\.\d+\.\d+(?:\.\d+)?(?:[+-]\d+\.g[0-9a-f]+)?",
+                result["display"]):
+            raise RuntimeError("Cannot derive a release version from a dirty or prerelease build")
+        result["display"] = result["artifact"] = result["numeric"]
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--release", action="store_true",
+                        help="Use the numeric release identity for display and artifact fields")
     parser.add_argument(
         "--verify-upstream", action="store_true",
         help="Fail if a reachable qiin release exceeds the derived base (requires network)",
@@ -261,7 +277,7 @@ def main() -> int:
     if args.verify_upstream:
         verify_upstream_release_base(source_root)
         return 0
-    info = derive(source_root)
+    info = derive(source_root, release=args.release)
 
     if args.format == "env":
         for key in ("base", "display", "artifact", "numeric", "describe", "commit"):

@@ -63,17 +63,6 @@ def numeric_tag(tag: str) -> tuple[int, ...]:
     return parts if len(parts) == 4 else parts + (0,)
 
 
-def artifact_numeric(version: str) -> tuple[int, ...]:
-    match = re.fullmatch(r"(\d+\.\d+\.\d+(?:\.\d+)?)(?:[+-](\d+)\.g[0-9a-f]+)?", version)
-    if match is None:
-        raise RuntimeError(f"Invalid asset version {version}")
-    parts = list(numeric_tag(match.group(1)))
-    parts[3] += int(match.group(2) or 0)
-    if any(part > 65535 for part in parts):
-        raise RuntimeError(f"Asset version exceeds numeric resource limits: {version}")
-    return tuple(parts)
-
-
 def pe_file_version(data: bytes) -> str:
     import pefile
 
@@ -87,6 +76,22 @@ def pe_file_version(data: bytes) -> str:
         ))
 
 
+def pe_display_version(data: bytes) -> str:
+    import pefile
+
+    with pefile.PE(data=data) as image:
+        versions = []
+        for entries in getattr(image, "FileInfo", []):
+            for entry in entries:
+                for table in getattr(entry, "StringTable", []):
+                    comment = table.entries.get(b"Comments", b"").decode("utf-8").rstrip("\0")
+                    if comment.startswith("VERSION_STR="):
+                        versions.append(comment.removeprefix("VERSION_STR="))
+        if not versions or len(set(versions)) != 1:
+            raise RuntimeError("Packaged executable has missing or conflicting display version")
+        return versions[0]
+
+
 def verify_package_versions(assets: list[Path], numeric: str, tag: str) -> None:
     expected = numeric_tag(numeric)
     if numeric_tag(tag) != expected:
@@ -98,7 +103,7 @@ def verify_package_versions(assets: list[Path], numeric: str, tag: str) -> None:
             r"(?:-(?:x86_64|aarch64|arm64))?\.(?:zip|exe|dmg|AppImage(?:\.zsync)?)",
             path.name,
         )
-        if name is None or artifact_numeric(name.group("version")) != expected:
+        if name is None or name.group("version") != numeric:
             raise RuntimeError(f"asset {path.name} version does not match derived version {numeric}")
         if path.name.startswith("Moonlight-VPlus-Portable-"):
             with zipfile.ZipFile(path) as archive:
@@ -114,6 +119,11 @@ def verify_package_versions(assets: list[Path], numeric: str, tag: str) -> None:
             continue
         if actual != numeric:
             raise RuntimeError(f"{path.name} FileVersion {actual} != derived version {numeric}")
+        if path.name.startswith("Moonlight-VPlus-Portable-"):
+            display = pe_display_version(data)
+            if display != numeric:
+                raise RuntimeError(
+                    f"{path.name} display version {display} != derived version {numeric}")
 
 
 def verify_release_identity(release: dict, tag: str, head: str) -> None:
@@ -223,9 +233,9 @@ def main():
     script = Path(__file__).with_name("derive-version.py")
     environment = dict(os.environ)
     environment.pop("CI_VERSION", None)
-    version = subprocess.check_output([sys.executable, str(script), "--field", "artifact"],
+    version = subprocess.check_output([sys.executable, str(script), "--release", "--field", "artifact"],
                                       text=True, env=environment).strip()
-    numeric = subprocess.check_output([sys.executable, str(script), "--field", "numeric"],
+    numeric = subprocess.check_output([sys.executable, str(script), "--release", "--field", "numeric"],
                                       text=True, env=environment).strip()
     if not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", numeric):
         raise RuntimeError("Invalid numeric release version")

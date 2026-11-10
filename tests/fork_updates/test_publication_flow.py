@@ -16,7 +16,7 @@ publisher = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(publisher)
 HEAD = "a" * 40
 TAG = "v6.5.3.184"
-VERSION = "6.5.3.181-3.gaaaaaaaa"
+VERSION = "6.5.3.184"
 
 
 class FakeGh:
@@ -118,6 +118,7 @@ class PublicationFlowTests(unittest.TestCase):
                 with patch.dict(os.environ, environment), patch.object(sys, "argv", ["publisher", "--artifacts", str(root)]), \
                         patch.object(publisher.subprocess, "check_output", side_effect=check_output), \
                         patch.object(publisher, "pe_file_version", return_value="6.5.3.184"), \
+                        patch.object(publisher, "pe_display_version", return_value="6.5.3.184"), \
                         patch.object(publisher, "verify_previous_update") as replay, \
                         patch.object(publisher.subprocess, "run", side_effect=fake.run):
                     if not override and not workflows_match:

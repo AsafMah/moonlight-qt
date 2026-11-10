@@ -12,6 +12,40 @@ SPEC.loader.exec_module(publisher)
 
 
 class PublisherTests(unittest.TestCase):
+    def test_real_a7b37240_asset_names_are_rejected(self):
+        names = (
+            "Portable-x64-6.5.4.225-7.ga7b37240.zip",
+            "Portable-arm64-6.5.4.225-7.ga7b37240.zip",
+            "Setup-6.5.4.225-7.ga7b37240.exe",
+            "6.5.4.225-7.ga7b37240-arm64.dmg",
+            "6.5.4.225-7.ga7b37240-x86_64.AppImage",
+            "6.5.4.225-7.ga7b37240-aarch64.AppImage.zsync",
+            "SteamLink-6.5.4.225-7.ga7b37240.zip",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            for name in names:
+                path = Path(directory) / ("Moonlight-VPlus-" + name)
+                if name.startswith("Portable-"):
+                    with zipfile.ZipFile(path, "w") as archive:
+                        archive.writestr("Moonlight.exe", b"fixture PE")
+                else:
+                    path.write_bytes(b"fixture")
+                with self.subTest(name=name), \
+                        patch.object(publisher, "pe_file_version", return_value="6.5.4.232"):
+                    with self.assertRaisesRegex(RuntimeError, "asset.*version"):
+                        publisher.verify_package_versions([path], "6.5.4.232", "v6.5.4.232")
+
+    def test_display_version_must_match_even_when_file_version_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "Moonlight-VPlus-Portable-x64-6.5.4.232.zip"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("Moonlight.exe", b"fixture PE")
+            with patch.object(publisher, "pe_file_version", return_value="6.5.4.232"), \
+                    patch.object(publisher, "pe_display_version",
+                                 return_value="6.5.4.225-7.ga7b37240", create=True):
+                with self.assertRaisesRegex(RuntimeError, "display version"):
+                    publisher.verify_package_versions([path], "6.5.4.232", "v6.5.4.232")
+
     def test_returned_release_identity_cannot_drift(self):
         release = {"tag_name": "v6.5.4.225", "target_commitish": "a" * 40}
         publisher.verify_release_identity(release, "v6.5.4.225", "a" * 40)
@@ -22,16 +56,38 @@ class PublisherTests(unittest.TestCase):
 
     def test_numeric_identity_rejects_mismatched_names_and_tag(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "Moonlight-VPlus-Portable-x64-6.5.4-225.gc4f8fd54.zip"
+            path = Path(directory) / "Moonlight-VPlus-Portable-x64-6.5.4.225.zip"
             with zipfile.ZipFile(path, "w") as archive:
                 archive.writestr("Moonlight.exe", b"fixture PE")
-            with patch.object(publisher, "pe_file_version", return_value="6.5.4.225",
-                              create=True):
+            with patch.object(publisher, "pe_file_version", return_value="6.5.4.225"), \
+                    patch.object(publisher, "pe_display_version", return_value="6.5.4.225"):
                 publisher.verify_package_versions([path], "6.5.4.225", "v6.5.4.225")
                 with self.assertRaisesRegex(RuntimeError, "asset.*version"):
                     publisher.verify_package_versions([path], "6.5.4.226", "v6.5.4.226")
                 with self.assertRaisesRegex(RuntimeError, "release tag"):
                     publisher.verify_package_versions([path], "6.5.4.225", "v6.5.3.229")
+
+    def test_all_exact_release_asset_names_pass(self):
+        names = (
+            "Portable-x64-6.5.4.232.zip", "Portable-arm64-6.5.4.232.zip",
+            "Setup-6.5.4.232.exe", "6.5.4.232-arm64.dmg",
+            "6.5.4.232-x86_64.AppImage", "6.5.4.232-aarch64.AppImage.zsync",
+            "SteamLink-6.5.4.232.zip",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for name in names:
+                path = Path(directory) / ("Moonlight-VPlus-" + name)
+                if name.startswith("Portable-"):
+                    with zipfile.ZipFile(path, "w") as archive:
+                        archive.writestr("Moonlight.exe", b"fixture PE")
+                else:
+                    path.write_bytes(b"fixture")
+                paths.append(path)
+            with patch.object(publisher, "pe_file_version", return_value="6.5.4.232"), \
+                    patch.object(publisher, "pe_display_version", return_value="6.5.4.232") as display:
+                publisher.verify_package_versions(paths, "6.5.4.232", "v6.5.4.232")
+            self.assertEqual(display.call_count, 2)
 
     def test_actual_packaged_exe_version_must_match(self):
         with tempfile.TemporaryDirectory() as directory:

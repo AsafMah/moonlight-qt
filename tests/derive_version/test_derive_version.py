@@ -17,6 +17,49 @@ SPEC.loader.exec_module(derive_version)
 
 
 class DeriveVersionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        environment = mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "", "GITHUB_REF": ""})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def test_release_normalizes_real_a7b37240_identity(self) -> None:
+        with mock.patch.dict(os.environ, {
+            "GITHUB_ACTIONS": "true", "GITHUB_REF": "refs/heads/integration",
+        }):
+            for result in (
+                self.derive_from_git("v6.5.4.225-7-ga7b37240"),
+                self.derive_from_ci("6.5.4.225-7.ga7b37240"),
+            ):
+                self.assertEqual(result["numeric"], "6.5.4.232")
+                self.assertEqual(result["display"], "6.5.4.232")
+                self.assertEqual(result["artifact"], "6.5.4.232")
+
+    def test_nonrelease_keeps_real_a7b37240_describe(self) -> None:
+        with mock.patch.dict(os.environ, {
+            "GITHUB_ACTIONS": "true", "GITHUB_REF": "refs/heads/staging/next-release",
+        }):
+            result = self.derive_from_git("v6.5.4.225-7-ga7b37240")
+        self.assertEqual(result["display"], "6.5.4.225+7.ga7b37240")
+        self.assertEqual(result["artifact"], "6.5.4.225-7.ga7b37240")
+
+    def test_release_refuses_dirty_and_prerelease_versions(self) -> None:
+        with mock.patch.dict(os.environ, {
+            "GITHUB_ACTIONS": "true", "GITHUB_REF": "refs/heads/integration",
+        }):
+            for value in ("6.5.4.225-7.ga7b37240.dirty", "6.5.4-rc.1"):
+                with self.subTest(value=value), self.assertRaisesRegex(RuntimeError, "dirty or prerelease"):
+                    self.derive_from_ci(value)
+
+    def test_explicit_release_mode(self) -> None:
+        with mock.patch.object(derive_version, "derive_build", return_value={
+            "base": "6.5.4", "display": "6.5.4.225+7.ga7b37240",
+            "artifact": "6.5.4.225-7.ga7b37240", "numeric": "6.5.4.232",
+            "describe": "v6.5.4.225-7-ga7b37240", "commit": "a7b37240",
+        }):
+            result = derive_version.derive(Path("."), release=True)
+        self.assertEqual(result["display"], "6.5.4.232")
+        self.assertEqual(result["artifact"], "6.5.4.232")
+
     def test_git_tag_output_is_decoded_as_utf8(self) -> None:
         # Git emits UTF-8 tag names even on a Windows ANSI-code-page runner.
         output = "v6.5.4\nunrelated-\u201d-tag".encode("utf-8")

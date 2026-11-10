@@ -48,6 +48,7 @@ class ReleaseGatesTests(unittest.TestCase):
                     patch.object(publisher.subprocess, "check_output", side_effect=output), \
                     patch.object(publisher.subprocess, "run", side_effect=fake.run), \
                     patch.object(publisher, "pe_file_version", return_value="6.5.3.184"), \
+                    patch.object(publisher, "pe_display_version", return_value="6.5.3.184"), \
                     patch.object(publisher, "verify_previous_update", create=True,
                                  side_effect=RuntimeError("Updater rejected candidate")) as replay:
                 with self.assertRaisesRegex(RuntimeError, "Updater rejected candidate"):

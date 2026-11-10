@@ -882,6 +882,7 @@ win32 {
     QMAKE_TARGET_COMPANY = Moonlight V+ Project
     QMAKE_TARGET_DESCRIPTION = Moonlight V+ for PC Game Streaming Client
     QMAKE_TARGET_PRODUCT = Moonlight V+ for PC
+    QMAKE_TARGET_COMMENTS = VERSION_STR=$$MOONLIGHT_VERSION
 
     CONFIG -= embed_manifest_exe
     QMAKE_LFLAGS += /MANIFEST:embed /MANIFESTINPUT:$${PWD}/Moonlight.exe.manifest

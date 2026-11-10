@@ -32,6 +32,13 @@ check. Four-component release tags preserve revision ordering. Only green integr
 CI publishes original packages through `publish-integration-release.py`; it rejects
 dirty/local sources and missing/duplicate assets, verifies GitHub SHA256 digests
 before publishing, and never replaces existing release assets.
+Integration release builds use the numeric `x.y.z.N` identity for the displayed
+version and every asset name; other builds retain Git-describe metadata.
+Windows CI checks the real application's `--version` output. A compiled qmake
+probe checks that `VERSION_STR`, its PE Comments stamp and FileVersion agree.
+Publication reads the stamp from both portable architectures without executing
+them, rejects missing/mismatched display versions, and requires exact numeric
+asset names (not merely numerically equivalent describe strings).
 Publication creates/resumes drafts and uploads/verifies/publishes by release ID.
 The optional `GH_RELEASE_TOKEN` overrides `github.token`; without it, an API workflow
 tree comparison fails before draft creation if the release target differs from the
@@ -47,7 +54,7 @@ one manual upgrade because its checker still points upstream.
 
 | 目录 | 验证内容 | CI 平台 |
 |---|---|---|
-| derive_version | scripts/derive-version.py 版本号推导 | Ubuntu(unittest) |
+| derive_version | scripts/derive-version.py 版本号推导、Windows VERSION_STR/PE 资源一致性 | Ubuntu(unittest), Windows(PE probe) |
 | cursor_shape_classification | 光标位图 → 形状分类器的判定矩阵 | Windows |
 | clipboard_payload_routing | 剪贴板状态、复合内容、文件保护、文本/图片同步开关、主机文件推送(解析/文件名清洗/下载/超时)、拖放上传(目录展开/分块/偏移重同步/取消/超时)、文件复制粘贴(回声抑制/新复制优先/持久目录清理)、IPC 分帧和本地 TLS 传输回归（offscreen） | Windows |
 | clipboard_helper_lifecycle | helper 异常退出、响应超时和进程管道背压 | Windows |

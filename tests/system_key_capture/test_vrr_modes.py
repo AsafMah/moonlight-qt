@@ -22,7 +22,7 @@ class VrrModeTests(unittest.TestCase):
         start = session.index("if (sync.nonaryVrr && !m_VideoDecoder->isNonaryVrrActive())")
         fallback = session[start:session.index("// SDL_CreateRenderer()", start)]
         self.assertRegex(fallback, r"chooseDecoder\([\s\S]*VRR_IMPL_FORK,\s*"
-                                   r"m_Preferences->vrrLatencyMode,\s*displayHz,\s*false\)")
+                                   r"m_Preferences->vrrLatencyMode,\s*displayHz,\s*false,\s*1\)")
         self.assertNotIn("m_Preferences->vrrSmooth", fallback)
         header = (ROOT / "app/streaming/session.h").read_text(encoding="utf-8")
         self.assertRegex(header, r"vrrDisplayRefreshHz = 0,\s*bool smoothVrr = false")
@@ -41,6 +41,7 @@ struct StreamingPreferences {
 };
 struct DECODER_PARAMETERS {
     int width, height, frameRate, videoFormat, vrrLatencyMode, vrrDisplayRefreshHz;
+    int vrrEngagementMonitor;
     void* window;
     bool enableVsync, enableVrr, enableFramePacing, smoothVrr;
     StreamingPreferences::VrrImplementation vrrImplementation;
@@ -49,7 +50,7 @@ DECODER_PARAMETERS initialize(bool enableVrr, bool testOnly,
                              StreamingPreferences::VrrImplementation vrrImplementation,
                              bool smoothVrr) {
     int width = 1920, height = 1080, frameRate = 120, videoFormat = 1;
-    int vrrLatencyMode = 1, vrrDisplayRefreshHz = 144;
+    int vrrLatencyMode = 1, vrrDisplayRefreshHz = 144, vrrEngagementMonitor = 1;
     void* window = nullptr;
     bool enableVsync = false, enableFramePacing = false;
     // PRODUCTION_INITIALIZATION
@@ -68,6 +69,12 @@ int main() {
             std::cerr << "Smooth eligibility mismatch: VRR=" << enabled
                       << " testOnly=" << testOnly << " savedSmooth=" << savedSmooth
                       << " implementation=" << implementation << '\n';
+            return 1;
+        }
+        // A test decoder is thrown away: it must not report VRR engagement
+        if (params.vrrEngagementMonitor != (testOnly ? 0 : 1)) {
+            std::cerr << "VRR engagement monitor on a test decoder: testOnly=" << testOnly
+                      << '\n';
             return 1;
         }
     }

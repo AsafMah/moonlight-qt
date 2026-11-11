@@ -8,6 +8,9 @@
 // Pacer: presents are held below the stream rate by the driver or an external
 // limiter. data1 = achieved present FPS, data2 = stream FPS.
 #define SDL_CODE_PRESENT_THROTTLE_NOTICE 300
+// Renderer: VRR engagement verdict changed in a way the session acts on
+// (vrrengagementdetector.h). data1 = Verdict, data2 = Source.
+#define SDL_CODE_VRR_ENGAGEMENT_NOTICE 301
 
 #define MAX_SLICES 4
 
@@ -67,6 +70,11 @@ typedef struct _DECODER_PARAMETERS {
     // VRR Smooth mode: present each frame at its sender timestamp plus a
     // learned playout delay instead of on arrival
     bool smoothVrr = false;
+    // Whether the renderer checks that VRR is engaged on the display:
+    // 0 off, 1 in VRR mode (notice when VRR is not engaged), 2 in the
+    // fixed-refresh fallback for a VRR session (notice when G-Sync is
+    // active again)
+    int vrrEngagementMonitor = 0;
     bool enableFramePacing;
     bool enableVideoEnhancement;
     bool ignoreAspectRatio;

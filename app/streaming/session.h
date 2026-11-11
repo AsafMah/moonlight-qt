@@ -17,6 +17,7 @@
 #include "settings/streamingpreferences.h"
 #include "input/input.h"
 #include "video/decoder.h"
+#include "video/ffmpeg-renderers/pacer/vrrengagementdetector.h"
 #include "audio/renderers/renderer.h"
 #include "video/overlaymanager.h"
 #include "stats/streamstatsmodel.h"
@@ -442,7 +443,8 @@ private:
                               StreamingPreferences::VrrImplementation vrrImplementation =
                                   StreamingPreferences::VRR_IMPL_FORK,
                               int vrrLatencyMode = StreamingPreferences::VRR_LATENCY_BALANCED,
-                              int vrrDisplayRefreshHz = 0, bool smoothVrr = false);
+                              int vrrDisplayRefreshHz = 0, bool smoothVrr = false,
+                              int vrrEngagementMonitor = 0);
 
     static
     void clStageStarting(int stage);
@@ -713,6 +715,9 @@ private:
     bool m_CursorUpdateEventQueued = false;
     bool m_VrrRangeWarningShown = false; // VRR toast shown once per session
     bool m_PresentThrottleWarningShown = false; // driver/external frame cap toast, once per session
+    // Moves a VRR session to fixed-refresh pacing while VRR isn't engaged on
+    // the display; outlives renderer resets
+    VrrFallbackController m_VrrFallback;
     int m_VrrPresentCapFps = -1;         // for the stats overlay; -1 while VRR is off
     /* USB forwarding: one reverse tunnel per forwarded device, owned by this
      * session. m_RemoteUsbDevices mirrors the bound-device list from

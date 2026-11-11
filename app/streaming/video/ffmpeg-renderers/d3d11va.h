@@ -5,6 +5,9 @@
 #include "dxgiwaitable.h"
 #include "d3d11presentpolicy.h"
 #include "ivrrframepresenter.h"
+#include "pacer/vrrengagementdetector.h"
+
+#include <memory>
 
 #include <d3d11_4.h>
 #include <d3dkmthk.h>
@@ -104,6 +107,10 @@ private:
                                ID3D11Device5* dev1, ID3D11Device5* dev2,
                                Microsoft::WRL::ComPtr<ID3D11Fence>& dev1Fence,
                                Microsoft::WRL::ComPtr<ID3D11Fence>& dev2Fence);
+    // After a successful Present(): asks NVAPI when due, feeds the DXGI
+    // frame statistics in VRR mode (stats is null when the caller has none)
+    // and tells the session about a verdict it acts on
+    void monitorVrrEngagement(const DXGI_FRAME_STATISTICS* stats, HRESULT statsResult);
 
     int m_DecoderSelectionPass;
     int m_DevicesWithFL11Support;
@@ -252,6 +259,17 @@ private:
     // enableVrr && vrrImplementation == Nonary; cleared by restoreFixedPresentation()
     bool m_NonaryVrrRequested = false;
     int m_RenderAdapterIndex = -1;
+    // Adapter that drives the window's output, before video enhancement may
+    // pick another one to render on
+    int m_WindowAdapterIndex = -1;
+    // Checks that VRR is engaged on the display (DECODER_PARAMETERS::
+    // vrrEngagementMonitor); null when the session doesn't ask for it
+    std::unique_ptr<VrrEngagementDetector> m_VrrEngagement;
+    // NVAPI is only asked when the GPU we render on drives the display
+    bool m_VrrEngagementNvapi = false;
+    uint64_t m_VrrEngagementNoticeUs = 0;
+    bool m_VrrEngagementNoticeSent = false;
+    LONGLONG m_QpcFrequency = 0;
     // Lock order: m_PresentationLock, then m_ContextLock
     SDL_mutex* m_PresentationLock = nullptr;
     Microsoft::WRL::Wrappers::HandleT<Microsoft::WRL::Wrappers::HandleTraits::HANDLENullTraits>

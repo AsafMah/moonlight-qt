@@ -1367,7 +1367,8 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                             bool enableVrr, bool enableFramePacing, bool enableVideoEnhancement,
                             bool ignoreAspectRatio, bool testOnly, IVideoDecoder*& chosenDecoder,
                             StreamingPreferences::VrrImplementation vrrImplementation,
-                            int vrrLatencyMode, int vrrDisplayRefreshHz, bool smoothVrr)
+                            int vrrLatencyMode, int vrrDisplayRefreshHz, bool smoothVrr,
+                            int vrrEngagementMonitor)
 {
     DECODER_PARAMETERS params;
 
@@ -1395,6 +1396,7 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     params.smoothVrr = VrrPolicy::smoothEnabled(
         params.enableVrr, smoothVrr, vrrImplementation == StreamingPreferences::VRR_IMPL_NONARY);
     params.enableFramePacing = enableFramePacing;
+    params.vrrEngagementMonitor = testOnly ? 0 : vrrEngagementMonitor;
     // Preserve the saved preference while making the effective decoder state
     // match the UI: video enhancement is unavailable with software decoding.
     params.enableVideoEnhancement = enableVideoEnhancement &&
@@ -5053,6 +5055,52 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
                                10000);
         }
         break;
+    case SDL_CODE_VRR_ENGAGEMENT_NOTICE: {
+        // The fallback controller outlives the renderer, so a reset can
+        // change the presentation mode and a later notice can change it back
+        const auto action = m_VrrFallback.onNotice(
+            LiGetMicroseconds(), static_cast<VrrEngagementDetector::Verdict>((intptr_t)event.data1),
+            static_cast<VrrEngagementDetector::Source>((intptr_t)event.data2));
+        switch (action) {
+        case VrrFallbackController::Action::EnterFallback:
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR is not active on this display (adaptive sync / G-Sync off); using "
+                        "fixed-refresh pacing");
+            showStreamingToast(tr("VRR is not active on this display (adaptive sync / G-Sync "
+                                  "off); using fixed-refresh pacing"),
+                               10000);
+            break;
+        case VrrFallbackController::Action::ExitFallback:
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR is active on this display again; using VRR pacing");
+            showStreamingToast(tr("VRR is active on this display again; using VRR pacing"), 8000);
+            break;
+        case VrrFallbackController::Action::WarnHeuristic:
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR does not appear to be active on this display: the panel keeps a "
+                        "fixed refresh while presents are slower (adaptive sync / G-Sync off?)");
+            showStreamingToast(tr("VRR does not appear to be active on this display (adaptive "
+                                  "sync / G-Sync off?)"),
+                               10000);
+            break;
+        case VrrFallbackController::Action::RetryReset:
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Retrying the renderer reset for the VRR presentation mode");
+            break;
+        case VrrFallbackController::Action::None:
+            break;
+        }
+        if (action == VrrFallbackController::Action::EnterFallback ||
+            action == VrrFallbackController::Action::ExitFallback ||
+            action == VrrFallbackController::Action::RetryReset) {
+            SDL_Event resetEvent = {};
+            resetEvent.type = SDL_RENDER_DEVICE_RESET;
+            if (!pushEventOrWarn(resetEvent)) {
+                m_VrrFallback.resetFailed();
+            }
+        }
+        break;
+    }
     case SDL_CODE_GAMECONTROLLER_RUMBLE:
         if (m_DualSenseHapticsRenderer != nullptr &&
             m_DualSenseHapticsRenderer->hasControl((uint16_t)(uintptr_t)event.data1))
@@ -7882,14 +7930,30 @@ void Session::exec()
                 // VRR mode turns off V-Sync and frame pacing and presents
                 // each frame on arrival instead.
                 int displayHz = StreamUtils::getDisplayRefreshRate(m_Window);
-                const bool tryNonaryVrr =
-                    m_Preferences->vrrImplementation == StreamingPreferences::VRR_IMPL_NONARY;
-                const VrrPolicy::SyncDecision sync = VrrPolicy::decide(
-                    { m_Preferences->enableVsync, m_Preferences->framePacing,
-                      m_Preferences->enableVrr, m_StreamConfig.fps, displayHz, tryNonaryVrr });
+                // VRR isn't engaged on the display (NVAPI says so): present
+                // like a fixed-refresh session, with V-Sync and frame pacing,
+                // and keep asking NVAPI whether G-Sync becomes active. Both
+                // stay on above the refresh rate too: the pacer shows the
+                // newest frame each vblank instead of tearing.
+                const bool vrrFallback = m_Preferences->enableVrr && m_VrrFallback.inFallback();
+                const bool tryNonaryVrr = !vrrFallback && m_Preferences->vrrImplementation ==
+                                                              StreamingPreferences::VRR_IMPL_NONARY;
+                const VrrPolicy::SyncDecision sync =
+                    vrrFallback
+                        ? VrrPolicy::SyncDecision{ true, true, false, 0, false }
+                        : VrrPolicy::decide({ m_Preferences->enableVsync,
+                                              m_Preferences->framePacing, m_Preferences->enableVrr,
+                                              m_StreamConfig.fps, displayHz, tryNonaryVrr });
+                const int vrrEngagementMonitor = vrrFallback ? 2 : sync.enableVrr ? 1 : 0;
                 const bool smoothVrr = VrrPolicy::smoothEnabled(
                     sync.enableVrr, m_Preferences->vrrSmooth, tryNonaryVrr);
-                if (m_Preferences->enableVsync && !sync.enableVsync && !sync.enableVrr) {
+                if (vrrFallback) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                "VRR fallback: %d FPS stream on a %d Hz display with V-Sync %s "
+                                "and frame pacing %s",
+                                m_StreamConfig.fps, displayHz, sync.enableVsync ? "on" : "off",
+                                sync.enableFramePacing ? "on" : "off");
+                } else if (m_Preferences->enableVsync && !sync.enableVsync && !sync.enableVrr) {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                                 "Disabling V-sync because refresh rate limit exceeded");
                 }
@@ -7931,7 +7995,8 @@ void Session::exec()
                         m_Preferences->ignoreAspectRatio, false, s_ActiveSession->m_VideoDecoder,
                         sync.nonaryVrr ? StreamingPreferences::VRR_IMPL_NONARY
                                        : StreamingPreferences::VRR_IMPL_FORK,
-                        m_Preferences->vrrLatencyMode, displayHz, smoothVrr)) {
+                        m_Preferences->vrrLatencyMode, displayHz, smoothVrr,
+                        vrrEngagementMonitor)) {
                     SDL_UnlockMutex(m_DecoderLock);
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                                  "Failed to recreate decoder after reset");
@@ -7958,7 +8023,7 @@ void Session::exec()
                             forkSync.enableFramePacing, m_Preferences->videoEnhancement,
                             m_Preferences->ignoreAspectRatio, false,
                             s_ActiveSession->m_VideoDecoder, StreamingPreferences::VRR_IMPL_FORK,
-                            m_Preferences->vrrLatencyMode, displayHz, false)) {
+                            m_Preferences->vrrLatencyMode, displayHz, false, 1)) {
                         SDL_UnlockMutex(m_DecoderLock);
                         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                                      "Failed to recreate decoder after reset");

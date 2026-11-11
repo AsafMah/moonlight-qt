@@ -525,6 +525,7 @@ ffmpeg {
         streaming/video/ffmpeg-renderers/pacer/pacerstats.h \
         streaming/video/ffmpeg-renderers/pacer/presentstalldetector.h \
         streaming/video/ffmpeg-renderers/pacer/presentthrottledetector.h \
+        streaming/video/ffmpeg-renderers/pacer/vrrengagementdetector.h \
         streaming/video/framepacingpolicy.h \
         streaming/video/vrrpolicy.h
 
@@ -676,6 +677,7 @@ win32:!winrt {
         streaming/video/ffmpeg-renderers/dxva2.cpp \
         streaming/video/ffmpeg-renderers/d3d11va.cpp \
         streaming/video/ffmpeg-renderers/d3d11vrr.cpp \
+        streaming/video/ffmpeg-renderers/nvapigsync.cpp \
         streaming/video/ffmpeg-renderers/amfsession.cpp \
         streaming/video/ffmpeg-renderers/pacer/dxvsyncsource.cpp
 
@@ -686,6 +688,7 @@ win32:!winrt {
         streaming/video/ffmpeg-renderers/d3d11presentpolicy.h \
         streaming/video/ffmpeg-renderers/dxgipresent.h \
         streaming/video/ffmpeg-renderers/dxgiwaitable.h \
+        streaming/video/ffmpeg-renderers/nvapigsync.h \
         windowsvblankvirtualization.h \
         streaming/video/ffmpeg-renderers/amfsession.h \
         streaming/video/ffmpeg-renderers/videotexturesampling.h \

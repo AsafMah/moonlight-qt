@@ -46,6 +46,20 @@ headroom for arrival jitter. **Stream at the display's maximum refresh rate**
 keeps the requested rate. The ceiling is the desktop refresh rate, or the
 fastest mode at the desktop resolution in exclusive fullscreen.
 
+VRR mode also checks that VRR is actually engaged on the display
+(`pacer/vrrengagementdetector.h`, fed by the D3D11VA renderer after each
+Present). On the NVIDIA GPU that drives the display it asks
+`NvAPI_D3D_IsGSyncActive` once a second (`nvapigsync.cpp` loads nvapi64.dll at
+runtime; there is no link dependency). G-Sync inactive for 2 s sends
+`SDL_CODE_VRR_ENGAGEMENT_NOTICE`, and the session resets the renderer into
+fixed-refresh V-Sync + frame pacing with a warning toast (both stay on even
+when the stream is above the refresh rate). If NVAPI later
+reports G-Sync active, the session switches back, at most twice and at least
+10 s apart. A failed query restarts the 2 s run; after 5 failures in a row the
+cadence check below takes over. Without NVAPI, the DXGI vblank cadence (vblanks per second vs
+presents per second, with vblank virtualization disabled) can only warn: it
+has not been validated on VRR hardware.
+
 - **新增顶层模块默认 qmake** 并注册进 `moonlight-qt.pro` 的 SUBDIRS;仅当「上游不存在 + 依赖 CMake-only + 纯新增目录」三条件同时满足才允许 CMake(现例:usb-helper)。
 - 语言标准:C++17 为 app 地板(SteamLink 工具链上限),usb-helper 为 C++23 孤岛,不再引入第三种。
 - 依赖钉值:Linux 源码依赖在 build.yml;Win/Mac 预编译组在 setup-deps(v-tag);升级要与上游对齐(见 upstream-sync.md 的依赖双轨一节)。

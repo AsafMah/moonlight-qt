@@ -4,6 +4,8 @@
 #include "d3d11va.h"
 #include "d3d11presentpolicy.h"
 #include "dxutil.h"
+#include "nvapigsync.h"
+#include "windowsvblankvirtualization.h"
 #include "videotexturesampling.h"
 #include "path.h"
 #include "utils.h"
@@ -555,6 +557,7 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
         return false;
     }
     m_OutputIndex = outputIndex;
+    m_WindowAdapterIndex = m_AdapterIndex;
 
     // Use the current window size as the swapchain size
     SDL_GetWindowSize(params->window, (int*)&m_DisplayWidth, (int*)&m_DisplayHeight);
@@ -907,6 +910,24 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
         }
     }
 
+    if (m_DecoderParams.vrrEngagementMonitor != 0) {
+        VrrEngagementDetector::Config config;
+        config.displayHz = m_DecoderParams.vrrDisplayRefreshHz;
+        config.vblankVirtualizationDisabled = WindowsVblankVirtualization::snapshot().disabled;
+        m_VrrEngagement = std::make_unique<VrrEngagementDetector>(config);
+        // On a hybrid system NVAPI would describe the wrong GPU
+        m_VrrEngagementNvapi = m_RenderAdapterIndex == m_WindowAdapterIndex;
+        LARGE_INTEGER frequency;
+        m_QpcFrequency = QueryPerformanceFrequency(&frequency) ? frequency.QuadPart : 0;
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "VRR engagement check: mode=%s, refresh=%d Hz, NVAPI=%s, vblank cadence=%s",
+                    m_DecoderParams.vrrEngagementMonitor == 2 ? "fixed-refresh fallback" : "VRR",
+                    m_DecoderParams.vrrDisplayRefreshHz,
+                    m_VrrEngagementNvapi ? "yes" : "no (render GPU differs from display GPU)",
+                    config.vblankVirtualizationDisabled ? "yes"
+                                                        : "no (vblank virtualization active)");
+    }
+
     {
         m_HwDeviceContext = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_D3D11VA);
         if (!m_HwDeviceContext) {
@@ -1041,6 +1062,11 @@ void D3D11VARenderer::renderFrame(AVFrame* frame)
     HRESULT hr = m_SwapChain->Present(0, flags);
     const uint64_t presentEndUs = LiGetMicroseconds();
 
+    if (SUCCEEDED(hr)) {
+        // NVAPI may use the device context, so stay under FFmpeg's lock
+        monitorVrrEngagement(nullptr, S_OK);
+    }
+
     if (m_DecodeDevice == m_RenderDevice) {
         // Release the context lock
         unlockContext(this);
@@ -1082,6 +1108,92 @@ void D3D11VARenderer::renderFrame(AVFrame* frame)
             }
         }
     }
+}
+
+namespace {
+
+const char* vrrVerdictName(VrrEngagementDetector::Verdict verdict)
+{
+    switch (verdict) {
+    case VrrEngagementDetector::Verdict::Engaged:
+        return "engaged";
+    case VrrEngagementDetector::Verdict::NotEngaged:
+        return "not engaged";
+    default:
+        return "unknown";
+    }
+}
+
+const char* vrrSourceName(VrrEngagementDetector::Source source)
+{
+    switch (source) {
+    case VrrEngagementDetector::Source::Nvapi:
+        return "NVAPI";
+    case VrrEngagementDetector::Source::VblankCadence:
+        return "vblank cadence";
+    default:
+        return "none";
+    }
+}
+
+}
+
+void D3D11VARenderer::monitorVrrEngagement(const DXGI_FRAME_STATISTICS* stats, HRESULT statsResult)
+{
+    if (m_VrrEngagement == nullptr || m_SwapChain == nullptr) {
+        return;
+    }
+
+    const uint64_t nowUs = LiGetMicroseconds();
+    const bool fallbackMode = m_DecoderParams.vrrEngagementMonitor == 2;
+    bool changed = false;
+    if (m_VrrEngagement->nvapiPollDue(nowUs)) {
+        const VrrEngagementDetector::GsyncState state =
+            m_VrrEngagementNvapi ? NvapiGsync::query(m_RenderDevice.Get(), m_SwapChain.Get())
+                                 : VrrEngagementDetector::GsyncState::Unavailable;
+        changed = m_VrrEngagement->observeNvapi(nowUs, state) || changed;
+    }
+    // Only VRR mode has a cadence to read: the fallback presents with V-Sync,
+    // which follows the panel's refresh whether or not VRR is engaged
+    if (!fallbackMode && m_VrrEngagement->wantsFrameStatistics()) {
+        DXGI_FRAME_STATISTICS ownStats = {};
+        if (stats == nullptr) {
+            statsResult = m_SwapChain->GetFrameStatistics(&ownStats);
+            stats = &ownStats;
+        }
+        const LONGLONG qpc = stats->SyncQPCTime.QuadPart;
+        const bool valid = statsResult == S_OK && qpc > 0 && m_QpcFrequency > 0;
+        const uint64_t syncUs =
+            valid ? static_cast<uint64_t>(qpc / m_QpcFrequency) * 1000000 +
+                        static_cast<uint64_t>(qpc % m_QpcFrequency) * 1000000 / m_QpcFrequency
+                  : 0;
+        changed = m_VrrEngagement->observeFrameStatistics(nowUs, valid, stats->PresentCount,
+                                                          stats->SyncRefreshCount, syncUs) ||
+                  changed;
+    }
+
+    const VrrEngagementDetector::Verdict verdict = m_VrrEngagement->verdict();
+    const VrrEngagementDetector::Source source = m_VrrEngagement->source();
+    if (changed) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "VRR engagement: %s (%s; vblank %.1f Hz, presents %.1f/s)",
+                    vrrVerdictName(verdict), vrrSourceName(source), m_VrrEngagement->vblankHz(),
+                    m_VrrEngagement->presentHz());
+    }
+    // Repeat a pending notice: the session may still be in its dwell period
+    if (!VrrEngagementDetector::noticeWanted(fallbackMode, verdict, source) ||
+        (m_VrrEngagementNoticeSent && nowUs - m_VrrEngagementNoticeUs < 5000000)) {
+        return;
+    }
+    m_VrrEngagementNoticeSent = true;
+    m_VrrEngagementNoticeUs = nowUs;
+
+    SDL_Event event = {};
+    event.type = SDL_USEREVENT;
+    event.user.code = SDL_CODE_VRR_ENGAGEMENT_NOTICE;
+    event.user.data1 = reinterpret_cast<void*>(static_cast<uintptr_t>(verdict));
+    event.user.data2 = reinterpret_cast<void*>(static_cast<uintptr_t>(source));
+    SDL_PushEvent(&event);
 }
 
 bool D3D11VARenderer::prepareFrameForPresent(AVFrame* frame, uint64_t decodeBoundary)

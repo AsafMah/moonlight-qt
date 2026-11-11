@@ -1445,6 +1445,8 @@ VrrPresentFeedback D3D11VARenderer::presentAdaptive(
         m_VrrPriorFrameStatsValid = false;
     }
 
+    monitorVrrEngagement(&frameStats, frameStatsResult);
+
     // Present(), both raster samples, and the DXGI ID/statistics queries are
     // now one state-consistent observation. Release only after their evidence
     // has been copied into feedback.

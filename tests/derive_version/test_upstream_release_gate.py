@@ -110,7 +110,7 @@ class RealHistoryGateTests(unittest.TestCase):
             def output(command, **kwargs):
                 return remote if command[:2] == ["git", "ls-remote"] else check_output(command, **kwargs)
 
-            with patch.dict(os.environ, {"CI_VERSION": ""}), \
+            with patch.dict(os.environ, {"CI_VERSION": "", "GITHUB_REF": ""}), \
                     patch.object(version.subprocess, "check_output", side_effect=output):
                 self.assertEqual(version.derive(root)["base"], "6.5.4")
                 with self.assertRaisesRegex(RuntimeError, "6.5.5.*derived base 6.5.4"):

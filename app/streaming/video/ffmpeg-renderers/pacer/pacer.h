@@ -4,6 +4,7 @@
 #include "../renderer.h"
 #include "pacerstats.h"
 #include "presentstalldetector.h"
+#include "presentthrottledetector.h"
 #include "pacertelemetry.h"
 #include "vrr/vrrtypes.h"
 #include "../../framepacingpolicy.h"
@@ -140,6 +141,11 @@ private:
     VrrPolicy::PlayoutClock m_PlayoutClock;
     PreciseSleeper m_PresentSleeper;
     std::unique_ptr<PresentStallDetector> m_PresentStallDetector;
+    // Warns once when presents run below the stream rate because of a driver
+    // or external frame cap (renderers that report Present timing only)
+    std::unique_ptr<PresentThrottleDetector> m_PresentThrottleDetector;
+    // Frames handed to submitFrame(), guarded by m_FrameQueueLock
+    uint64_t m_FramesReceived = 0;
     uint64_t m_DrainSkippedFrames = 0;
     bool m_PostDrainCollectionPending = false;
     bool m_CollectingPostDrainTiming = false;

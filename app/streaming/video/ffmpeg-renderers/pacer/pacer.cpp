@@ -499,6 +499,10 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, b
                     static_cast<unsigned long long>(m_PresentStallDetector->thresholdUs()));
     }
 
+    m_PresentThrottleDetector = std::make_unique<PresentThrottleDetector>(
+        static_cast<unsigned int>(SDL_max(maxVideoFps, 0)),
+        static_cast<unsigned int>(SDL_max(m_DisplayFps, 0)));
+
     if (m_VsyncRenderer->isRenderThreadSupported()) {
         m_RenderThread = SDL_CreateThread(Pacer::renderThread, "PacerRender", this);
     }
@@ -595,6 +599,10 @@ void Pacer::renderFrame(AVFrame* frame)
             afterRender, renderUs, static_cast<size_t>(queuedFrames), renderTiming.prePresentUs,
             renderTiming.presentUs);
     }
+    const bool presentThrottled =
+        hasRenderTiming && m_PresentThrottleDetector != nullptr &&
+        m_PresentThrottleDetector->observe(afterRender, renderTiming.prePresentUs,
+                                           renderTiming.presentUs, m_FramesReceived);
 
     // Catch up if we're several frames ahead. Smooth VRR keeps frames queued
     // until their scheduled time on purpose and drops late ones itself.
@@ -608,6 +616,27 @@ void Pacer::renderFrame(AVFrame* frame)
         frameQueueLocker.relock();
     }
     frameQueueLocker.unlock();
+
+    if (presentThrottled) {
+        const PresentThrottleDetector::Report& report = m_PresentThrottleDetector->report();
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Presents are throttled to %u FPS by the driver or an external limiter "
+                    "(e.g. NVIDIA Low Latency Mode Ultra / Max Frame Rate); stream is %u FPS: "
+                    "median present interval %llu us (expected %u FPS), Present p50 %llu us, "
+                    "pre-Present p50 %llu us, presented %u of %u frames received in 2 s",
+                    report.throttledFps, report.streamFps,
+                    static_cast<unsigned long long>(report.medianIntervalUs), report.expectedFps,
+                    static_cast<unsigned long long>(report.presentP50Us),
+                    static_cast<unsigned long long>(report.prePresentP50Us), report.presentedFrames,
+                    report.receivedFrames);
+
+        SDL_Event event = {};
+        event.type = SDL_USEREVENT;
+        event.user.code = SDL_CODE_PRESENT_THROTTLE_NOTICE;
+        event.user.data1 = reinterpret_cast<void*>(static_cast<uintptr_t>(report.throttledFps));
+        event.user.data2 = reinterpret_cast<void*>(static_cast<uintptr_t>(report.streamFps));
+        SDL_PushEvent(&event);
+    }
 
     if (drainStarted) {
         const uint64_t avgRenderUs = m_PresentStallDetector->triggerAverageRenderUs();
@@ -756,6 +785,7 @@ void Pacer::submitFrame(AVFrame* frame)
 
     // Queue the frame and possibly wake up the render thread
     m_FrameQueueLock.lock();
+    ++m_FramesReceived;
     if (m_VrrLimiter.isEnabled() && frame->pts > 0) {
         // pts is the frame's RTP timestamp (90 kHz)
         const uint64_t sourceUs = static_cast<uint64_t>(frame->pts) * 100 / 9;

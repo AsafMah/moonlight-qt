@@ -63,6 +63,7 @@ one manual upgrade because its checker still points upstream.
 | pyrowave_color | PyroWave 颜色合同表（SDR/HDR10/HLG × 范围）、HDR 平面位编码、SS_HDR_METADATA 解析与快照保留规则、libplacebo 元数据映射 | Windows |
 | pyrowave_pacing | PyroWave 呈现策略：延迟呈现后切换三重缓冲的阈值、串流快于显示器时的帧节奏抽帧 | Windows |
 | present_stall | Pacer 一次性卡顿检测：有效呈现帧率、连续慢帧重置和 500ms 丢帧窗口 | Windows |
+| present_throttle | 驱动/外部限帧检测：Present 阻塞、呈现间隔长于串流间隔且丢帧（复现 180 Hz 下 NVIDIA 171 FPS 上限现场日志），固定刷新 V-Sync、慢游戏、GPU 瓶颈不误报 | Windows |
 | dxgi_present_queue | D3D11 呈现队列模拟:DWM 合成时帧延迟 1 + 可等待对象 + 只渲染最新帧,复现 r33 现场数据 | Windows |
 | vrr_nonary_controller | Nonary VRR 节奏器控制器（移植自 Nonary/moonlight-qt@c822745 的 tst_vrrtimingcontroller）：时间戳排程、播出延迟、掉帧与同步翻转保护 | Windows |
 | file_mapping_websocket_framing | 文件映射 WS 帧解析(fin/分片/ping-pong) | Windows |

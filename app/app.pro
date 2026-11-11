@@ -524,6 +524,7 @@ ffmpeg {
         streaming/video/ffmpeg-renderers/pacer/pacer.h \
         streaming/video/ffmpeg-renderers/pacer/pacerstats.h \
         streaming/video/ffmpeg-renderers/pacer/presentstalldetector.h \
+        streaming/video/ffmpeg-renderers/pacer/presentthrottledetector.h \
         streaming/video/framepacingpolicy.h \
         streaming/video/vrrpolicy.h
 

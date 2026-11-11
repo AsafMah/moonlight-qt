@@ -4987,6 +4987,18 @@ void Session::handleSdlUserEvent(const SDL_UserEvent& event)
     case SDL_CODE_PYROWAVE_FALLBACK_NOTICE:
         showStreamingToast(PyrowaveVideoDecoder::fallbackNotice((int)(intptr_t)event.data1), 8000);
         break;
+    case SDL_CODE_PRESENT_THROTTLE_NOTICE:
+        // The pacer is recreated with the renderer, so it can report again
+        if (!m_PresentThrottleWarningShown) {
+            m_PresentThrottleWarningShown = true;
+            showStreamingToast(tr("Presents are throttled to %1 fps by the driver or an external "
+                                  "limiter (e.g. NVIDIA Low Latency Mode Ultra / Max Frame Rate); "
+                                  "stream is %2 fps")
+                                   .arg((unsigned int)(uintptr_t)event.data1)
+                                   .arg((unsigned int)(uintptr_t)event.data2),
+                               10000);
+        }
+        break;
     case SDL_CODE_GAMECONTROLLER_RUMBLE:
         if (m_DualSenseHapticsRenderer != nullptr &&
             m_DualSenseHapticsRenderer->hasControl((uint16_t)(uintptr_t)event.data1))

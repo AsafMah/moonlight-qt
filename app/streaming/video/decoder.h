@@ -5,6 +5,9 @@
 #include "settings/streamingpreferences.h"
 
 #define SDL_CODE_FRAME_READY 0
+// Pacer: presents are held below the stream rate by the driver or an external
+// limiter. data1 = achieved present FPS, data2 = stream FPS.
+#define SDL_CODE_PRESENT_THROTTLE_NOTICE 300
 
 #define MAX_SLICES 4
 

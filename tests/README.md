@@ -91,6 +91,7 @@ one manual upgrade because its checker still points upstream.
 | settings_localization | 中文翻译 .qm + 设置页布局(qmltestrunner) | Windows |
 | settings_search | Unified upstream SettingsSearchControl + SettingsView owner with a shared live-tree/ranking helper (no parallel search components): weighted/token-AND ranking, normalization, type-anywhere, two-stage Escape, gamepad Tab/Backtab/A, exact category/layout-settle/scroll/focus/highlight; real Clipboard/PyroWave coverage and applicability, VRR/Nonary, ABR/codec, capture policy and 40% stats-scale regressions (`qmltestrunner -import tests\settings_search\mocks`). Python metadata gates enforce one upstream UI/owner, one category/keyword annotation, titles, category coverage and applicable instead of conditional visible. | Windows（QML）+ Ubuntu（unittest） |
 | linux_display_event_monitor | Linux 显示事件唤醒 | Linux |
+| reconnect_video_callbacks | 会话内重连时拉取式渲染器的回调(真实 fixupMissingCallbacks);python 门禁:拉取的帧也标记已收到视频 | Windows + Linux(python) |
 
 ## 仅本地/手动
 

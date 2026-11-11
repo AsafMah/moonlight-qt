@@ -206,6 +206,21 @@ Column {
             checked: StreamingPreferences.vrrSmooth && controlEnabled
             onToggled: function(value) { StreamingPreferences.vrrSmooth = value }
         }
+
+        // 串流帧率不低于显示器最高刷新率时，VRR 没有余量吸收网络抖动，只能等或丢帧：
+        // 默认向主机请求 r − r²/3600（180 Hz → 171 FPS）。打开这里则按所选帧率串流。
+        ToggleRow {
+            searchKeywords: "vrr gsync freesync native frame rate fps refresh limit cap below 171 drops jitter"
+            title: qsTr("Stream at the display's maximum refresh rate")
+            description: !StreamingPreferences.enableVrr
+                         ? qsTr("Turn on variable refresh rate to use this.")
+                         : qsTr("Off (recommended): when the selected frame rate is at or above the display's maximum refresh rate, the host is asked for a slightly lower rate, %1 FPS instead of %2 on a %2 Hz display, so VRR can absorb network jitter instead of dropping frames. On: stream at the selected frame rate; frames that arrive faster than the display can refresh are dropped.")
+                           .arg(StreamingPreferences.vrrBelowRefreshFps(StreamingPreferences.fps))
+                           .arg(StreamingPreferences.fps)
+            controlEnabled: StreamingPreferences.enableVrr
+            checked: StreamingPreferences.vrrNativeRate && controlEnabled
+            onToggled: function(value) { StreamingPreferences.vrrNativeRate = value }
+        }
     }
 
     // ================= 性能浮层 =================

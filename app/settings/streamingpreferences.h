@@ -252,6 +252,9 @@ public:
                    vrrImplementationChanged)
     Q_PROPERTY(VrrLatencyMode vrrLatencyMode MEMBER vrrLatencyMode NOTIFY vrrLatencyModeChanged)
     Q_PROPERTY(bool vrrSmooth MEMBER vrrSmooth NOTIFY vrrSmoothChanged)
+    // VRR at or above the display's maximum refresh rate: request that rate
+    // instead of the below-refresh rate (VrrPolicy::vrrStreamFps)
+    Q_PROPERTY(bool vrrNativeRate MEMBER vrrNativeRate NOTIFY vrrNativeRateChanged)
     Q_PROPERTY(bool videoEnhancement MEMBER videoEnhancement NOTIFY videoEnhancementChanged)
     Q_PROPERTY(bool streamResolutionScale MEMBER streamResolutionScale NOTIFY streamResolutionScaleChanged)
     Q_PROPERTY(int streamResolutionScaleRatio MEMBER streamResolutionScaleRatio NOTIFY streamResolutionScaleRatioChanged)
@@ -316,6 +319,10 @@ public:
 
     Q_INVOKABLE bool retranslate();
 
+    // The FPS a VRR stream asks the host for when the selected frame rate is at
+    // or above the display's maximum refresh rate and the native rate is off
+    Q_INVOKABLE int vrrBelowRefreshFps(int refreshHz) const;
+
     QStringList usbForwardingBoundDevices() const { return m_UsbForwardingBoundDevices; }
     void setUsbForwardingBoundDevices(const QStringList& devices);
 
@@ -349,6 +356,7 @@ public:
     // VRR Smooth: present each frame at its sender timestamp plus a learned
     // playout delay instead of on arrival (less jitter, more latency)
     bool vrrSmooth;
+    bool vrrNativeRate;
     bool videoEnhancement;
     bool streamResolutionScale;
     int streamResolutionScaleRatio;
@@ -450,6 +458,7 @@ signals:
     void vrrImplementationChanged();
     void vrrLatencyModeChanged();
     void vrrSmoothChanged();
+    void vrrNativeRateChanged();
     void videoEnhancementChanged();
     void streamResolutionScaleChanged();
     void streamResolutionScaleRatioChanged();

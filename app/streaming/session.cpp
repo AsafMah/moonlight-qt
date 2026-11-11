@@ -2281,7 +2281,8 @@ bool Session::initialize(QQuickWindow* qtWindow)
     }
 
     int x, y, width, height;
-    getWindowDimensions(x, y, width, height);
+    int streamDisplayIndex = 0;
+    getWindowDimensions(x, y, width, height, &streamDisplayIndex);
 
     // Create a hidden window to use for decoder initialization tests
     SDL_Window* testWindow = StreamUtils::createTestWindow();
@@ -2301,27 +2302,52 @@ bool Session::initialize(QQuickWindow* qtWindow)
 
     m_StreamConfig.fps = m_Preferences->fps;
 
+    uint32_t refreshNumerator = 0;
+    uint32_t refreshDenominator = 0;
+    const bool exactRefreshKnown =
+        m_QtWindow != nullptr &&
+        StreamUtils::getExactNativeWindowRefreshRate(reinterpret_cast<void*>(m_QtWindow->winId()),
+                                                     &refreshNumerator, &refreshDenominator);
+
+    if (m_Preferences->enableVrr) {
+        // SDL's integer refresh rate may truncate (179.96 Hz as 179)
+        int ceilingHz = vrrRefreshCeilingHz(streamDisplayIndex);
+        if (exactRefreshKnown && refreshDenominator != 0) {
+            ceilingHz =
+                qMax(ceilingHz, static_cast<int>((refreshNumerator + refreshDenominator / 2) /
+                                                 refreshDenominator));
+        }
+        const int vrrFps = VrrPolicy::vrrStreamFps(m_StreamConfig.fps, ceilingHz, true,
+                                                   m_Preferences->vrrNativeRate);
+        if (vrrFps != m_StreamConfig.fps) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR: requesting %d FPS instead of %d, below the %d Hz display's maximum "
+                        "refresh rate so VRR can absorb network jitter (turn on \"Stream at the "
+                        "display's maximum refresh rate\" to stream at %d FPS)",
+                        vrrFps, m_StreamConfig.fps, ceilingHz, m_StreamConfig.fps);
+            m_StreamConfig.fps = vrrFps;
+        } else {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR: requesting %d FPS (display maximum %d Hz%s)", m_StreamConfig.fps,
+                        ceilingHz, m_Preferences->vrrNativeRate ? ", native rate requested" : "");
+        }
+    }
+
     // On a fractional refresh rate (119.88 Hz shows as 120), ask the host to
     // capture at exactly the panel's rate when the user picked its rounded
     // rate. Otherwise every 120 FPS frame queues a little longer for a
     // 119.88 Hz panel until one is dropped. Hosts that don't support it ignore
     // it; the stream window opens on the GUI window's display.
-    if (m_QtWindow != nullptr) {
-        uint32_t refreshNumerator = 0;
-        uint32_t refreshDenominator = 0;
-        if (StreamUtils::getExactNativeWindowRefreshRate(
-                reinterpret_cast<void*>(m_QtWindow->winId()), &refreshNumerator,
-                &refreshDenominator)) {
-            m_StreamConfig.clientRefreshRateX100 = FramePacing::clientRefreshRateX100(
-                m_StreamConfig.fps, refreshNumerator, refreshDenominator);
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Display refresh rate %u/%u Hz; requesting %d FPS%s", refreshNumerator,
-                        refreshDenominator, m_StreamConfig.fps,
-                        m_StreamConfig.clientRefreshRateX100 != 0
-                            ? qPrintable(QStringLiteral(" at %1 FPS exactly")
-                                             .arg(m_StreamConfig.clientRefreshRateX100 / 100.0))
-                            : "");
-        }
+    if (exactRefreshKnown) {
+        m_StreamConfig.clientRefreshRateX100 = FramePacing::clientRefreshRateX100(
+            m_StreamConfig.fps, refreshNumerator, refreshDenominator);
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Display refresh rate %u/%u Hz; requesting %d FPS%s", refreshNumerator,
+                    refreshDenominator, m_StreamConfig.fps,
+                    m_StreamConfig.clientRefreshRateX100 != 0
+                        ? qPrintable(QStringLiteral(" at %1 FPS exactly")
+                                         .arg(m_StreamConfig.clientRefreshRateX100 / 100.0))
+                        : "");
     }
     m_StreamConfig.bitrate = m_Preferences->bitrateKbps;
     m_StreamConfig.videoFecPercentage = m_Preferences->fecPercentage;
@@ -2883,8 +2909,7 @@ private:
     Session* m_Session;
 };
 
-void Session::getWindowDimensions(int& x, int& y,
-                                  int& width, int& height)
+void Session::getWindowDimensions(int& x, int& y, int& width, int& height, int* displayIndexOut)
 {
     int displayIndex = 0;
 
@@ -2986,6 +3011,35 @@ void Session::getWindowDimensions(int& x, int& y,
     }
 
     x = y = SDL_WINDOWPOS_CENTERED_DISPLAY(displayIndex);
+    if (displayIndexOut != nullptr) {
+        *displayIndexOut = displayIndex;
+    }
+}
+
+int Session::vrrRefreshCeilingHz(int displayIndex) const
+{
+    SDL_DisplayMode desktopMode;
+    if (SDL_GetDesktopDisplayMode(displayIndex, &desktopMode) != 0) {
+        return 0;
+    }
+
+    // Borderless and windowed streams keep the desktop's mode, so its refresh
+    // rate is the VRR ceiling even if the display has faster modes.
+    // Exclusive full-screen switches to the fastest mode at the desktop
+    // resolution (updateOptimalWindowDisplayMode).
+    int ceilingHz = desktopMode.refresh_rate;
+#ifndef Q_OS_DARWIN
+    if (m_Preferences->windowMode == StreamingPreferences::WM_FULLSCREEN) {
+        SDL_DisplayMode mode;
+        for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
+            if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0 && mode.w == desktopMode.w &&
+                mode.h == desktopMode.h) {
+                ceilingHz = qMax(ceilingHz, mode.refresh_rate);
+            }
+        }
+    }
+#endif
+    return ceilingHz;
 }
 
 void Session::updateOptimalWindowDisplayMode()

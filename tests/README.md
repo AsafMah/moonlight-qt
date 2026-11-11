@@ -172,6 +172,10 @@ VRR-off or decoder probes. `settings_search/tst_vrr_modes.qml` instantiates the
 actual Display settings toggle with a fake preference backend and checks that
 Nonary/VRR-off disable it without overwriting its saved value. Run QML search
 tests with `QML_XHR_ALLOW_FILE_READ=1` so the fixture can read that production row.
+`settings_search/tst_vrr_native_rate.qml` does the same for "Stream at the display's
+maximum refresh rate": with VRR on, a stream at or above the display's maximum refresh
+asks the host for floor(r - r²/3600) FPS (171 at 180 Hz) unless that toggle is on;
+`vrr_policy`'s `testVrrStreamFps` pins the rate rule.
 
 `derive_version` round-trips the CI-frozen artifact string (including the r25/r33
 regression fixtures) back to its numeric version. Development EXE, MSI and setup

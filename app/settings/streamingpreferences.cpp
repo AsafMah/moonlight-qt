@@ -1,4 +1,5 @@
 #include "streamingpreferences.h"
+#include "streaming/video/vrrpolicy.h"
 #include "utils.h"
 
 #include <QSettings>
@@ -43,6 +44,7 @@
 #define SER_VRRIMPLEMENTATION "vrrimplementation"
 #define SER_VRRLATENCYMODE "vrrlatencymode"
 #define SER_VRRSMOOTH "vrrsmooth"
+#define SER_VRRNATIVERATE "vrrnativerate"
 #define SER_VIDEOENHANCEMENT "videoenhancement"
 #define SER_STREAMRESOLUTIONSCALE "streamresolutionscale"
 #define SER_STREAMRESOLUTIONSCALERATIO "streamresolutionscaleratio"
@@ -299,6 +301,7 @@ void StreamingPreferences::reload()
                settings.value(SER_VRRLATENCYMODE, VRR_LATENCY_BALANCED).toInt(),
                static_cast<int>(VRR_LATENCY_LOW)));
     vrrSmooth = settings.value(SER_VRRSMOOTH, false).toBool();
+    vrrNativeRate = settings.value(SER_VRRNATIVERATE, false).toBool();
     videoEnhancement = settings.value(SER_VIDEOENHANCEMENT, false).toBool();
     enableMicrophone = settings.value(SER_MICROPHONE, false).toBool();
     overlayMenuPosition = loadOverlayMenuPlacement(settings);
@@ -565,6 +568,11 @@ void StreamingPreferences::setUsbForwardingBoundDevices(const QStringList& devic
     emit usbForwardingBoundDevicesChanged();
 }
 
+int StreamingPreferences::vrrBelowRefreshFps(int refreshHz) const
+{
+    return VrrPolicy::vrrStreamFps(refreshHz, refreshHz, true, false);
+}
+
 void StreamingPreferences::resetBackgroundConfiguration()
 {
     const bool setupWasCompleted = m_BackgroundSetupCompleted;
@@ -743,6 +751,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_VRRIMPLEMENTATION, vrrImplementation);
     settings.setValue(SER_VRRLATENCYMODE, vrrLatencyMode);
     settings.setValue(SER_VRRSMOOTH, vrrSmooth);
+    settings.setValue(SER_VRRNATIVERATE, vrrNativeRate);
     settings.setValue(SER_VIDEOENHANCEMENT, videoEnhancement);
     settings.setValue(SER_STREAMRESOLUTIONSCALE, streamResolutionScale);
     settings.setValue(SER_STREAMRESOLUTIONSCALERATIO, streamResolutionScaleRatio);

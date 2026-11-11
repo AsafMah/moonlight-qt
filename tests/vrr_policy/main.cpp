@@ -1023,11 +1023,37 @@ static void testFractionalStreamRate()
     CHECK(vrr.p99AgeUs <= 500);
 }
 
+static void testVrrStreamFps()
+{
+    using namespace VrrPolicy;
+
+    // At or above the display's maximum refresh rate, VRR has no room to absorb
+    // arrival jitter, so the host is asked for r - r^2/3600 instead
+    CHECK(vrrStreamFps(180, 180, true, false) == 171);
+    CHECK(vrrStreamFps(240, 180, true, false) == 171);
+    CHECK(vrrStreamFps(144, 144, true, false) == 138);
+    CHECK(vrrStreamFps(60, 60, true, false) == 59);
+    CHECK(vrrStreamFps(120, 120, true, false) == 116);
+
+    // Below the maximum the stream already has headroom
+    CHECK(vrrStreamFps(179, 180, true, false) == 179);
+    CHECK(vrrStreamFps(170, 180, true, false) == 170);
+    CHECK(vrrStreamFps(120, 180, true, false) == 120);
+
+    // The native-rate override, VRR off, and an unknown display keep the request
+    CHECK(vrrStreamFps(180, 180, true, true) == 180);
+    CHECK(vrrStreamFps(180, 180, false, false) == 180);
+    CHECK(vrrStreamFps(180, 0, true, false) == 180);
+    CHECK(vrrStreamFps(180, 1, true, false) == 180);
+    CHECK(vrrStreamFps(0, 180, true, false) == 0);
+}
+
 int main()
 {
     testMinInterval();
     testRefreshInterval();
     testDisplayMode();
+    testVrrStreamFps();
     testDecide();
     testLimiter();
     testSourceCadence();

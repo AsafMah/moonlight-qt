@@ -39,6 +39,13 @@ latency preset. If Nonary is unavailable, the session recreates the decoder with
 the ordinary fork/on-arrival policy, not the saved Smooth preference. PyroWave
 does not use the fork's Smooth scheduler.
 
+With VRR on, a stream at or above the display's maximum refresh rate asks the
+host for floor(r - r²/3600) FPS instead (171 at 180 Hz, 138 at 144 Hz): VRR can
+delay a refresh but never exceed the maximum, so a stream at the ceiling has no
+headroom for arrival jitter. **Stream at the display's maximum refresh rate**
+keeps the requested rate. The ceiling is the desktop refresh rate, or the
+fastest mode at the desktop resolution in exclusive fullscreen.
+
 - **新增顶层模块默认 qmake** 并注册进 `moonlight-qt.pro` 的 SUBDIRS;仅当「上游不存在 + 依赖 CMake-only + 纯新增目录」三条件同时满足才允许 CMake(现例:usb-helper)。
 - 语言标准:C++17 为 app 地板(SteamLink 工具链上限),usb-helper 为 C++23 孤岛,不再引入第三种。
 - 依赖钉值:Linux 源码依赖在 build.yml;Win/Mac 预编译组在 setup-deps(v-tag);升级要与上游对齐(见 upstream-sync.md 的依赖双轨一节)。

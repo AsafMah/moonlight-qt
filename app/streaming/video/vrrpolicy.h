@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstdint>
 
+#include "../vrrratepolicy.h"
+
 // Variable refresh rate (G-Sync / FreeSync) presentation policy.
 //
 // In VRR mode every frame is presented as soon as it is decoded, without
@@ -70,6 +72,21 @@ constexpr bool displayModeSuitsStream(int refreshHz, int streamFps, bool enableV
         return refreshHz > 0;
     }
     return streamFps > 0 && refreshHz % streamFps == 0;
+}
+
+// The frame rate to ask the host for in VRR mode. A display can't refresh
+// faster than its maximum, so a stream at (or above) that rate leaves VRR no
+// room: a frame that arrives early must wait for the panel and a late one
+// costs its slot, and network jitter becomes dropped frames. Unless the user
+// asked for the native rate, request floor(r - r^2/3600) instead (171 FPS at
+// 180 Hz, 138 at 144 Hz), the below-refresh rate Nonary's fork recommends.
+constexpr int vrrStreamFps(int requestedFps, int panelMaxHz, bool enableVrr, bool nativeRate)
+{
+    if (!enableVrr || nativeRate || panelMaxHz <= 1 || requestedFps < panelMaxHz) {
+        return requestedFps;
+    }
+    const int belowRefresh = VrrRatePolicy::protectedRateForRefresh(panelMaxHz);
+    return belowRefresh > 0 ? belowRefresh : requestedFps;
 }
 
 struct SyncInput

@@ -301,8 +301,10 @@ private:
 
     int getAudioRendererCapabilities(int audioConfiguration);
 
-    void getWindowDimensions(int& x, int& y,
-                             int& width, int& height);
+    void getWindowDimensions(int& x, int& y, int& width, int& height,
+                             int* displayIndexOut = nullptr);
+
+    int vrrRefreshCeilingHz(int displayIndex) const;
 
     void toggleFullscreen();
 

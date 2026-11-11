@@ -15,6 +15,9 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 `tests/fork_updates` compiles the actual checker/installer paths against scripted Qt
 replies, verifies x64/arm64 portable and Setup selection, fork ownership, versions,
 prerelease rejection, required SHA256, streaming guards and download cancellation.
+Automatic-update policy tests deliver the real timer signals manually, including
+with delayed event delivery, rather than counting wall-clock timer firings.
+They retain assertions for the six-hour interval and timer enable/disable wiring.
 Its real QML confirmation tests assert safe Cancel focus, no download on opening,
 decline or Escape, and one exact selected URL on confirmation. Disposable Windows
 helper tests never execute an installer: UAC/process/dialog APIs are faked for

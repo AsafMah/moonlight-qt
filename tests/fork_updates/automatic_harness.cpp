@@ -1,3 +1,6 @@
+#include <QEvent>
+#include <QThread>
+
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
@@ -12,6 +15,14 @@ int main(int argc, char** argv)
             std::fprintf(stderr, "FAIL: %s\n", message);
             ++failures;
         }
+    };
+    const auto deliverTimeout = [&](QTimer& timer) {
+        check(QMetaObject::invokeMethod(&timer, "timeout", Qt::QueuedConnection),
+              "Manual timeout must use the real timer signal");
+        const int delay = qEnvironmentVariableIntValue("MOONLIGHT_TEST_EVENT_LOOP_DELAY_MS");
+        if (delay > 0)
+            QThread::msleep(static_cast<unsigned long>(delay));
+        QCoreApplication::sendPostedEvents(&timer, QEvent::MetaCall);
     };
     const QString url = "https://github.com/AsafMah/moonlight-qt/releases/download/v6.5.3.182/"
                         "Moonlight-VPlus-Portable-x64-6.5.3.182.zip";
@@ -46,10 +57,11 @@ int main(int argc, char** argv)
         receive(checker, release(digest));
         check(checker.m_PortableUpdateInstaller->installs == 0,
               "Automatic installation must defer during streaming");
+        check(checker.m_IdleTimer.isActive(), "Deferred installation must start the idle timer");
+        checker.m_IdleTimer.stop();
+        checker.m_PeriodicCheck.stop();
         streaming = false;
-        QEventLoop loop;
-        QTimer::singleShot(1100, &loop, &QEventLoop::quit);
-        loop.exec();
+        deliverTimeout(checker.m_IdleTimer);
         check(checker.m_PortableUpdateInstaller->installs == 1,
               "Deferred automatic install must fire when the stream ends");
     }
@@ -136,25 +148,33 @@ int main(int argc, char** argv)
     {
         AutoUpdateChecker checker;
         int checks = 0;
-        QObject::connect(&checker, &AutoUpdateChecker::onUpdateCheckStarted, &checker, [&] {
-            ++checks;
-            QTimer::singleShot(0, &checker, [&] {
-                auto response = release(digest);
-                response["tag_name"] = "v6.5.3.181";
-                receive(checker, response);
-            });
-        });
+        QObject::connect(&checker, &AutoUpdateChecker::onUpdateCheckStarted, &checker,
+                         [&] { ++checks; });
+        const auto finishCheck = [&] {
+            auto response = release(digest);
+            response["tag_name"] = "v6.5.3.181";
+            receive(checker, response);
+        };
         check(checker.m_PeriodicCheck.interval() == 6 * 60 * 60 * 1000,
               "Default automatic check interval must be six hours");
-        checker.m_PeriodicCheck.setInterval(50);
         checker.configureAutomaticUpdates(true, false);
-        QEventLoop loop;
-        QTimer::singleShot(125, &loop, &QEventLoop::quit);
-        loop.exec();
-        check(checks == 3, "Startup plus two intervals must produce exactly three checks");
+        check(checker.m_PeriodicCheck.isActive() && checker.m_IdleTimer.isActive(),
+              "Enabling update checks must start both timers");
+        checker.m_PeriodicCheck.stop();
+        checker.m_IdleTimer.stop();
+        check(checks == 1, "Enabling update checks must produce one startup check");
+        finishCheck();
+        for (int expected = 2; expected <= 3; ++expected) {
+            deliverTimeout(checker.m_PeriodicCheck);
+            check(checks == expected, "Each delivered periodic timeout must produce one check");
+            finishCheck();
+        }
+        checker.configureAutomaticUpdates(true, false);
+        check(checker.m_PeriodicCheck.isActive() && checker.m_IdleTimer.isActive(),
+              "Enabled checks must rearm both real timers");
         checker.configureAutomaticUpdates(false, false);
-        check(!checker.m_PeriodicCheck.isActive(),
-              "Disabling update checks must stop the periodic timer");
+        check(!checker.m_PeriodicCheck.isActive() && !checker.m_IdleTimer.isActive(),
+              "Disabling update checks must stop both timers");
     }
     if (failures)
         return 1;

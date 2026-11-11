@@ -3102,6 +3102,13 @@ void Session::updateOptimalWindowDisplayMode()
     SDL_SetWindowDisplayMode(m_Window, &bestMode);
 }
 
+static bool queueDecoderReset()
+{
+    SDL_Event resetEvent = {};
+    resetEvent.type = SDL_RENDER_DEVICE_RESET;
+    return SDL_PushEvent(&resetEvent) > 0;
+}
+
 void Session::restoreResolutionMatchOverride()
 {
     m_ResolutionMatch.explicitOverride = m_HasExplicitStreamQualityOverride;
@@ -3152,6 +3159,10 @@ bool Session::requestWindowResolutionMatchNow()
 
 void Session::processWindowResolutionMatch()
 {
+    if (m_ResolutionMatch.decoderResetPending && queueDecoderReset()) {
+        m_ResolutionMatch.decoderResetPending = false;
+    }
+
     if ((!m_Preferences->resolutionMatchWindow && !m_ResolutionMatch.oneShot) ||
         !m_ResolutionMatch.hostSupported) {
         m_ResolutionMatch.deadline = 0;
@@ -3208,7 +3219,7 @@ void Session::processWindowResolutionMatch()
 #if SDL_VERSION_ATLEAST(2, 26, 0)
         SDL_GetWindowSizeInPixels(m_Window, &width, &height);
 #else
-        SDL_GetWindowSize(m_Window, &width, &height);
+        SDL_GL_GetDrawableSize(m_Window, &width, &height);
 #endif
     }
 
@@ -3229,7 +3240,8 @@ void Session::processWindowResolutionMatch()
         return;
     }
 
-    const StreamQuality::LiveResolutionState liveState{ m_ResolutionMatch.hostSupported,
+    const StreamQuality::LiveResolutionState liveState{ m_ResolutionMatch.hostSupported &&
+                                                            m_ResolutionMatch.streamFollowsDisplay,
                                                         m_ResolutionMatch.hostDisplaySize, stream,
                                                         false };
     if (!StreamQuality::canApplyLiveResolution(target, liveState)) {
@@ -3271,8 +3283,7 @@ void Session::processWindowResolutionMatch()
 
 void Session::handleHostResolutionReport(int width, int height, Uint32 generation)
 {
-    if (generation != m_ConnectionGeneration.load() || !m_ResolutionMatch.hostSupported ||
-        width <= 0 || height <= 0) {
+    if (generation != m_ConnectionGeneration.load() || width <= 0 || height <= 0) {
         return;
     }
 
@@ -3285,8 +3296,12 @@ void Session::handleHostResolutionReport(int width, int height, Uint32 generatio
     const QSize stream = transactionForConnection ? m_LiveResolutionTransaction.current()
                                                   : QSize(m_ActiveVideoWidth, m_ActiveVideoHeight);
     const QSize previousDisplay = m_ResolutionMatch.hostDisplaySize;
-    const bool streamFollowsDisplay =
-        StreamQuality::hostStreamingDisplayIsOneToOne(previousDisplay, stream);
+    const bool streamStartReport = !m_ResolutionMatch.hostReported;
+    if (streamStartReport) {
+        m_ResolutionMatch.hostReported = true;
+        m_ResolutionMatch.streamFollowsDisplay =
+            StreamQuality::hostStreamingDisplayIsOneToOne(reported, stream);
+    }
     if (transactionForConnection) {
         m_LiveResolutionTransaction.observeHostReport(generation, previousDisplay, reported,
                                                       SDL_GetTicks());
@@ -3299,25 +3314,13 @@ void Session::handleHostResolutionReport(int width, int height, Uint32 generatio
         scheduleWindowResolutionMatch();
     }
 
-    if (!streamFollowsDisplay || reported == stream) {
+    if (streamStartReport || !m_ResolutionMatch.streamFollowsDisplay || reported == stream) {
         return;
     }
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                 "Host changed the stream resolution to %dx%d; recreating the decoder", width,
                 height);
-
-    // Queue the reset first. If that fails, keeping the old decoder is
-    // better than being left without one.
-    SDL_Event resetEvent = {};
-    resetEvent.type = SDL_RENDER_DEVICE_RESET;
-    if (SDL_PushEvent(&resetEvent) < 0) {
-        // A later report must still be able to retry this transition.
-        m_ResolutionMatch.hostDisplaySize = previousDisplay;
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Failed to queue decoder reset for resolution change: %s", SDL_GetError());
-        return;
-    }
 
     // Destroy the old decoder now so it never receives frames at the new
     // resolution. drSubmitDecodeUnit() drops frames until the reset creates
@@ -3330,6 +3333,12 @@ void Session::handleHostResolutionReport(int width, int height, Uint32 generatio
     SDL_UnlockMutex(m_DecoderLock);
 
     m_ResolutionMatch.requestedSize = QSize();
+    m_ResolutionMatch.decoderResetPending = !queueDecoderReset();
+    if (m_ResolutionMatch.decoderResetPending) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Failed to queue decoder reset for resolution change, will retry: %s",
+                    SDL_GetError());
+    }
     updateStreamQualityMenuState();
 }
 
@@ -5128,7 +5137,8 @@ void Session::updateStreamQualityMenuState()
             ? m_FailedLiveResolutionCurrent
             : QSize(m_ActiveVideoWidth, m_ActiveVideoHeight);
     state.fps = m_ActiveVideoFrameRate > 0 ? m_ActiveVideoFrameRate : m_StreamConfig.fps;
-    state.hostSupportsLiveResolution = m_ResolutionMatch.hostSupported;
+    state.hostSupportsLiveResolution =
+        m_ResolutionMatch.hostSupported && m_ResolutionMatch.streamFollowsDisplay;
     state.hostDisplaySize = m_ResolutionMatch.hostDisplaySize;
     state.resolutionOperationBusy = m_PendingStreamQuality || m_PendingStreamConfiguration ||
                                     m_LiveResolutionTransaction.isActive() ||
@@ -5143,7 +5153,7 @@ void Session::updateStreamQualityMenuState()
         state.canRetryLiveResolution && m_FailedLiveResolution.fps == state.fps &&
         StreamQuality::canApplyLiveResolution(
             QSize(m_FailedLiveResolution.width, m_FailedLiveResolution.height),
-            { m_ResolutionMatch.hostSupported, m_ResolutionMatch.hostDisplaySize, state.resolution,
+            { state.hostSupportsLiveResolution, m_ResolutionMatch.hostDisplaySize, state.resolution,
               false });
     state.canReconnectStreamQuality = m_HasFailedLiveResolution && !state.resolutionOperationBusy;
     state.failedResolution = QSize(m_FailedLiveResolution.width, m_FailedLiveResolution.height);
@@ -5508,7 +5518,7 @@ bool Session::tryApplyStreamQualityLive(const StreamQuality::Settings& target)
     m_ResolutionMatch.explicitOverride = true;
     const Uint32 now = SDL_GetTicks();
     const StreamQuality::LiveResolutionState liveState{
-        m_ResolutionMatch.hostSupported,
+        m_ResolutionMatch.hostSupported && m_ResolutionMatch.streamFollowsDisplay,
         m_ResolutionMatch.hostDisplaySize,
         currentSize,
         m_LiveResolutionTransaction.isActive() || m_PendingStreamConfiguration ||
@@ -5606,7 +5616,7 @@ bool Session::applyPendingStreamQualityChange()
     }
 
     const StreamQuality::LiveResolutionState liveState{
-        m_ResolutionMatch.hostSupported,
+        m_ResolutionMatch.hostSupported && m_ResolutionMatch.streamFollowsDisplay,
         m_ResolutionMatch.hostDisplaySize,
         QSize(m_ActiveVideoWidth, m_ActiveVideoHeight),
         m_LiveResolutionTransaction.isActive() || m_PendingStreamConfiguration ||

@@ -1,10 +1,6 @@
 CONFIG += c++17 console
 CONFIG -= app_bundle qt
 
-win32-msvc {
-    QMAKE_CFLAGS += /std:c11 /experimental:c11atomics
-}
-
 TARGET = reconnect_video_callbacks
 TEMPLATE = app
 

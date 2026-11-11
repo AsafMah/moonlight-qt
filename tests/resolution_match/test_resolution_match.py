@@ -49,6 +49,7 @@ class ResolutionMatchTests(unittest.TestCase):
         methods = ("namespace StreamQuality {\nconstexpr int kMaxDimension = 16384;\n" +
                    quality_methods + "\n}\n")
         methods += "\n".join(function(source, signature) for signature in (
+            "static bool queueDecoderReset(",
             "void Session::scheduleWindowResolutionMatch(",
             "void Session::scheduleInitialWindowResolutionMatch(",
             "bool Session::requestWindowResolutionMatchNow(",

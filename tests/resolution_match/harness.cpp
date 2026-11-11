@@ -50,12 +50,26 @@ Uint32 SDL_GetTicks()
 {
     return ticks;
 }
+#ifdef HARNESS_SDL_BEFORE_2_26
+#define SDL_VERSION_ATLEAST(a, b, c) 0
+void SDL_GetWindowSize(void*, int* width, int* height)
+{
+    *width = windowSize.width() / 2;
+    *height = windowSize.height() / 2;
+}
+void SDL_GL_GetDrawableSize(void*, int* width, int* height)
+{
+    *width = windowSize.width();
+    *height = windowSize.height();
+}
+#else
+#define SDL_VERSION_ATLEAST(a, b, c) 1
 void SDL_GetWindowSizeInPixels(void*, int* width, int* height)
 {
     *width = windowSize.width();
     *height = windowSize.height();
 }
-#define SDL_VERSION_ATLEAST(a, b, c) 1
+#endif
 void SDL_LogInfo(int, const char*, ...) {}
 void SDL_LogWarn(int, const char*, ...) {}
 int LiSendResolutionChangeRequest(int width, int height)
@@ -157,7 +171,8 @@ void prepare(Session& session)
     windowSize = QSize(1600, 900);
     session.preferences.resolutionMatchWindow = true;
     session.m_ResolutionMatch.hostSupported = true;
-    session.m_ResolutionMatch.hostDisplaySize = QSize(1280, 720);
+    session.handleHostResolutionReport(1280, 720);
+    sends = resetEvents = menuUpdates = 0;
 }
 
 int main()
@@ -297,8 +312,9 @@ int main()
         session.processWindowResolutionMatch();
         session.scheduleWindowResolutionMatch();
         session.handleHostResolutionReport(1600, 900);
-        ok &= require(sends == 0 && session.m_ResolutionMatch.deadline == 0 && resetEvents == 0,
-                      "unsupported hosts must never send, schedule or reset a decoder");
+        ok &= require(sends == 0 && session.m_ResolutionMatch.deadline == 0 && resetEvents == 1 &&
+                          session.m_ActiveVideoWidth == 1600,
+                      "unsupported hosts must follow display reports without sending requests");
     }
     {
         Session session;
@@ -370,15 +386,17 @@ int main()
                       "first connection report only records display size");
         queueFails = true;
         session.handleHostResolutionReport(1600, 900);
-        ok &= require(resetEvents == 0 && session.m_VideoDecoder &&
-                          session.m_ActiveVideoWidth == 1280,
-                      "failed reset enqueue must preserve the decoder and dimensions");
+        ok &= require(resetEvents == 0 && !session.m_VideoDecoder && destroyedUnderLock &&
+                          session.m_ActiveVideoWidth == 1600,
+                      "failed reset enqueue must still retire the old decoder and dimensions");
         queueFails = false;
-        session.handleHostResolutionReport(1600, 900);
+        session.processWindowResolutionMatch();
         ok &= require(resetEvents == 1 && menuUpdates == 1 && !session.m_VideoDecoder &&
                           destroyedUnderLock && session.m_ActiveVideoWidth == 1600 &&
                           session.m_ActiveVideoHeight == 900,
                       "host-initiated changes must reset under lock even with matching off");
+        session.processWindowResolutionMatch();
+        ok &= require(resetEvents == 1, "a queued decoder reset must not be repeated");
     }
     {
         Session session;

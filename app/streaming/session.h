@@ -607,6 +607,9 @@ private:
     struct ResolutionMatchState
     {
         bool hostSupported = false;
+        bool hostReported = false;
+        bool streamFollowsDisplay = false; // Stream-start evidence, fixed for this connection
+        bool decoderResetPending = false;
         QSize hostDisplaySize;   // Latest display size reported by the host on this connection
         QSize requestedSize;     // Last size requested and not yet reflected in the stream
         Uint32 requestTicks = 0; // When the unanswered request was sent; 0 if none

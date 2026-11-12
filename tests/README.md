@@ -275,14 +275,19 @@ time, window geometry, transport and decoder-reset events. Run `python -m unitte
 discover -s tests/resolution_match -p 'test_*.py'` from a C++ compiler environment
 (MSVC developer shell on Windows). It covers disabled/unsupported hosts sending
 nothing, debounce, one outstanding request, timeout, 1:1 display gating, fullscreen,
-decoder reset failure and host-initiated changes with matching disabled. Source
+decoder reset failure and host-initiated changes with matching disabled. Both SDL
+pixel-size paths are exercised, including drawable sizes before SDL 2.26. Scaled
+and rotated reports must use the connection's fixed display-to-stream scale
+(even dimensions, minimum 64), without enabling requests on scaled streams.
+Reconnect fixtures replay ordered reports and reject stale generations. Source
 integration gates also protect unique SDL event codes, connection-state reset,
 active-size menu comparisons and explicit quality choices.
 
 Window matching defaults off. It needs a Foundation Sunshine build containing
 [AlkaidLab/foundation-sunshine#729](https://github.com/AlkaidLab/foundation-sunshine/pull/729)
-with `allow_client_resolution_change` enabled; normal releases without its negotiated
-`0x400` capability stay inert. These tests do not alter a host or its display.
+with `allow_client_resolution_change` enabled; without its negotiated `0x400`
+capability no client requests are sent, but host reports still update the decoder.
+These tests do not alter a host or its display.
 
 - 测试**不得**把 Makefile/.o/可执行文件提交进仓库(.gitignore 已覆盖
   `tests/*/{Makefile*,.qmake.stash,*.o,release,debug}`),历史上曾误提交过

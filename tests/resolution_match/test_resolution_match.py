@@ -20,6 +20,12 @@ def function(source, signature):
 
 class ResolutionMatchTests(unittest.TestCase):
     def test_production_session_lifecycle(self):
+        self.run_session_lifecycle()
+
+    def test_production_session_lifecycle_legacy_sdl(self):
+        self.run_session_lifecycle(legacy_sdl=True)
+
+    def run_session_lifecycle(self, legacy_sdl=False):
         source = SESSION.read_text(encoding="utf-8")
         header = SESSION.with_suffix(".h").read_text(encoding="utf-8")
         state_start = header.index("    struct ResolutionMatchState")
@@ -49,6 +55,7 @@ class ResolutionMatchTests(unittest.TestCase):
         methods = ("namespace StreamQuality {\nconstexpr int kMaxDimension = 16384;\n" +
                    quality_methods + "\n}\n")
         methods += "\n".join(function(source, signature) for signature in (
+            "static int hostEncodedDimension(",
             "static bool queueDecoderReset(",
             "void Session::scheduleWindowResolutionMatch(",
             "void Session::scheduleInitialWindowResolutionMatch(",
@@ -60,6 +67,19 @@ class ResolutionMatchTests(unittest.TestCase):
         harness = harness.replace("// LIVE_TRANSACTION_TYPES", live_types)
         harness = harness.replace("// RESOLUTION_STATE", state)
         harness = harness.replace("// SESSION_METHODS", methods)
+        reconnect = function(source, "bool Session::tryReconnect(")
+        declaration = re.search(
+            r"std::vector<std::pair<QSize, Uint32>> deferredResolutions;", reconnect)
+        self.assertIsNotNone(declaration, "Reconnect must retain ordered, generation-tagged reports")
+        enqueue_start = reconnect.index("deferredResolutions.emplace_back(")
+        enqueue_end = reconnect.index(";\n", enqueue_start) + 1
+        replay_start = reconnect.index("for (const auto& report : deferredResolutions)")
+        replay_end = reconnect.index("\n        }", replay_start) + len("\n        }")
+        harness = harness.replace("// RECONNECT_REPORT_DECLARATION", declaration.group())
+        harness = harness.replace("// RECONNECT_REPORT_ENQUEUE",
+                                  reconnect[enqueue_start:enqueue_end])
+        harness = harness.replace("// RECONNECT_REPORT_REPLAY",
+                                  reconnect[replay_start:replay_end])
         compiler = shutil.which("cl" if os.name == "nt" else "c++")
         self.assertIsNotNone(compiler, "Run from a C++ compiler environment")
         with tempfile.TemporaryDirectory(prefix="moonlight-resolution-") as directory:
@@ -72,6 +92,9 @@ class ResolutionMatchTests(unittest.TestCase):
                            f"/Fe:{executable}"]
             else:
                 command = [compiler, "-std=c++17", str(unit), "-o", str(executable)]
+            if legacy_sdl:
+                command.append("/DHARNESS_SDL_BEFORE_2_26" if os.name == "nt"
+                               else "-DHARNESS_SDL_BEFORE_2_26")
             build = subprocess.run(command, cwd=path, capture_output=True, text=True, timeout=60)
             self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
             local_runner = Path(r"E:\Code\moonlight-tools\run-test-exe.ps1")
@@ -176,6 +199,18 @@ class ResolutionMatchTests(unittest.TestCase):
                         body.index("m_ResolutionMatch = {}"))
         self.assertLess(body.index("m_ResolutionMatch = {}"),
                         body.index("LiGetHostFeatureFlags()"))
+
+    def test_reset_retry_runs_before_matcher_gates_and_bounds_event_wait(self):
+        source = SESSION.read_text(encoding="utf-8")
+        matcher = function(source, "void Session::processWindowResolutionMatch(")
+        self.assertLess(matcher.index("m_ResolutionMatch.decoderResetPending"),
+                        matcher.index("m_Preferences->resolutionMatchWindow"))
+        exec_body = function(source, "void Session::exec(")
+        self.assertRegex(exec_body, r"if \(m_ResolutionMatch.decoderResetPending\) \{\s*"
+                                   r"waitTimeoutMs = qMin\(waitTimeoutMs, 10\);")
+        reconnect = function(source, "bool Session::tryReconnect(")
+        self.assertLess(reconnect.index("deferredResolutions.clear();"),
+                        reconnect.index("const int64_t backoffUntil"))
 
 
 if __name__ == "__main__":

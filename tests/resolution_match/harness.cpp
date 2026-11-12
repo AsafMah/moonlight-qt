@@ -3,8 +3,15 @@
 #include <iostream>
 #include <atomic>
 #include <optional>
+#include <utility>
+#include <vector>
 
 using Uint32 = uint32_t;
+
+template <typename T> const T& qMax(const T& a, const T& b)
+{
+    return a < b ? b : a;
+}
 
 struct QSize
 {
@@ -27,6 +34,12 @@ namespace StreamQuality {
 struct SDL_Event
 {
     int type = 0;
+    struct
+    {
+        Uint32 windowID = 0;
+        void* data1 = nullptr;
+        void* data2 = nullptr;
+    } user;
 };
 
 constexpr int SDL_LOG_CATEGORY_APPLICATION = 0;
@@ -150,6 +163,14 @@ public:
         handleHostResolutionReport(width, height, m_ConnectionGeneration.load());
     }
     void updateStreamQualityMenuState() { ++menuUpdates; }
+    void replayReports(const std::vector<SDL_Event>& events)
+    {
+        // RECONNECT_REPORT_DECLARATION
+        for (const auto& ev : events) {
+            // RECONNECT_REPORT_ENQUEUE
+        }
+        // RECONNECT_REPORT_REPLAY
+    }
 };
 
 // SESSION_METHODS
@@ -162,7 +183,7 @@ bool require(bool condition, const char* message)
     return condition;
 }
 
-void prepare(Session& session)
+void prepare(Session& session, bool initialReport = true)
 {
     ticks = 1000;
     sends = resetEvents = menuUpdates = 0;
@@ -171,7 +192,9 @@ void prepare(Session& session)
     windowSize = QSize(1600, 900);
     session.preferences.resolutionMatchWindow = true;
     session.m_ResolutionMatch.hostSupported = true;
-    session.handleHostResolutionReport(1280, 720);
+    if (initialReport) {
+        session.handleHostResolutionReport(1280, 720);
+    }
     sends = resetEvents = menuUpdates = 0;
 }
 
@@ -419,6 +442,80 @@ int main()
         ticks += 400;
         session.processWindowResolutionMatch();
         ok &= require(sends == 0, "invalid dimensions must never send");
+    }
+    {
+        Session session;
+        prepare(session, false);
+        session.scheduleWindowResolutionMatch();
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 0 && session.m_ResolutionMatch.deferred,
+                      "matching must wait for the connection's first display report");
+        session.handleHostResolutionReport(1280, 720);
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 1, "a 1:1 first report must retry the deferred match");
+    }
+    {
+        Session session;
+        prepare(session, false);
+        session.handleHostResolutionReport(3840, 2160);
+        session.scheduleWindowResolutionMatch();
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 0 && resetEvents == 0,
+                      "a scaled stream must start at its negotiated size without requests");
+        session.handleHostResolutionReport(2560, 1440);
+        ok &= require(resetEvents == 1 && session.m_ActiveVideoWidth == 854 &&
+                          session.m_ActiveVideoHeight == 480,
+                      "scaled reports must derive the encoded size rounded up to even");
+        session.handleHostResolutionReport(150, 120);
+        ok &= require(resetEvents == 2 && session.m_ActiveVideoWidth == 64 &&
+                          session.m_ActiveVideoHeight == 64,
+                      "scaled reports must clamp the encoded dimensions to 64");
+        session.handleHostResolutionReport(1280, 720);
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 0, "later display sizes must not change initial scaled eligibility");
+    }
+    {
+        Session session;
+        prepare(session, false);
+        session.handleHostResolutionReport(1920, 1440);
+        session.handleHostResolutionReport(1440, 1920);
+        ok &= require(resetEvents == 1 && session.m_ActiveVideoWidth == 720 &&
+                          session.m_ActiveVideoHeight == 1280,
+                      "rotation must swap the initial per-axis scale");
+    }
+    {
+        Session session;
+        prepare(session, false);
+        session.handleHostResolutionReport(720, 1280);
+        ok &= require(resetEvents == 1 && session.m_ActiveVideoWidth == 720 &&
+                          session.m_ActiveVideoHeight == 1280,
+                      "a transposed first display report must reset the initial decoder");
+        session.scheduleWindowResolutionMatch();
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 1, "transposed 1:1 streams must still allow requests");
+    }
+    {
+        Session session;
+        prepare(session, false);
+        session.m_ConnectionGeneration = 2;
+        std::vector<SDL_Event> events;
+        for (const auto& report : { QSize(1920, 1080), QSize(3840, 2160), QSize(2560, 1440) }) {
+            SDL_Event event;
+            event.user.windowID = events.empty() ? 1 : 2;
+            event.user.data1 = reinterpret_cast<void*>(static_cast<uintptr_t>(report.width()));
+            event.user.data2 = reinterpret_cast<void*>(static_cast<uintptr_t>(report.height()));
+            events.push_back(event);
+        }
+        session.replayReports(events);
+        ok &= require(resetEvents == 1 && session.m_ActiveVideoWidth == 854 &&
+                          session.m_ActiveVideoHeight == 480 &&
+                          session.m_ResolutionMatch.hostDisplaySize == QSize(2560, 1440),
+                      "reconnect must replay every report in order and ignore stale generations");
     }
     return ok ? 0 : 1;
 }

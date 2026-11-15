@@ -22,6 +22,7 @@
 #include <QtEndian>
 
 #include <chrono>
+#include <atomic>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -136,6 +137,40 @@ bool runFileCopyTests(QTextStream& err)
     auto* cb = QGuiApplication::clipboard();
 
 #ifndef Q_OS_MACOS
+    {
+        QThread worker;
+        auto* sync = new ClipboardSync;
+        ClipboardSyncPolicy policy;
+        policy.files = true;
+        sync->setPolicy(policy);
+        sync->moveToThread(&worker);
+        worker.start();
+        std::atomic<bool> finished{ false };
+        std::atomic<bool> applied{ false };
+        std::atomic<bool> guiThreadWrite{ false };
+        const auto connection = QObject::connect(
+            cb, &QClipboard::dataChanged, cb,
+            [&] { guiThreadWrite = QThread::currentThread() == qApp->thread(); },
+            Qt::DirectConnection);
+        const QUrl file = QUrl::fromLocalFile(QDir::temp().filePath("moonlight-thread-test.txt"));
+        QMetaObject::invokeMethod(
+            sync,
+            [&, sync] {
+                sync->start();
+                applied = sync->applyLocalFiles({ file }, sync->clipboardRevision());
+                sync->stop(false);
+                delete sync;
+                finished = true;
+            },
+            Qt::QueuedConnection);
+        const bool completed = waitUntil([&] { return finished.load(); });
+        worker.quit();
+        worker.wait();
+        QObject::disconnect(connection);
+        ok &= check(completed && applied && guiThreadWrite,
+                    "worker file clipboard writes occur on the GUI thread", err);
+    }
+
     {
         QTemporaryDir dir;
         const QString a = dir.filePath("a.txt");

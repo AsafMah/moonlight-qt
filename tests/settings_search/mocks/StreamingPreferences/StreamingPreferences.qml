@@ -10,6 +10,7 @@ QtObject {
     property bool clipboardSyncFiles: true
     property bool clipboardReceiveFiles: true
     property bool clipboardDropFiles: true
+    property bool enableGamepadUiNavigation: true
     property int bitrateKbps: 100000
     property bool autoAdjustBitrate: false
     function save() {}

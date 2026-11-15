@@ -1,5 +1,7 @@
 import QtQuick
 import QtTest
+import StreamingPreferences 1.0
+import SdlGamepadKeyNavigation 1.0
 
 // Run the actual SettingsView owner and CategoryRail. Only C++-dependent
 // content pages are replaced; their real Clipboard/PyroWave controls have
@@ -107,5 +109,14 @@ TestCase {
         compare(shell.searchQuery, "")
         compare(shell.searchExpanded, false)
         compare(shell.category, "display")
+    }
+
+    function test_gamepadNavigationPreferenceUpdatesUiMode() {
+        StreamingPreferences.enableGamepadUiNavigation = false
+        compare(SdlGamepadKeyNavigation.uiNavMode, false)
+        StreamingPreferences.enableGamepadUiNavigation = true
+        compare(SdlGamepadKeyNavigation.uiNavMode, true)
+        StreamingPreferences.enableGamepadUiNavigation = false
+        compare(SdlGamepadKeyNavigation.uiNavMode, false)
     }
 }

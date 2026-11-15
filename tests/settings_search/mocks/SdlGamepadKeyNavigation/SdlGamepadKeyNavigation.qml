@@ -1,5 +1,6 @@
 pragma Singleton
 import QtQml
+import StreamingPreferences 1.0
 
 // Test double for the C++ singleton registered in app/main.cpp. Only the
 // calls reachable from the settings components are provided.
@@ -8,6 +9,7 @@ QtObject {
     property bool uiNavMode: false
 
     function getConnectedGamepads() { return connectedGamepads }
+    function gamepadUiNavigationEnabled() { return StreamingPreferences.enableGamepadUiNavigation }
     function setUiNavMode(mode) { uiNavMode = mode }
     function suspendUiNavMode() {}
     function resumeUiNavMode() {}

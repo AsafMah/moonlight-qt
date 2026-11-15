@@ -3,8 +3,15 @@
 #include <iostream>
 #include <atomic>
 #include <optional>
+#include <utility>
+#include <vector>
 
 using Uint32 = uint32_t;
+
+template <typename T> const T& qMax(const T& a, const T& b)
+{
+    return a < b ? b : a;
+}
 
 struct QSize
 {
@@ -27,6 +34,12 @@ namespace StreamQuality {
 struct SDL_Event
 {
     int type = 0;
+    struct
+    {
+        Uint32 windowID = 0;
+        void* data1 = nullptr;
+        void* data2 = nullptr;
+    } user;
 };
 
 constexpr int SDL_LOG_CATEGORY_APPLICATION = 0;
@@ -50,12 +63,26 @@ Uint32 SDL_GetTicks()
 {
     return ticks;
 }
+#ifdef HARNESS_SDL_BEFORE_2_26
+#define SDL_VERSION_ATLEAST(a, b, c) 0
+void SDL_GetWindowSize(void*, int* width, int* height)
+{
+    *width = windowSize.width() / 2;
+    *height = windowSize.height() / 2;
+}
+void SDL_GL_GetDrawableSize(void*, int* width, int* height)
+{
+    *width = windowSize.width();
+    *height = windowSize.height();
+}
+#else
+#define SDL_VERSION_ATLEAST(a, b, c) 1
 void SDL_GetWindowSizeInPixels(void*, int* width, int* height)
 {
     *width = windowSize.width();
     *height = windowSize.height();
 }
-#define SDL_VERSION_ATLEAST(a, b, c) 1
+#endif
 void SDL_LogInfo(int, const char*, ...) {}
 void SDL_LogWarn(int, const char*, ...) {}
 int LiSendResolutionChangeRequest(int width, int height)
@@ -136,6 +163,14 @@ public:
         handleHostResolutionReport(width, height, m_ConnectionGeneration.load());
     }
     void updateStreamQualityMenuState() { ++menuUpdates; }
+    void replayReports(const std::vector<SDL_Event>& events)
+    {
+        // RECONNECT_REPORT_DECLARATION
+        for (const auto& ev : events) {
+            // RECONNECT_REPORT_ENQUEUE
+        }
+        // RECONNECT_REPORT_REPLAY
+    }
 };
 
 // SESSION_METHODS
@@ -148,7 +183,7 @@ bool require(bool condition, const char* message)
     return condition;
 }
 
-void prepare(Session& session)
+void prepare(Session& session, bool initialReport = true)
 {
     ticks = 1000;
     sends = resetEvents = menuUpdates = 0;
@@ -157,7 +192,10 @@ void prepare(Session& session)
     windowSize = QSize(1600, 900);
     session.preferences.resolutionMatchWindow = true;
     session.m_ResolutionMatch.hostSupported = true;
-    session.m_ResolutionMatch.hostDisplaySize = QSize(1280, 720);
+    if (initialReport) {
+        session.handleHostResolutionReport(1280, 720);
+    }
+    sends = resetEvents = menuUpdates = 0;
 }
 
 int main()
@@ -297,8 +335,9 @@ int main()
         session.processWindowResolutionMatch();
         session.scheduleWindowResolutionMatch();
         session.handleHostResolutionReport(1600, 900);
-        ok &= require(sends == 0 && session.m_ResolutionMatch.deadline == 0 && resetEvents == 0,
-                      "unsupported hosts must never send, schedule or reset a decoder");
+        ok &= require(sends == 0 && session.m_ResolutionMatch.deadline == 0 && resetEvents == 1 &&
+                          session.m_ActiveVideoWidth == 1600,
+                      "unsupported hosts must follow display reports without sending requests");
     }
     {
         Session session;
@@ -370,15 +409,17 @@ int main()
                       "first connection report only records display size");
         queueFails = true;
         session.handleHostResolutionReport(1600, 900);
-        ok &= require(resetEvents == 0 && session.m_VideoDecoder &&
-                          session.m_ActiveVideoWidth == 1280,
-                      "failed reset enqueue must preserve the decoder and dimensions");
+        ok &= require(resetEvents == 0 && !session.m_VideoDecoder && destroyedUnderLock &&
+                          session.m_ActiveVideoWidth == 1600,
+                      "failed reset enqueue must still retire the old decoder and dimensions");
         queueFails = false;
-        session.handleHostResolutionReport(1600, 900);
+        session.processWindowResolutionMatch();
         ok &= require(resetEvents == 1 && menuUpdates == 1 && !session.m_VideoDecoder &&
                           destroyedUnderLock && session.m_ActiveVideoWidth == 1600 &&
                           session.m_ActiveVideoHeight == 900,
                       "host-initiated changes must reset under lock even with matching off");
+        session.processWindowResolutionMatch();
+        ok &= require(resetEvents == 1, "a queued decoder reset must not be repeated");
     }
     {
         Session session;
@@ -401,6 +442,80 @@ int main()
         ticks += 400;
         session.processWindowResolutionMatch();
         ok &= require(sends == 0, "invalid dimensions must never send");
+    }
+    {
+        Session session;
+        prepare(session, false);
+        session.scheduleWindowResolutionMatch();
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 0 && session.m_ResolutionMatch.deferred,
+                      "matching must wait for the connection's first display report");
+        session.handleHostResolutionReport(1280, 720);
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 1, "a 1:1 first report must retry the deferred match");
+    }
+    {
+        Session session;
+        prepare(session, false);
+        session.handleHostResolutionReport(3840, 2160);
+        session.scheduleWindowResolutionMatch();
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 0 && resetEvents == 0,
+                      "a scaled stream must start at its negotiated size without requests");
+        session.handleHostResolutionReport(2560, 1440);
+        ok &= require(resetEvents == 1 && session.m_ActiveVideoWidth == 854 &&
+                          session.m_ActiveVideoHeight == 480,
+                      "scaled reports must derive the encoded size rounded up to even");
+        session.handleHostResolutionReport(150, 120);
+        ok &= require(resetEvents == 2 && session.m_ActiveVideoWidth == 64 &&
+                          session.m_ActiveVideoHeight == 64,
+                      "scaled reports must clamp the encoded dimensions to 64");
+        session.handleHostResolutionReport(1280, 720);
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 0, "later display sizes must not change initial scaled eligibility");
+    }
+    {
+        Session session;
+        prepare(session, false);
+        session.handleHostResolutionReport(1920, 1440);
+        session.handleHostResolutionReport(1440, 1920);
+        ok &= require(resetEvents == 1 && session.m_ActiveVideoWidth == 720 &&
+                          session.m_ActiveVideoHeight == 1280,
+                      "rotation must swap the initial per-axis scale");
+    }
+    {
+        Session session;
+        prepare(session, false);
+        session.handleHostResolutionReport(720, 1280);
+        ok &= require(resetEvents == 1 && session.m_ActiveVideoWidth == 720 &&
+                          session.m_ActiveVideoHeight == 1280,
+                      "a transposed first display report must reset the initial decoder");
+        session.scheduleWindowResolutionMatch();
+        ticks += 400;
+        session.processWindowResolutionMatch();
+        ok &= require(sends == 1, "transposed 1:1 streams must still allow requests");
+    }
+    {
+        Session session;
+        prepare(session, false);
+        session.m_ConnectionGeneration = 2;
+        std::vector<SDL_Event> events;
+        for (const auto& report : { QSize(1920, 1080), QSize(3840, 2160), QSize(2560, 1440) }) {
+            SDL_Event event;
+            event.user.windowID = events.empty() ? 1 : 2;
+            event.user.data1 = reinterpret_cast<void*>(static_cast<uintptr_t>(report.width()));
+            event.user.data2 = reinterpret_cast<void*>(static_cast<uintptr_t>(report.height()));
+            events.push_back(event);
+        }
+        session.replayReports(events);
+        ok &= require(resetEvents == 1 && session.m_ActiveVideoWidth == 854 &&
+                          session.m_ActiveVideoHeight == 480 &&
+                          session.m_ResolutionMatch.hostDisplaySize == QSize(2560, 1440),
+                      "reconnect must replay every report in order and ignore stale generations");
     }
     return ok ? 0 : 1;
 }

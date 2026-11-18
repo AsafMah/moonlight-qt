@@ -607,15 +607,16 @@ private:
     struct ResolutionMatchState
     {
         bool hostSupported = false;
-        bool streamsDisplay1To1 = false; // Stream-start evidence, fixed for this connection
-        float hostScaleX = 1;
+        bool streamsDisplay1To1 = false; // Started 1:1, so the host can apply requests
+        float hostScaleX = 1; // The host's display-to-stream scale, fixed at stream start
         float hostScaleY = 1;
-        bool decoderResetPending = false;
-        QSize hostDisplaySize;   // Latest display size reported by the host on this connection
-        QSize requestedSize;     // Last size requested and not yet reflected in the stream
+        bool decoderResetPending = false; // A decoder reset still needs to be queued
+        QSize hostDisplaySize; // Latest display size reported by the host on this connection
+        QSize requestedSize; // Last size requested and not yet reflected in the stream
         Uint32 requestTicks = 0; // When the unanswered request was sent; 0 if none
-        Uint32 deadline = 0;     // When a resize has settled; 0 if none pending
-        bool deferred = false;   // Skipped while minimized or not 1:1; retried when that changes
+        Uint32 deadline = 0; // When a resize has settled; 0 if none pending
+        // Skipped while minimized or not 1:1; retried on restore or report
+        bool deferred = false;
         bool oneShot = false; // Explicit Match now, independent of the saved automatic preference
         bool explicitOverride = false;
         Uint32 lastAttemptTicks = 0;

@@ -20,6 +20,15 @@ class UpstreamReleaseGateTests(unittest.TestCase):
         self.addCleanup(manifest.stop)
         manifest.start()
 
+    def test_v6_5_6_is_registered_at_the_verified_qiin_release_commit(self):
+        release_tags = json.loads(
+            (ROOT / "scripts/upstream-release-tags.json").read_text(encoding="utf-8")
+        )["tags"]
+        self.assertEqual(
+            release_tags.get("v6.5.6"),
+            "490923396a0bc53350dfadf88d5cf39bc9a39362",
+        )
+
     def test_unreachable_anchor_fails_even_with_explicit_ci_version(self):
         with patch.dict(os.environ, {"CI_VERSION": "6.5.4.225"}), \
                 patch.object(version, "upstream_release_tags",

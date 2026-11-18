@@ -270,6 +270,57 @@ Windows replay harnesses use the local DLL-safe launcher when available, otherwi
 `scripts\run-built-test.ps1`, which finds Qt using `qmake` and suppresses native
 loader dialogs. Use PowerShell 7 (`pwsh`), with Qt's `qmake` on PATH.
 
+### Windows hang snapshots
+
+`hang_watchdog` compiles the production native watchdog into a Qt Widgets/SDL
+harness. On this shared Windows host, run **only through the original SafeRun**
+(`C:\Users\mahle\.copilot\session-state\e59cb08c-6fef-4087-b840-6772c0a5dd1c\files\safe-run.ps1`,
+via `pwsh`, `-MaxWaitMinutes 0` or a modest wait). Its `-Bash` command should export
+`NINJA_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4` and invoke
+`tests\hang_watchdog\run.cmd` through `MSYS2_ARG_CONV_EXCL="*" cmd.exe /d /c`.
+The runner uses `jom -j4`, `CL=/MP1`, the Qt/SDL DLL paths and the loader-dialog
+suppression wrapper. A connected Sunshine refusal must not be bypassed.
+
+The default run really blocks the Qt main thread beyond the production **12-second
+awake-time threshold**, verifies one Windows minidump (`MDMP`) and matching
+thread/stage breadcrumb, checks the path appears in the application log while
+dispatch remains blocked, and resumes without killing the target. It also checks
+native parent/child log append interoperability, independent concurrent renderer
+stages, healthy Qt dispatch, minimize/menu/overlay activity, and SDL progress
+with intentionally gated Qt pumping. It verifies both explicit nonblocking
+shutdown and helper exit after a parent exits without calling shutdown.
+`run.cmd CONFIG+=quick` recompiles with **test-only** 400 ms stall / 1200 ms writer
+limits, additionally checking unarmed startup, recovery/rearming, nested stage
+restoration, scoped last-three-pair retention, a deliberately wedged dump writer,
+and fail-open helper creation diagnostics. Neither override nor fault-injection
+hooks are present in the application build. These offscreen harness checks do not
+replace a live streamed minimize/menu/overlay smoke test or exercise a GPU driver
+hang. Dumps remain under the ignored `tests\hang_watchdog\release\receipts`.
+
+The application starts a hidden copy of its absolute executable as
+`--hang-watchdog`; the child handles this mode before its SDL/Qt/profile setup.
+This child watches an inherited,
+versioned native mapping and the actual parent process handle, independently of
+application locks. Qt dispatch/its timer drive the heartbeat outside streaming;
+the SDL loop takes ownership during streaming so intentionally idle Qt UI cannot
+cause false alarms. `QueryUnbiasedInterruptTime` excludes sleep/hibernate time.
+One snapshot attempt is made per unchanged heartbeat; progress rearms it.
+The helper never suspends, terminates or restarts Moonlight; external
+`MiniDumpWriteDump` can briefly pause target threads as part of normal snapshot
+collection. A writer that exceeds 30 seconds exits **only the helper**; the
+application never waits for it on shutdown.
+
+Production artifacts are local, potentially sensitive
+`Moonlight-hang-v1-<timestamp>-<pid>.dmp` / same-basename `.txt` pairs in the existing
+crash-dump directory. Only the last three successful owned pairs are retained;
+ordinary crash dumps have separate retention. The native child atomically appends
+one snapshot-path line to the existing application log even if the UI is hung.
+When no application log exists, or it cannot be written, diagnostics use
+`Moonlight-hang-watchdog.log` in the same dump directory (and debugger output on
+write failure). Incomplete writes use `.partial` suffixes, never a successful
+dump name. Stage breadcrumbs cover reset, decoder initialization, HDR metadata,
+resize/ResizeBuffers and both D3D11 Present paths, with the owning thread ID.
+
 `resolution_match` compiles the production Session resize/report methods with fake
 time, window geometry, transport and decoder-reset events. Run `python -m unittest
 discover -s tests/resolution_match -p 'test_*.py'` from a C++ compiler environment

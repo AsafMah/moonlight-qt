@@ -2,6 +2,7 @@
 #include <initguid.h>
 
 #include "d3d11va.h"
+#include "../../../hangwatchdog.h"
 #include "d3d11presentpolicy.h"
 #include "dxutil.h"
 #include "videotexturesampling.h"
@@ -1038,7 +1039,11 @@ void D3D11VARenderer::renderFrame(AVFrame* frame)
 
     // Present according to the decoder parameters
     const uint64_t presentStartUs = LiGetMicroseconds();
-    HRESULT hr = m_SwapChain->Present(0, flags);
+    HRESULT hr;
+    {
+        HangWatchdog::Stage hangStage("Present");
+        hr = m_SwapChain->Present(0, flags);
+    }
     const uint64_t presentEndUs = LiGetMicroseconds();
 
     if (m_DecodeDevice == m_RenderDevice) {
@@ -1620,6 +1625,7 @@ bool D3D11VARenderer::createOverlayVertexBuffer(Overlay::OverlayType type, int w
 
 bool D3D11VARenderer::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo)
 {
+    HangWatchdog::Stage hangStage("resize");
     interruptFrameWait(false);
     if (stateInfo->stateChangeFlags & WINDOW_STATE_CHANGE_DISPLAY) {
         int adapterIndex, outputIndex;
@@ -1707,7 +1713,13 @@ bool D3D11VARenderer::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo)
         m_RenderTargetView.Reset();
         m_RenderDeviceContext->Flush();
 
-        HRESULT hr = m_SwapChain->ResizeBuffers(0, stateInfo->width, stateInfo->height, DXGI_FORMAT_UNKNOWN, swapchainDesc.Flags);
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Calling ResizeBuffers(%d, %d), thread=%lu",
+                    stateInfo->width, stateInfo->height, GetCurrentThreadId());
+        HRESULT hr;
+        {
+            HangWatchdog::Stage resizeStage("ResizeBuffers");
+            hr = m_SwapChain->ResizeBuffers(0, stateInfo->width, stateInfo->height, DXGI_FORMAT_UNKNOWN, swapchainDesc.Flags);
+        }
         if (FAILED(hr)) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                          "IDXGISwapChain::ResizeBuffers() failed: %x",
@@ -2456,6 +2468,7 @@ bool D3D11VARenderer::needsTestFrame()
 
 void D3D11VARenderer::setHdrMode(bool enabled)
 {
+    HangWatchdog::Stage hangStage("HDR metadata");
     auto clearVideoProcessorOutputHdrMetadata = [this]() {
         if (m_VideoProcessor && m_VideoContext) {
             m_VideoContext->VideoProcessorSetOutputHDRMetaData(
@@ -2481,6 +2494,9 @@ void D3D11VARenderer::setHdrMode(bool enabled)
             return;
         }
 
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Calling SetHDRMetaData(NONE), thread=%lu",
+                    GetCurrentThreadId());
+        HangWatchdog::Stage metadataStage("SetHDRMetaData(NONE)");
         HRESULT hr = m_SwapChain->SetHDRMetaData(
             DXGI_HDR_METADATA_TYPE_NONE, 0, nullptr);
         if (FAILED(hr)) {
@@ -2529,6 +2545,9 @@ void D3D11VARenderer::setHdrMode(bool enabled)
         // swapchain too, allowing DWM/the display driver to map PQ content with
         // the actual mastering and content-light information.
         if (m_SwapChain) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Calling SetHDRMetaData(HDR10), thread=%lu",
+                        GetCurrentThreadId());
+            HangWatchdog::Stage metadataStage("SetHDRMetaData(HDR10)");
             HRESULT swapChainHr = m_SwapChain->SetHDRMetaData(
                 DXGI_HDR_METADATA_TYPE_HDR10,
                 sizeof(DXGI_HDR_METADATA_HDR10),

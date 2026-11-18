@@ -1,4 +1,5 @@
 #include "session.h"
+#include "../hangwatchdog.h"
 #include "videocallbacks.h"
 #include "clipboardhelperclient.h"
 #include "filemappingclient.h"
@@ -1369,6 +1370,7 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                             StreamingPreferences::VrrImplementation vrrImplementation,
                             int vrrLatencyMode, int vrrDisplayRefreshHz, bool smoothVrr)
 {
+    HangWatchdog::Stage hangStage("decoder initialization");
     DECODER_PARAMETERS params;
 
     // We should never have vsync enabled for test-mode.
@@ -7437,8 +7439,10 @@ void Session::exec()
         }
     };
 
+    HangWatchdog::SdlScope hangWatchdogLoop;
     SDL_Event event;
     for (;;) {
+        HangWatchdog::sdlHeartbeat();
         processRecoveryStatus();
         hideGuiWindowWhenSettled(false);
         processSunshineAbrFeedback();
@@ -7797,7 +7801,8 @@ void Session::exec()
                         event.window.data2);
 
             // Fall through
-        case SDL_RENDER_DEVICE_RESET:
+        case SDL_RENDER_DEVICE_RESET: {
+            HangWatchdog::Stage hangStage("reset");
 
             if (event.type != SDL_WINDOWEVENT) {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
@@ -7962,6 +7967,7 @@ void Session::exec()
             SDL_UnlockMutex(m_DecoderLock);
             break;
 
+        }
         case SDL_KEYUP:
         case SDL_KEYDOWN: {
             presence.runCallbacks();

@@ -60,6 +60,8 @@ DEFINES += UPDATE_DISABLE_AUTOMATIC_UPDATES=$$UPDATE_DISABLE_AUTOMATIC_UPDATES
 }
 
 TEMPLATE = app
+SOURCES += hangwatchdog.cpp
+HEADERS += hangwatchdog.h windowslogappend.h
 
 include(../file-mapping/file-mapping.pri)
 

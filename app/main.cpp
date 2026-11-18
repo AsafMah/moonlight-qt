@@ -20,6 +20,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QTimer>
+#include <QAbstractEventDispatcher>
+#include "hangwatchdog.h"
 
 #ifdef Q_OS_UNIX
 #include <sys/socket.h>
@@ -41,6 +44,8 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <io.h>
+#include "windowslogappend.h"
 #include <dxgi1_6.h>
 #include "windowsvblankvirtualization.h"
 #elif defined(Q_OS_LINUX)
@@ -180,6 +185,18 @@ public:
         // between synchronous and asynchronous. Asynchronous won't contend in
         // the common case because we only have a single logging thread.
         QMutexLocker locker(&s_SyncLoggerMutex);
+#ifdef Q_OS_WIN32
+        if (s_LoggerFile && s_LoggerFile->isOpen()) {
+            // Atomic append also excludes overwriting a watchdog diagnostic
+            // written by the helper while the application's dispatch is hung.
+            const QByteArray utf8 = m_Msg.toUtf8();
+            if (appendWindowsLog(reinterpret_cast<HANDLE>(_get_osfhandle(s_LoggerFile->handle())),
+                                 utf8.constData(), static_cast<DWORD>(utf8.size()))) {
+                return;
+            }
+            OutputDebugStringA("Moonlight: native log append failed; falling back to QTextStream\n");
+        }
+#endif
         s_LoggerStream << m_Msg;
         s_LoggerStream.flush();
     }
@@ -424,10 +441,13 @@ static QString prepareCrashDumpDirectory(const QString& fallbackLogDirectory)
 static void pruneOldMinidumps(const QString& dumpDirectory)
 {
     QDir directory(dumpDirectory);
-    const QStringList existingDumpNames = directory.entryList(
+    QStringList existingDumpNames = directory.entryList(
             QStringList(QStringLiteral("Moonlight-*.dmp")),
             QDir::Files,
             QDir::Time);
+    existingDumpNames.removeIf([](const QString& name) {
+        return name.startsWith(QStringLiteral("Moonlight-hang-"));
+    });
 
     // Keep one slot available for a crash in the current process. Pruning here
     // avoids doing directory enumeration from the unhandled-exception handler.
@@ -781,6 +801,10 @@ static bool styleQmlAvailable(const QString& style)
 
 int main(int argc, char *argv[])
 {
+    const int watchdogResult = HangWatchdog::childMain(argc, argv);
+    if (watchdogResult >= 0) {
+        return watchdogResult;
+    }
     SDL_SetMainReady();
 
     const QString startupApplicationDir = getStartupApplicationDir(argc > 0 ? argv[0] : nullptr);
@@ -829,7 +853,7 @@ int main(int argc, char *argv[])
 #endif
     {
         s_LoggerFile = new QFile(logDir.filePath(QString("Moonlight-%1.log").arg(QDateTime::currentSecsSinceEpoch())));
-        if (s_LoggerFile->open(QIODevice::WriteOnly | QIODevice::Text)) {
+        if (s_LoggerFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
             QTextStream(stderr) << "Redirecting log output to " << s_LoggerFile->fileName() << Qt::endl;
             s_LoggerStream.setDevice(s_LoggerFile);
         }
@@ -1160,6 +1184,17 @@ int main(int argc, char *argv[])
 #endif
 
     QApplication app(argc, argv);
+#ifdef Q_OS_WIN32
+    if (!HangWatchdog::start(s_CrashDumpDirectory, s_CrashLogFileName)) {
+        qWarning() << "Hang watchdog unavailable; continuing without hang snapshots";
+    }
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, HangWatchdog::stop);
+    QTimer hangHeartbeat;
+    QObject::connect(&hangHeartbeat, &QTimer::timeout, &app, HangWatchdog::qtHeartbeat);
+    QObject::connect(app.eventDispatcher(), &QAbstractEventDispatcher::awake,
+                     &app, HangWatchdog::qtHeartbeat);
+    hangHeartbeat.start(250);
+#endif
     QGuiApplication::setApplicationDisplayName(QStringLiteral("Moonlight V+ for PC"));
 
     // Declare this before the QML engine so SDL's video and EGL references

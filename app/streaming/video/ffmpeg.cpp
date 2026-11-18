@@ -1,5 +1,6 @@
 #include <Limelight.h>
 #include "ffmpeg.h"
+#include "../../hangwatchdog.h"
 #include "av1obu.h"
 #include "utils.h"
 #include "streaming/session.h"
@@ -80,6 +81,7 @@ bool FFmpegVideoDecoder::isHdrSupported()
 
 void FFmpegVideoDecoder::setHdrMode(bool enabled)
 {
+    HangWatchdog::Stage hangStage("HDR metadata");
     m_FrontendRenderer->setHdrMode(enabled);
 }
 
@@ -301,6 +303,7 @@ IFFmpegRenderer* FFmpegVideoDecoder::getBackendRenderer()
 
 void FFmpegVideoDecoder::reset()
 {
+    HangWatchdog::Stage hangStage("decoder reset");
     // Terminate the decoder thread before doing anything else.
     // It might be touching things we're about to free.
     if (m_DecoderThread != nullptr) {
@@ -1755,6 +1758,7 @@ bool FFmpegVideoDecoder::tryInitializeNonHwAccelDecoder(PDECODER_PARAMETERS para
 
 bool FFmpegVideoDecoder::initialize(PDECODER_PARAMETERS params)
 {
+    HangWatchdog::Stage hangStage("decoder initialization");
     // Increase log level until the first frame is decoded
     av_log_set_level(AV_LOG_DEBUG);
 

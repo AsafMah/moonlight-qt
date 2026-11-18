@@ -12,6 +12,7 @@
 // enableVrr; prepare reuses the fork's renderFrame() pipeline.
 
 #include "d3d11va.h"
+#include "../../../hangwatchdog.h"
 #include "d3d11fencewait.h"
 #include "windowsvblankvirtualization.h"
 
@@ -922,6 +923,7 @@ HRESULT D3D11VARenderer::presentPreparedFrame(
         return E_FAIL;
     }
 
+    HangWatchdog::Stage hangStage("Present");
     const HRESULT result = parameters.present(*m_SwapChain.Get());
     m_DxgiAdmission.presented();
     return result;

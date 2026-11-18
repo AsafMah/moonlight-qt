@@ -285,7 +285,7 @@ active-size menu comparisons and explicit quality choices.
 
 Window matching defaults off. It needs a Foundation Sunshine build containing
 [AlkaidLab/foundation-sunshine#729](https://github.com/AlkaidLab/foundation-sunshine/pull/729)
-with `allow_client_resolution_change` enabled; without its negotiated `0x400`
+with `allow_client_resolution_change` enabled; without its negotiated `0x2000`
 capability no client requests are sent, but host reports still update the decoder.
 These tests do not alter a host or its display.
 

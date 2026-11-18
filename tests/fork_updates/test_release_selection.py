@@ -21,10 +21,16 @@ class ForkUpdateTests(unittest.TestCase):
     def test_automatic_install_policy(self):
         self.run_checker_harness("automatic_harness.cpp", "Automatic update policy passed")
 
+    def test_automatic_updates_disabled_for_test_build(self):
+        self.run_checker_harness(
+            "automatic_harness.cpp", "Automatic updates disabled", disabled_automatic=True)
+
     def test_production_fork_selection(self):
         self.run_checker_harness("selection_harness.cpp", "Fork release selection passed")
 
-    def run_checker_harness(self, filename, marker, harness=None, windows_selection=False):
+    def run_checker_harness(
+            self, filename, marker, harness=None, windows_selection=False,
+            disabled_automatic=False):
         qmake = shutil.which("qmake") or shutil.which("qmake6")
         self.assertIsNotNone(qmake, "Qt and a C++ compiler must be on PATH")
         source = (ROOT / "app/backend/autoupdatechecker.cpp").read_text(encoding="utf-8")
@@ -61,7 +67,9 @@ class ForkUpdateTests(unittest.TestCase):
                 f'INCLUDEPATH += "{(ROOT / "app").as_posix()}"\n'
                 'DEFINES += VERSION_STR=\\\\\\"6.5.3+181.ge8ef36a8\\\\\\"\n'
                 'DEFINES += UPDATE_REPOSITORY=\\\\\\"AsafMah/moonlight-qt\\\\\\"\n'
-                "DEFINES += UPDATE_BUILD_IS_RELEASE=1\n", encoding="utf-8")
+                "DEFINES += UPDATE_BUILD_IS_RELEASE=1\n"
+                f"DEFINES += UPDATE_DISABLE_AUTOMATIC_UPDATES={int(disabled_automatic)}\n",
+                encoding="utf-8")
             for command in ([qmake, "selection.pro"],
                             ["nmake", "/nologo"] if os.name == "nt" else ["make", "-s"]):
                 result = subprocess.run(command, cwd=path, capture_output=True, text=True, timeout=120)

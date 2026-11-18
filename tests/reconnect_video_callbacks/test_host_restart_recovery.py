@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -18,6 +19,20 @@ def function(source, signature):
 
 
 class HostRestartRecoveryTests(unittest.TestCase):
+    def test_protocol_feature_allocations(self):
+        header = (ROOT / "moonlight-common-c/moonlight-common-c/src/Limelight.h").read_text(
+            encoding="utf-8")
+        for name, expected in (
+                ("LI_FF_HOST_RESTART", 0x1000),
+                ("ML_FF_HOST_RESTART", 0x1000),
+                ("LI_FF_CLIENT_RESOLUTION_CHANGE", 0x2000)):
+            with self.subTest(feature=name):
+                match = re.search(rf"^#define\s+{name}\s+(0x[0-9a-fA-F]+)\b",
+                                  header, re.MULTILINE)
+                self.assertIsNotNone(match, f"{name} must be defined in Limelight.h")
+                self.assertEqual(int(match.group(1), 16), expected,
+                                 f"{name} must match its negotiated wire allocation")
+
     def test_production_retry_requests(self):
         source = SESSION.read_text(encoding="utf-8")
         snapshot = source[source.index("struct HostConnectionInfoSnapshot"):

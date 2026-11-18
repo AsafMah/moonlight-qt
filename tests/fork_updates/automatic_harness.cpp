@@ -1,3 +1,54 @@
+#if UPDATE_DISABLE_AUTOMATIC_UPDATES
+int main(int argc, char** argv)
+{
+    QCoreApplication app(argc, argv);
+    QTemporaryDir root;
+    Path::portableRoot = root.path();
+    QFile marker(root.filePath("portable.dat"));
+    marker.open(QIODevice::WriteOnly);
+    marker.close();
+    int failures = 0;
+    auto check = [&](bool ok, const char* message) {
+        if (!ok) {
+            std::fprintf(stderr, "FAIL: %s\n", message);
+            ++failures;
+        }
+    };
+    const QString digest = "sha256:" + QString(64, 'a');
+    const QString url = "https://github.com/AsafMah/moonlight-qt/releases/download/v6.5.3.182/"
+                        "Moonlight-VPlus-Portable-x64-6.5.3.182.zip";
+    auto release = [&](const QString& assetDigest) {
+        return QJsonObject{
+            { "tag_name", "v6.5.3.182" },
+            { "prerelease", false },
+            { "draft", false },
+            { "html_url", "https://github.com/AsafMah/moonlight-qt/releases/tag/v6.5.3.182" },
+            { "assets", QJsonArray{ QJsonObject{
+                            { "name", "Moonlight-VPlus-Portable-x64-6.5.3.182.zip" },
+                            { "digest", assetDigest },
+                            { "browser_download_url", url } } } }
+        };
+    };
+    auto receive = [&](AutoUpdateChecker& currentChecker, const QJsonObject& response) {
+        currentChecker.handleUpdateCheckRequestFinished(new Reply(response));
+    };
+    AutoUpdateChecker checker;
+    checker.configureAutomaticUpdates(true, true);
+    checker.start();
+    check(requestedUrl.isEmpty(), "Disabled automatic updates must not check on startup");
+    check(checker.checkForUpdates(), "An explicit manual update check must remain available");
+    receive(checker, release(digest));
+    check(checker.m_PortableUpdateInstaller->installs == 0,
+          "Disabled automatic updates must not install after a completed check");
+    checker.installUpdate(url);
+    check(checker.m_PortableUpdateInstaller->installs == 1,
+          "Explicit manual update installation must remain available");
+    if (failures)
+        return 1;
+    std::puts("Automatic updates disabled");
+    return 0;
+}
+#else
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
@@ -161,3 +212,4 @@ int main(int argc, char** argv)
     std::puts("Automatic update policy passed");
     return 0;
 }
+#endif

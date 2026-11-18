@@ -21,6 +21,9 @@
 #ifndef UPDATE_BUILD_IS_RELEASE
 #define UPDATE_BUILD_IS_RELEASE 0
 #endif
+#ifndef UPDATE_DISABLE_AUTOMATIC_UPDATES
+#define UPDATE_DISABLE_AUTOMATIC_UPDATES 0
+#endif
 
 static bool isUpdateRepositoryUrl(const QString& value, const QString& pathPrefix)
 {
@@ -121,6 +124,17 @@ void AutoUpdateChecker::cancelUpdate()
 
 void AutoUpdateChecker::configureAutomaticUpdates(bool checkEnabled, bool installEnabled)
 {
+#if UPDATE_DISABLE_AUTOMATIC_UPDATES
+    Q_UNUSED(checkEnabled);
+    Q_UNUSED(installEnabled);
+    if (m_AutomaticInProgress)
+        cancelUpdate();
+    m_AutomaticCheckEnabled = false;
+    m_AutomaticInstallEnabled = false;
+    m_PeriodicCheck.stop();
+    m_IdleTimer.stop();
+    m_CheckDue = false;
+#else
     const bool startCheck = checkEnabled && !m_AutomaticCheckEnabled;
     m_AutomaticCheckEnabled = checkEnabled;
     m_AutomaticInstallEnabled = installEnabled;
@@ -143,6 +157,7 @@ void AutoUpdateChecker::configureAutomaticUpdates(bool checkEnabled, bool instal
 #else
     Q_UNUSED(startCheck);
 #endif
+#endif
 }
 
 void AutoUpdateChecker::setAutomaticStatus(const QString& status)
@@ -153,6 +168,9 @@ void AutoUpdateChecker::setAutomaticStatus(const QString& status)
 
 void AutoUpdateChecker::tryAutomaticInstall()
 {
+#if UPDATE_DISABLE_AUTOMATIC_UPDATES
+    return;
+#else
     if (!m_AutomaticCheckEnabled || !m_AutomaticInstallEnabled || m_AutomaticInProgress ||
         m_PortableUpdateInstaller->isBusy() || !supportsInAppUpdate() ||
         m_UpdateDownloadUrl == m_AttemptedUpdateUrl || m_UpdateDownloadUrl == m_CancelledUpdateUrl)
@@ -166,6 +184,7 @@ void AutoUpdateChecker::tryAutomaticInstall()
     m_PortableUpdateInstaller->setDeferInstall(true);
     setAutomaticStatus(tr("Downloading automatic update..."));
     m_PortableUpdateInstaller->installUpdate(m_UpdateDownloadUrl, m_UpdateAssetDigest);
+#endif
 }
 
 void AutoUpdateChecker::automaticTick()
@@ -232,7 +251,7 @@ void AutoUpdateChecker::installUpdate(QString url)
 
 void AutoUpdateChecker::start()
 {
-#if UPDATE_BUILD_IS_RELEASE
+#if UPDATE_BUILD_IS_RELEASE && !UPDATE_DISABLE_AUTOMATIC_UPDATES
     if (!QStringLiteral(VERSION_STR).contains(QStringLiteral("dirty"))) {
         checkForUpdates();
     }

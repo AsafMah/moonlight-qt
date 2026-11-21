@@ -611,10 +611,10 @@ private:
         float hostScaleX = 1; // The host's display-to-stream scale, fixed at stream start
         float hostScaleY = 1;
         bool decoderResetPending = false; // A decoder reset still needs to be queued
-        QSize hostDisplaySize; // Latest display size reported by the host on this connection
-        QSize requestedSize; // Last size requested and not yet reflected in the stream
+        QSize hostDisplaySize;   // Latest display size reported by the host on this connection
+        QSize requestedSize;     // Last size requested and not yet reflected in the stream
         Uint32 requestTicks = 0; // When the unanswered request was sent; 0 if none
-        Uint32 deadline = 0; // When a resize has settled; 0 if none pending
+        Uint32 deadline = 0;     // When a resize has settled; 0 if none pending
         // Skipped while minimized or not 1:1; retried on restore or report
         bool deferred = false;
         bool oneShot = false; // Explicit Match now, independent of the saved automatic preference

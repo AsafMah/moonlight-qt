@@ -7966,7 +7966,6 @@ void Session::exec()
 
             SDL_UnlockMutex(m_DecoderLock);
             break;
-
         }
         case SDL_KEYUP:
         case SDL_KEYDOWN: {

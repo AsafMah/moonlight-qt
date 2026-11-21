@@ -194,7 +194,8 @@ public:
                                  utf8.constData(), static_cast<DWORD>(utf8.size()))) {
                 return;
             }
-            OutputDebugStringA("Moonlight: native log append failed; falling back to QTextStream\n");
+            OutputDebugStringA(
+                "Moonlight: native log append failed; falling back to QTextStream\n");
         }
 #endif
         s_LoggerStream << m_Msg;
@@ -442,12 +443,9 @@ static void pruneOldMinidumps(const QString& dumpDirectory)
 {
     QDir directory(dumpDirectory);
     QStringList existingDumpNames = directory.entryList(
-            QStringList(QStringLiteral("Moonlight-*.dmp")),
-            QDir::Files,
-            QDir::Time);
-    existingDumpNames.removeIf([](const QString& name) {
-        return name.startsWith(QStringLiteral("Moonlight-hang-"));
-    });
+        QStringList(QStringLiteral("Moonlight-*.dmp")), QDir::Files, QDir::Time);
+    existingDumpNames.removeIf(
+        [](const QString& name) { return name.startsWith(QStringLiteral("Moonlight-hang-")); });
 
     // Keep one slot available for a crash in the current process. Pruning here
     // avoids doing directory enumeration from the unhandled-exception handler.
@@ -1191,8 +1189,8 @@ int main(int argc, char *argv[])
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, HangWatchdog::stop);
     QTimer hangHeartbeat;
     QObject::connect(&hangHeartbeat, &QTimer::timeout, &app, HangWatchdog::qtHeartbeat);
-    QObject::connect(app.eventDispatcher(), &QAbstractEventDispatcher::awake,
-                     &app, HangWatchdog::qtHeartbeat);
+    QObject::connect(app.eventDispatcher(), &QAbstractEventDispatcher::awake, &app,
+                     HangWatchdog::qtHeartbeat);
     hangHeartbeat.start(250);
 #endif
     QGuiApplication::setApplicationDisplayName(QStringLiteral("Moonlight V+ for PC"));

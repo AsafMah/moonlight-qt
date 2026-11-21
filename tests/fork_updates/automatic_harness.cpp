@@ -26,10 +26,10 @@ int main(int argc, char** argv)
             { "prerelease", false },
             { "draft", false },
             { "html_url", "https://github.com/AsafMah/moonlight-qt/releases/tag/v6.5.3.182" },
-            { "assets", QJsonArray{ QJsonObject{
-                            { "name", "Moonlight-VPlus-Portable-x64-6.5.3.182.zip" },
-                            { "digest", assetDigest },
-                            { "browser_download_url", url } } } }
+            { "assets",
+              QJsonArray{ QJsonObject{ { "name", "Moonlight-VPlus-Portable-x64-6.5.3.182.zip" },
+                                       { "digest", assetDigest },
+                                       { "browser_download_url", url } } } }
         };
     };
     auto receive = [&](AutoUpdateChecker& currentChecker, const QJsonObject& response) {

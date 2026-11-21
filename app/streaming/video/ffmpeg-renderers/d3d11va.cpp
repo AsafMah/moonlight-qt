@@ -1718,7 +1718,8 @@ bool D3D11VARenderer::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo)
         HRESULT hr;
         {
             HangWatchdog::Stage resizeStage("ResizeBuffers");
-            hr = m_SwapChain->ResizeBuffers(0, stateInfo->width, stateInfo->height, DXGI_FORMAT_UNKNOWN, swapchainDesc.Flags);
+            hr = m_SwapChain->ResizeBuffers(0, stateInfo->width, stateInfo->height,
+                                            DXGI_FORMAT_UNKNOWN, swapchainDesc.Flags);
         }
         if (FAILED(hr)) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,

@@ -25,12 +25,14 @@ constexpr DWORD WriterTimeoutMs = MOONLIGHT_HANG_TEST_WRITER_TIMEOUT_MS;
 constexpr DWORD WriterTimeoutMs = 30000;
 #endif
 constexpr int SlotCount = 64;
-struct Slot {
+struct Slot
+{
     volatile LONG owner;
     volatile LONG sequence;
     char stage[96];
 };
-struct Shared {
+struct Shared
+{
     LONG version;
     DWORD pid;
     DWORD mainThread;
@@ -56,35 +58,38 @@ ULONGLONG now()
 
 void logLine(const Shared* shared, const std::string& message)
 {
-    const std::wstring fallback = std::wstring(shared->directory) + L"\\Moonlight-hang-watchdog.log";
+    const std::wstring fallback =
+        std::wstring(shared->directory) + L"\\Moonlight-hang-watchdog.log";
     std::wstring path = shared->log[0] ? shared->log : fallback;
     std::string line = "Hang watchdog: " + message + "\r\n";
     for (int attempt = 0; attempt < 2; ++attempt) {
         HANDLE file = CreateFileW(path.c_str(), FILE_APPEND_DATA,
-                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                 nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                  OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (file != INVALID_HANDLE_VALUE) {
             bool written = appendWindowsLog(file, line.data(), static_cast<DWORD>(line.size()));
             DWORD code = GetLastError();
             CloseHandle(file);
-            if (written) return;
+            if (written)
+                return;
             SetLastError(code);
         }
         line = "Hang watchdog: diagnostic append failed, Win32 error " +
-            std::to_string(GetLastError()) + "; " + message + "\r\n";
+               std::to_string(GetLastError()) + "; " + message + "\r\n";
         OutputDebugStringA(line.c_str());
-        if (path == fallback) break;
+        if (path == fallback)
+            break;
         path = fallback;
     }
 }
 
 std::string utf8(const std::wstring& text)
 {
-    int size = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
-                                   nullptr, 0, nullptr, nullptr);
+    int size = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr,
+                                   0, nullptr, nullptr);
     std::string result(size, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
-                        result.data(), size, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), size,
+                        nullptr, nullptr);
     return result;
 }
 
@@ -100,8 +105,8 @@ void beat()
         InterlockedExchange64(&state->heartbeat, static_cast<LONG64>(now()));
         if (helper && !helperExitReported && WaitForSingleObject(helper, 0) == WAIT_OBJECT_0) {
             logLine(state, state->writerTimedOut
-                    ? "dump writer timed out; helper exited, target was not interrupted"
-                    : "helper exited unexpectedly; continuing without hang snapshots");
+                               ? "dump writer timed out; helper exited, target was not interrupted"
+                               : "helper exited unexpectedly; continuing without hang snapshots");
             helperExitReported = true;
         }
     }
@@ -117,13 +122,15 @@ void publish(Slot& slot, const char* name)
 std::string breadcrumbs(Shared* shared)
 {
     bool mainStage = false;
-    std::string text = "Moonlight hang snapshot v1\r\npid=" + std::to_string(shared->pid) +
+    std::string text =
+        "Moonlight hang snapshot v1\r\npid=" + std::to_string(shared->pid) +
         "\r\nactive_loop=" + (InterlockedCompareExchange(&shared->sdl, 0, 0) ? "SDL" : "Qt") +
         "\r\nthreshold_ms=" + std::to_string(ThresholdMs) +
         "\r\nmain_thread=" + std::to_string(shared->mainThread) + "\r\n";
     for (auto& slot : shared->slots) {
         LONG owner = InterlockedCompareExchange(&slot.owner, 0, 0);
-        if (!owner) continue;
+        if (!owner)
+            continue;
         // A writer may be frozen mid-update. Never wait for its lock or seqlock.
         LONG before = InterlockedCompareExchange(&slot.sequence, 0, 0);
         char name[96];
@@ -131,14 +138,16 @@ std::string breadcrumbs(Shared* shared)
         MemoryBarrier();
         LONG after = InterlockedCompareExchange(&slot.sequence, 0, 0);
         name[95] = 0;
-        if (owner != InterlockedCompareExchange(&slot.owner, 0, 0)) continue;
-        if (static_cast<DWORD>(owner) == shared->mainThread) mainStage = true;
+        if (owner != InterlockedCompareExchange(&slot.owner, 0, 0))
+            continue;
+        if (static_cast<DWORD>(owner) == shared->mainThread)
+            mainStage = true;
         text += "thread=" + std::to_string(static_cast<DWORD>(owner)) + " stage=" +
-            (before == after && !(after & 1) ? name : "<stage update in progress>") + "\r\n";
+                (before == after && !(after & 1) ? name : "<stage update in progress>") + "\r\n";
     }
     if (!mainStage) {
-        text += "thread=" + std::to_string(shared->mainThread) + " stage=" +
-            (shared->sdl ? "SDL event loop" : "Qt event dispatch") + "\r\n";
+        text += "thread=" + std::to_string(shared->mainThread) +
+                " stage=" + (shared->sdl ? "SDL event loop" : "Qt event dispatch") + "\r\n";
     }
     return text;
 }
@@ -148,22 +157,27 @@ void prune(Shared* shared)
     std::wstring base = std::wstring(shared->directory) + L"\\";
     WIN32_FIND_DATAW entry;
     HANDLE search = FindFirstFileW((base + L"Moonlight-hang-v1-*.dmp").c_str(), &entry);
-    if (search == INVALID_HANDLE_VALUE) return;
+    if (search == INVALID_HANDLE_VALUE)
+        return;
     std::vector<std::wstring> names;
     do {
-        if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) names.emplace_back(entry.cFileName);
+        if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+            names.emplace_back(entry.cFileName);
     } while (FindNextFileW(search, &entry));
     FindClose(search);
     std::sort(names.rbegin(), names.rend());
     for (size_t i = 3; i < names.size(); ++i) {
         std::wstring path = base + names[i];
-        if (!DeleteFileW(path.c_str())) error(shared, "prune hang dump");
+        if (!DeleteFileW(path.c_str()))
+            error(shared, "prune hang dump");
         path.replace(path.size() - 4, 4, L".txt");
-        if (!DeleteFileW(path.c_str())) error(shared, "prune hang breadcrumb");
+        if (!DeleteFileW(path.c_str()))
+            error(shared, "prune hang breadcrumb");
     }
 }
 
-struct Capture {
+struct Capture
+{
     Shared* shared;
     HANDLE parent;
     std::string text;
@@ -196,12 +210,13 @@ DWORD WINAPI capture(void* opaque)
                               FILE_ATTRIBUTE_NORMAL, nullptr);
     bool ok = false;
     if (file != INVALID_HANDLE_VALUE) {
-        ok = MiniDumpWriteDump(request.parent, shared->pid, file,
-                              MiniDumpWithThreadInfo, nullptr, nullptr, nullptr) != FALSE;
-        if (!ok) error(shared, "MiniDumpWriteDump");
+        ok = MiniDumpWriteDump(request.parent, shared->pid, file, MiniDumpWithThreadInfo, nullptr,
+                               nullptr, nullptr) != FALSE;
+        if (!ok)
+            error(shared, "MiniDumpWriteDump");
         CloseHandle(file);
-    }
-    else error(shared, "create hang dump");
+    } else
+        error(shared, "create hang dump");
     if (ok) {
         file = CreateFileW(pendingText.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
                            FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -209,22 +224,24 @@ DWORD WINAPI capture(void* opaque)
         if (ok) {
             DWORD written = 0;
             ok = WriteFile(file, request.text.data(), static_cast<DWORD>(request.text.size()),
-                           &written, nullptr) && written == request.text.size();
-            if (!ok) error(shared, "write hang breadcrumb");
+                           &written, nullptr) &&
+                 written == request.text.size();
+            if (!ok)
+                error(shared, "write hang breadcrumb");
             CloseHandle(file);
-        }
-        else error(shared, "create hang breadcrumb");
+        } else
+            error(shared, "create hang breadcrumb");
     }
     if (ok) {
         ok = MoveFileExW(pendingText.c_str(), text.c_str(), MOVEFILE_WRITE_THROUGH) &&
              MoveFileExW(pendingDump.c_str(), dump.c_str(), MOVEFILE_WRITE_THROUGH);
-        if (!ok) error(shared, "publish hang pair");
+        if (!ok)
+            error(shared, "publish hang pair");
     }
     if (ok) {
         logLine(shared, "snapshot " + utf8(dump) + " (local diagnostic; may contain private data)");
         prune(shared);
-    }
-    else {
+    } else {
         DeleteFileW(pendingDump.c_str());
         DeleteFileW(pendingText.c_str());
         DeleteFileW(text.c_str());
@@ -235,32 +252,43 @@ DWORD WINAPI capture(void* opaque)
 
 int childMain(int argc, char** argv)
 {
-    if (argc < 2 || strcmp(argv[1], "--hang-watchdog")) return -1;
+    if (argc < 2 || strcmp(argv[1], "--hang-watchdog"))
+        return -1;
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
-    if (argc != 4) return 2;
+    if (argc != 4)
+        return 2;
     HANDLE inheritedMapping = reinterpret_cast<HANDLE>(_strtoui64(argv[2], nullptr, 10));
     HANDLE parent = reinterpret_cast<HANDLE>(_strtoui64(argv[3], nullptr, 10));
-    auto shared = static_cast<Shared*>(MapViewOfFile(inheritedMapping, FILE_MAP_READ | FILE_MAP_WRITE,
-                                                   0, 0, sizeof(Shared)));
-    if (!shared) return 3;
-    if (shared->version != Version || GetProcessId(parent) != shared->pid) return 4;
+    auto shared = static_cast<Shared*>(
+        MapViewOfFile(inheritedMapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, sizeof(Shared)));
+    if (!shared)
+        return 3;
+    if (shared->version != Version || GetProcessId(parent) != shared->pid)
+        return 4;
     LONG64 captured = 0;
     for (;;) {
-        if (WaitForSingleObject(parent, 100) != WAIT_TIMEOUT || shared->stopped) break;
+        if (WaitForSingleObject(parent, 100) != WAIT_TIMEOUT || shared->stopped)
+            break;
         LONG64 heartbeat = InterlockedCompareExchange64(&shared->heartbeat, 0, 0);
-        if (!heartbeat || heartbeat == captured || now() - heartbeat < Threshold) continue;
+        if (!heartbeat || heartbeat == captured || now() - heartbeat < Threshold)
+            continue;
         captured = heartbeat;
-        Capture request{shared, parent, breadcrumbs(shared)};
+        Capture request{ shared, parent, breadcrumbs(shared) };
         HANDLE worker = CreateThread(nullptr, 0, capture, &request, 0, nullptr);
-        if (!worker) { error(shared, "create dump writer"); continue; }
+        if (!worker) {
+            error(shared, "create dump writer");
+            continue;
+        }
         ULONGLONG started = now();
-        HANDLE waits[] = {parent, worker};
+        HANDLE waits[] = { parent, worker };
         for (;;) {
             DWORD result = WaitForMultipleObjects(2, waits, FALSE, 100);
-            if (result == WAIT_OBJECT_0 + 1) break;
+            if (result == WAIT_OBJECT_0 + 1)
+                break;
             const bool timedOut = now() - started > WriterTimeoutMs * 10000ULL;
             if (result == WAIT_OBJECT_0 || shared->stopped || timedOut) {
-                if (timedOut) InterlockedExchange(&shared->writerTimedOut, 1);
+                if (timedOut)
+                    InterlockedExchange(&shared->writerTimedOut, 1);
                 // Force-exit this helper only. ExitProcess alone can deadlock
                 // in DLL detach if the dump writer holds a DbgHelp/loader lock.
                 // The inherited target handle has no termination/suspension rights.
@@ -279,19 +307,28 @@ int childMain(int argc, char** argv)
 
 bool start(const wchar_t* directory, const wchar_t* log)
 {
-    if (state) return true;
-    SECURITY_ATTRIBUTES security{sizeof(security), nullptr, TRUE};
-    mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, &security, PAGE_READWRITE, 0, sizeof(Shared), nullptr);
-    if (!mapping) { OutputDebugStringA("Hang watchdog: CreateFileMapping failed\n"); return false; }
+    if (state)
+        return true;
+    SECURITY_ATTRIBUTES security{ sizeof(security), nullptr, TRUE };
+    mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, &security, PAGE_READWRITE, 0, sizeof(Shared),
+                                 nullptr);
+    if (!mapping) {
+        OutputDebugStringA("Hang watchdog: CreateFileMapping failed\n");
+        return false;
+    }
     state = static_cast<Shared*>(MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Shared)));
-    if (!state) { CloseHandle(mapping); mapping = nullptr; return false; }
+    if (!state) {
+        CloseHandle(mapping);
+        mapping = nullptr;
+        return false;
+    }
     state->version = Version;
     state->pid = GetCurrentProcessId();
     state->mainThread = GetCurrentThreadId();
     wcsncpy_s(state->directory, directory, _TRUNCATE);
     wcsncpy_s(state->log, log, _TRUNCATE);
-    HANDLE parent = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-                                TRUE, state->pid);
+    HANDLE parent =
+        OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, TRUE, state->pid);
     wchar_t executable[32768];
     DWORD length = GetModuleFileNameW(nullptr, executable, _countof(executable));
     SIZE_T bytes = 0;
@@ -300,32 +337,40 @@ bool start(const wchar_t* directory, const wchar_t* log)
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(startup);
     startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
-    bool attributes = InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &bytes) != FALSE;
-    HANDLE handles[] = {mapping, parent};
-    bool ready = parent && length && length < _countof(executable) && attributes &&
+    bool attributes =
+        InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &bytes) != FALSE;
+    HANDLE handles[] = { mapping, parent };
+    bool ready =
+        parent && length && length < _countof(executable) && attributes &&
         UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
                                   handles, sizeof(handles), nullptr, nullptr);
     PROCESS_INFORMATION process{};
     if (ready) {
         std::wstring command = L"\"" + std::wstring(executable) + L"\" --hang-watchdog " +
-            std::to_wstring(reinterpret_cast<uintptr_t>(mapping)) + L" " +
-            std::to_wstring(reinterpret_cast<uintptr_t>(parent));
+                               std::to_wstring(reinterpret_cast<uintptr_t>(mapping)) + L" " +
+                               std::to_wstring(reinterpret_cast<uintptr_t>(parent));
 #ifdef MOONLIGHT_HANG_WATCHDOG_TESTING
         wchar_t failStart[2];
-        if (GetEnvironmentVariableW(L"MOONLIGHT_HANG_TEST_FAIL_START", failStart, _countof(failStart))) {
+        if (GetEnvironmentVariableW(L"MOONLIGHT_HANG_TEST_FAIL_START", failStart,
+                                    _countof(failStart))) {
             SetLastError(ERROR_FILE_NOT_FOUND);
             ready = false;
-        }
-        else
+        } else
 #endif
-        ready = CreateProcessW(executable, command.data(), nullptr, nullptr, TRUE,
-                               EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, nullptr, nullptr,
-                               &startup.StartupInfo, &process) != FALSE;
+            ready = CreateProcessW(executable, command.data(), nullptr, nullptr, TRUE,
+                                   EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, nullptr,
+                                   nullptr, &startup.StartupInfo, &process) != FALSE;
     }
-    if (!ready) error(state, "start hidden helper");
-    if (attributes) DeleteProcThreadAttributeList(startup.lpAttributeList);
-    if (parent) CloseHandle(parent);
-    if (!ready) { stop(); return false; }
+    if (!ready)
+        error(state, "start hidden helper");
+    if (attributes)
+        DeleteProcThreadAttributeList(startup.lpAttributeList);
+    if (parent)
+        CloseHandle(parent);
+    if (!ready) {
+        stop();
+        return false;
+    }
     CloseHandle(process.hThread);
     helper = process.hProcess;
     helperExitReported = false;
@@ -339,27 +384,40 @@ void stop()
         // Stage scopes on decoder/render threads may still be unwinding.
         // Keep this small process-lifetime view valid until the OS tears it down.
     }
-    if (mapping) { CloseHandle(mapping); mapping = nullptr; }
-    if (helper) { CloseHandle(helper); helper = nullptr; }
+    if (mapping) {
+        CloseHandle(mapping);
+        mapping = nullptr;
+    }
+    if (helper) {
+        CloseHandle(helper);
+        helper = nullptr;
+    }
 }
 void qtHeartbeat()
 {
-    if (state && !InterlockedCompareExchange(&state->sdl, 0, 0)) beat();
+    if (state && !InterlockedCompareExchange(&state->sdl, 0, 0))
+        beat();
 }
-void sdlHeartbeat() { beat(); }
+void sdlHeartbeat()
+{
+    beat();
+}
 SdlScope::SdlScope()
 {
-    if (state) InterlockedIncrement(&state->sdl);
+    if (state)
+        InterlockedIncrement(&state->sdl);
     beat();
 }
 SdlScope::~SdlScope()
 {
     beat();
-    if (state) InterlockedDecrement(&state->sdl);
+    if (state)
+        InterlockedDecrement(&state->sdl);
 }
 Stage::Stage(const char* name)
 {
-    if (!state || state->stopped) return;
+    if (!state || state->stopped)
+        return;
     LONG tid = static_cast<LONG>(GetCurrentThreadId());
     for (int i = 0; i < SlotCount; ++i) {
         if (InterlockedCompareExchange(&state->slots[i].owner, 0, 0) == tid) {
@@ -385,7 +443,8 @@ Stage::~Stage()
     if (state && m_Slot >= 0) {
         auto& slot = state->slots[m_Slot];
         publish(slot, m_Previous);
-        if (!m_Previous[0]) InterlockedExchange(&slot.owner, 0);
+        if (!m_Previous[0])
+            InterlockedExchange(&slot.owner, 0);
     }
 }
 #ifdef MOONLIGHT_HANG_WATCHDOG_TESTING
@@ -397,8 +456,14 @@ unsigned long helperProcessId()
 }
 #else
 namespace HangWatchdog {
-int childMain(int, char**) { return -1; }
-bool start(const wchar_t*, const wchar_t*) { return false; }
+int childMain(int, char**)
+{
+    return -1;
+}
+bool start(const wchar_t*, const wchar_t*)
+{
+    return false;
+}
 void stop() {}
 void qtHeartbeat() {}
 void sdlHeartbeat() {}

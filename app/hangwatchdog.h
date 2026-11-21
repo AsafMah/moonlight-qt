@@ -8,7 +8,8 @@ void stop();
 void qtHeartbeat();
 void sdlHeartbeat();
 
-class SdlScope {
+class SdlScope
+{
 public:
     SdlScope();
     ~SdlScope();
@@ -16,12 +17,14 @@ public:
     SdlScope& operator=(const SdlScope&) = delete;
 };
 
-class Stage {
+class Stage
+{
 public:
     explicit Stage(const char* name);
     ~Stage();
     Stage(const Stage&) = delete;
     Stage& operator=(const Stage&) = delete;
+
 private:
     int m_Slot = -1;
     char m_Previous[96] = {};

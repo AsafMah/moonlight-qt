@@ -90,6 +90,13 @@ class UpstreamReleaseGateTests(unittest.TestCase):
         self.assertIn("fetch-depth: 0", job)
         self.assertIn("scripts/derive-version.py --verify-upstream", job)
 
+    def test_version_job_initializes_protocol_submodule_before_reconnect_tests(self):
+        workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+        job = workflow.split("\n  version-tests:\n", 1)[1].split("\n  cpp-format:", 1)[0]
+        checkout = "git submodule update --init --depth 1 -- moonlight-common-c/moonlight-common-c"
+        self.assertIn(checkout, job)
+        self.assertLess(job.index(checkout), job.index("tests/reconnect_video_callbacks"))
+
 
 class RealHistoryGateTests(unittest.TestCase):
     def test_forgotten_registration_is_blocked_then_registration_passes(self):

@@ -59,6 +59,9 @@ jobs:
         persist-credentials: false
         fetch-depth: 0
 
+    - name: Initialize protocol headers for allocation tests
+      run: git submodule update --init --depth 1 -- moonlight-common-c/moonlight-common-c
+
     - name: Gate derived base against reachable qiin release tags
       run: python3 scripts/derive-version.py --verify-upstream
 

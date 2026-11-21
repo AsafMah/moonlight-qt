@@ -99,9 +99,28 @@ def upstream_release_tags(source_root: Path) -> dict[str, str] | None:
     return data["tags"]
 
 
+def verify_manifest_tags_on_origin(source_root: Path, expected: dict[str, str]) -> None:
+    output = subprocess.check_output(
+        ["git", "ls-remote", "--tags", "origin"], cwd=source_root,
+        text=True, encoding="utf-8", timeout=60,
+        env=dict(os.environ, GIT_TERMINAL_PROMPT="0"),
+    )
+    tags = {}
+    for line in output.splitlines():
+        commit, ref = line.split()
+        match = re.fullmatch(r"refs/tags/(v\d+\.\d+\.\d+)(\^\{\})?", ref)
+        if match and (match[1] not in tags or match[2]):
+            tags[match[1]] = commit
+    for tag, commit in expected.items():
+        if tags.get(tag) != commit:
+            raise RuntimeError(f"Manifest tag {tag} is missing or has the wrong commit on origin")
+
+
 def verify_upstream_release_base(source_root: Path) -> None:
-    if upstream_release_tags(source_root) is None:
+    manifest_tags = upstream_release_tags(source_root)
+    if manifest_tags is None:
         raise RuntimeError("Missing upstream release-lineage manifest")
+    verify_manifest_tags_on_origin(source_root, manifest_tags)
     anchor = json.loads((source_root / "scripts/upstream-release-tags.json")
                         .read_text(encoding="utf-8"))["anchor"]
     # Query qiin itself, not the maintained manifest: forgetting to register a
@@ -252,7 +271,7 @@ def main() -> int:
                         help="Use the numeric release identity for display and artifact fields")
     parser.add_argument(
         "--verify-upstream", action="store_true",
-        help="Fail if a reachable qiin release exceeds the derived base (requires network)",
+        help="Verify manifest tags on origin and reachable qiin release base (requires network)",
     )
     parser.add_argument(
         "--source-root",

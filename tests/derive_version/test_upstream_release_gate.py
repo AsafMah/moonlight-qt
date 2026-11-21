@@ -19,6 +19,9 @@ class UpstreamReleaseGateTests(unittest.TestCase):
         manifest = patch.object(version, "upstream_release_tags", return_value={"v6.5.4": "a" * 40})
         self.addCleanup(manifest.stop)
         manifest.start()
+        origin = patch.object(version, "verify_manifest_tags_on_origin")
+        self.addCleanup(origin.stop)
+        origin.start()
 
     def test_v6_5_6_is_registered_at_the_verified_qiin_release_commit(self):
         release_tags = json.loads(
@@ -127,3 +130,51 @@ class RealHistoryGateTests(unittest.TestCase):
                 data["tags"]["v6.5.5"] = upstream
                 manifest.write_text(json.dumps(data), encoding="utf-8")
                 version.verify_upstream_release_base(root)
+
+
+class OriginManifestGateTests(unittest.TestCase):
+    def verify(self, origin_output):
+        expected = {"v6.5.4": "a" * 40, "v6.5.6": "b" * 40}
+
+        def output(command, **kwargs):
+            if command[:4] == ["git", "ls-remote", "--tags", "origin"]:
+                self.assertEqual(kwargs["cwd"], ROOT)
+                self.assertEqual(kwargs["env"]["GIT_TERMINAL_PROMPT"], "0")
+                if isinstance(origin_output, Exception):
+                    raise origin_output
+                return origin_output
+            return "a" * 40 + "\trefs/tags/v6.5.4\n"
+
+        with patch.object(version, "upstream_release_tags", return_value=expected), \
+                patch.object(version.subprocess, "check_output", side_effect=output), \
+                patch.object(version, "derive", return_value={"base": "6.5.6"}):
+            version.verify_upstream_release_base(ROOT)
+
+    def test_local_tags_cannot_hide_missing_origin_tag(self):
+        with self.assertRaisesRegex(RuntimeError, "v6.5.6.*origin"):
+            self.verify("a" * 40 + "\trefs/tags/v6.5.4\n")
+
+    def test_wrong_origin_commit_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "v6.5.6.*origin"):
+            self.verify("a" * 40 + "\trefs/tags/v6.5.4\n"
+                            + "c" * 40 + "\trefs/tags/v6.5.6\n")
+
+    def test_lightweight_and_annotated_tags_match_commit(self):
+        for lines in (
+                    ["d" * 40 + "\trefs/tags/v6.5.6", "b" * 40 + "\trefs/tags/v6.5.6^{}"],
+                    ["b" * 40 + "\trefs/tags/v6.5.6^{}", "d" * 40 + "\trefs/tags/v6.5.6"],
+                    ["b" * 40 + "\trefs/tags/v6.5.6"]):
+            with self.subTest(lines=lines):
+                self.verify("a" * 40 + "\trefs/tags/v6.5.4\n" + "\n".join(lines) + "\n")
+
+    def test_tag_object_sha_does_not_override_wrong_peeled_commit(self):
+        with self.assertRaisesRegex(RuntimeError, "v6.5.6.*origin"):
+            self.verify("a" * 40 + "\trefs/tags/v6.5.4\n"
+                            + "b" * 40 + "\trefs/tags/v6.5.6\n"
+                            + "c" * 40 + "\trefs/tags/v6.5.6^{}\n")
+
+    def test_origin_network_failure_is_not_success(self):
+        for error in (subprocess.CalledProcessError(1, ["git", "ls-remote"]),
+                          subprocess.TimeoutExpired(["git", "ls-remote"], 60), OSError("offline")):
+            with self.subTest(error=error), self.assertRaises(type(error)):
+                self.verify(error)

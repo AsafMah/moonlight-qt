@@ -1,4 +1,4 @@
-# tests/
+# Tests/
 
 每个子目录是一个独立可执行测试,`qmake && make` 后直接运行,退出码非零即失败。
 CI 统一经 `scripts/run-test.bat`(Windows)调用,法规约见脚本头注释;新测试加入
@@ -57,7 +57,7 @@ one manual upgrade because its checker still points upstream.
 
 | 目录 | 验证内容 | CI 平台 |
 |---|---|---|
-| derive_version | scripts/derive-version.py 版本号推导、Windows VERSION_STR/PE 资源一致性 | Ubuntu(unittest), Windows(PE probe) |
+| derive_version | scripts/derive-version.py 版本号推导、Windows VERSION_STR/PE 资源一致性; `--verify-upstream` also requires every manifest tag on origin at its exact commit (local qiin tags cannot mask missing fork tags). | Ubuntu(unittest), Windows(PE probe) |
 | cursor_shape_classification | 光标位图 → 形状分类器的判定矩阵 | Windows |
 | clipboard_payload_routing | 剪贴板状态、复合内容、文件保护、文本/图片同步开关、主机文件推送(解析/文件名清洗/下载/超时)、拖放上传(目录展开/分块/偏移重同步/取消/超时)、文件复制粘贴(回声抑制/新复制优先/持久目录清理)、IPC 分帧和本地 TLS 传输回归（offscreen） | Windows |
 | clipboard_helper_lifecycle | helper 异常退出、响应超时和进程管道背压 | Windows |

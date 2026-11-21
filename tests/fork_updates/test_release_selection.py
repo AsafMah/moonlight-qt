@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -24,6 +25,10 @@ class ForkUpdateTests(unittest.TestCase):
     def test_automatic_updates_disabled_for_test_build(self):
         self.run_checker_harness(
             "automatic_harness.cpp", "Automatic updates disabled", disabled_automatic=True)
+
+    def test_automatic_policy_with_delayed_event_loop(self):
+        with patch.dict(os.environ, {"MOONLIGHT_TEST_EVENT_LOOP_DELAY_MS": "250"}):
+            self.run_checker_harness("automatic_harness.cpp", "Automatic update policy passed")
 
     def test_production_fork_selection(self):
         self.run_checker_harness("selection_harness.cpp", "Fork release selection passed")
